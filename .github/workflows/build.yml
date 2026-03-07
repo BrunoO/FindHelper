@@ -1,14 +1,18 @@
-# Build FindHelper on Windows, macOS, Linux. Manual trigger only (no push/PR) to save Actions minutes.
-# Run: Actions → Build → Run workflow. Windows builds without Boost to stay under 6h job limit.
+# Build FindHelper on Windows, macOS, Linux.
+# Triggers:
+#   - workflow_dispatch: manual run (build + test only, no release)
+#   - push to main: build + test + publish rolling "latest" pre-release
+#   - push of vX.Y.Z tag: build + test + publish versioned release
 name: Build
 
 on:
   workflow_dispatch:
-  # Uncomment below to run on every push/PR (uses more Actions minutes on free plan):
-  # push:
-  #   branches: [main, master]
-  # pull_request:
-  #   branches: [main, master]
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -20,18 +24,19 @@ jobs:
             config: Release
             artifact_name: FindHelper-Windows-x64
             artifact_path: build/Release/FindHelper.exe
+            package_name: FindHelper-Windows-x64.zip
             build_with_boost: false
           - os: macos-latest
             config: Release
             artifact_name: FindHelper-macOS
-            # Unix Makefiles (default on macos-latest) puts bundle in build/
             artifact_path: build/FindHelper.app
+            package_name: FindHelper-macOS.zip
             build_with_boost: true
           - os: ubuntu-24.04
             config: Release
             artifact_name: FindHelper-Linux-x64
-            # OUTPUT_NAME is FindHelper (CMakeLists.txt); Unix Makefiles puts it in build/
             artifact_path: build/FindHelper
+            package_name: FindHelper-Linux-x64.tar.gz
             build_with_boost: true
 
     runs-on: ${{ matrix.os }}
@@ -117,8 +122,73 @@ jobs:
         if: matrix.os == 'ubuntu-24.04'
         run: ctest --test-dir build --output-on-failure
 
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Compress-Archive -Path ${{ matrix.artifact_path }} -DestinationPath ${{ matrix.package_name }}
+
+      - name: Package (macOS)
+        if: matrix.os == 'macos-latest'
+        run: zip -r ${{ matrix.package_name }} ${{ matrix.artifact_path }}
+
+      - name: Package (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: tar -czf ${{ matrix.package_name }} -C build FindHelper
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          path: ${{ matrix.package_name }}
+
+  # ── Release ──────────────────────────────────────────────────────────────────
+  # Runs once after all three build jobs complete. Skipped on workflow_dispatch.
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: release-assets/
+
+      # push to main → create/replace rolling "latest" pre-release
+      - name: Publish rolling pre-release (latest)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          SUBJECT=$(git log -1 --pretty=format:'%s')
+          NOTES="Automated build from \`main\` at ${SHORT_SHA}.
+
+          Not a stable release — download a versioned release for production use.
+
+          **Commit:** ${SHORT_SHA} — ${SUBJECT}"
+
+          # Delete existing latest release + tag before recreating
+          gh release delete latest --yes 2>/dev/null || true
+          git push origin :refs/tags/latest 2>/dev/null || true
+
+          gh release create latest \
+            --prerelease \
+            --title "Latest build (${SHORT_SHA})" \
+            --notes "${NOTES}" \
+            release-assets/*
+
+      # push of vX.Y.Z tag → create proper versioned release
+      - name: Publish versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "FindHelper ${{ github.ref_name }}" \
+            --generate-notes \
+            release-assets/*

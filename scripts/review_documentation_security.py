@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Review documentation files for malicious or unsafe content (2026 best practices).
 
-Scans project documentation (docs/, internal-docs/, specs/, external/, root *.md) for:
+Scans project documentation (docs/, internal-docs/, specs/, root *.md) for:
 
 1. **Hidden / invisible characters**
    - Zero-width and format characters (can hide instructions from human reviewers)
@@ -38,17 +38,18 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 # -----------------------------------------------------------------------------
 # Documentation paths to scan (relative to repo root)
 # -----------------------------------------------------------------------------
-DOC_DIRS: Tuple[str, ...] = ("docs", "internal-docs", "specs", "external")
+DOC_DIRS: Tuple[str, ...] = ("docs", "internal-docs", "specs")
 
 # Root-level markdown files (AGENTS.md, CLAUDE.md, README.md, etc.)
 ROOT_MD_GLOB: str = "*.md"
 
-# Directories to skip inside any scanned doc tree (e.g. build artifacts)
+# Directories to skip inside DOC_DIRS (e.g. external mirrors)
 EXCLUDED_DIR_NAMES: Set[str] = {
     ".git",
     ".idea",
     ".vscode",
     "build",
+    "external",
     "third_party",
     "vendor",
     "node_modules",
