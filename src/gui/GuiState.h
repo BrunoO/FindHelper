@@ -263,6 +263,9 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
   bool showDeletePopup = false;
   // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes,readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   bool showBulkDeletePopup = false;
+  // When true, show "Matched Files" and "Matched Size" columns; default false (hidden). Toggle with Ctrl+Shift+F (global, when no text input).
+  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes,readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
+  bool showFolderStatsColumns = false;
   // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes,readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   int deleteSavedSearchIndex =
     -1;  // Index of saved search to delete (set when Delete button is clicked)

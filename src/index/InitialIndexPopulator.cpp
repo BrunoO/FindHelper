@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <windows.h>  // NOSONAR(cpp:S3806) - Windows-only include, case doesn't matter on Windows filesystem
 #include <winioctl.h>
@@ -44,6 +45,19 @@ constexpr uint64_t kFileRecordNumberMask = 0x0000FFFFFFFFFFFFULL;
 struct PopulationContext {
   FileIndex& file_index;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members) - context struct, ref by design
   std::atomic<size_t>* indexed_file_count = nullptr;  // Caller-owned; may be nullptr
+
+  // Tracks file reference numbers of $-prefixed directories found during MFT
+  // enumeration (e.g. $Recycle.Bin, $Extend). Their immediate children — most
+  // notably per-user SID subdirectories inside $Recycle.Bin such as
+  // "S-1-5-21-1234-5678-9012-567" — do NOT start with '$' and would otherwise
+  // slip through the system-file filter, get inserted into the index, and end
+  // up with orphaned placeholder paths (e.g. "C:/S-1-5-21-...") because their
+  // parent was never indexed.  When a filtered directory child is itself a
+  // directory, its ref num is also recorded here so that the pruning cascades
+  // transitively to any deeper subtree rooted under a filtered parent.
+  // Ownership: references a local variable in PopulateInitialIndex; must outlive the call.
+  std::unordered_set<uint64_t>& filtered_dir_ref_nums;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members) - context struct, ref by design
+
 #ifdef ENABLE_MFT_METADATA_READING
   MftMetadataReader* mft_reader = nullptr;  // Non-owning; points to PopulateInitialIndex stack object
   size_t& mft_success_count;
@@ -71,11 +85,62 @@ static bool ProcessUsnRecord(PUSN_RECORD_V2 record, int& file_count,
     return true; // Continue processing
   }
 
+  // Skip NTFS system metadata files ($MFT, $MFTMirr, $LogFile, $Volume,
+  // $AttrDef, $Bitmap, $Boot, $BadClus, $Secure, $UpCase, $Extend and its
+  // children $ObjId/$Quota/$Reparse/$UsnJrnl, $Recycle.Bin artefacts, etc.).
+  // This mirrors the filter applied during real-time USN monitoring in
+  // HandleSystemFileFilter (UsnMonitor.cpp) so both paths stay in sync.
+  // Without this, system files are visible in search results from startup
+  // until their first USN event evicts them.
+  if (filename[0] == '$') {
+    // Track $-prefixed directories so we can skip their direct children below.
+    // Only directories need to be recorded — files cannot be parents of other
+    // MFT entries, so tracking them would be wasteful.
+    if ((record->FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+      ctx.filtered_dir_ref_nums.insert(record->FileReferenceNumber);
+    }
+    return true; // Continue processing
+  }
+
   uint64_t file_ref_num = record->FileReferenceNumber;
   uint64_t parent_ref_num = record->ParentFileReferenceNumber;
   bool is_directory = false;
   if (record != nullptr && (record->FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
     is_directory = true;
+  }
+
+  // Skip children of filtered $-prefixed directories.
+  //
+  // Background: FSCTL_ENUM_USN_DATA returns MFT records in file-reference-number
+  // order, which is essentially allocation order.  NTFS system directories like
+  // $Recycle.Bin (typically MFT record ~33) and $Extend are allocated very early
+  // in the MFT, long before any user-created content.  Per-user SID subfolders
+  // inside $Recycle.Bin (e.g. "S-1-5-21-1234-5678-9012-567", allocated on first
+  // use by that account) always have much higher record numbers and are therefore
+  // visited after their $-prefixed parent — meaning filtered_dir_ref_nums already
+  // contains the parent's ref num by the time we reach them here.
+  //
+  // What would happen without this check: the SID folder name does not start with
+  // '$', so it passes the system-file filter above.  Its parent ($Recycle.Bin) is
+  // absent from the index (filtered), so RecomputeAllPaths cannot resolve a full
+  // path for it and falls back to "C:/<SID-string>" — a nonsense top-level path
+  // that pollutes the index.  The $R/$I children inside the SID folder ARE
+  // filtered by the '$' prefix check, so only the SID folder itself is affected.
+  //
+  // If the SID folder were somehow visited before $Recycle.Bin (not observed in
+  // practice), it would not be in filtered_dir_ref_nums yet and would slip through.
+  // The consequence is a single orphaned directory entry with a wrong path — an
+  // acceptable fallback given that SID strings are never entered as search queries.
+  //
+  // Directory children are also added to filtered_dir_ref_nums so that any
+  // deeper nesting under a filtered parent is pruned transitively (cascading).
+  // In practice $Recycle.Bin and $Extend are at most two levels deep, but the
+  // propagation makes the logic correct for any depth.
+  if (ctx.filtered_dir_ref_nums.count(parent_ref_num) != 0) {
+    if (is_directory) {
+      ctx.filtered_dir_ref_nums.insert(file_ref_num);  // propagate to grandchildren
+    }
+    return true; // Continue processing
   }
 
   // Modification time initialization:
@@ -237,11 +302,17 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
   int total_files = 0;  // NOLINT(misc-const-correctness) - total_files is modified in ProcessBufferRecords
   int iterations = 0;
 
+  // Accumulates file reference numbers of $-prefixed directories (e.g. $Recycle.Bin,
+  // $Extend) encountered during MFT enumeration so that ProcessUsnRecord can skip their
+  // non-$-prefixed children (e.g. per-user SID subfolders inside $Recycle.Bin).
+  // See the detailed comment in ProcessUsnRecord for the full rationale.
+  std::unordered_set<uint64_t> filtered_dir_ref_nums;
+
 #ifdef ENABLE_MFT_METADATA_READING
-  PopulationContext ctx{file_index, indexed_file_count, mft_reader_ptr,  // NOLINT(misc-const-correctness) - modified by ProcessBufferRecords (ref members)
-                        mft_success_count, mft_failure_count, mft_total_files};
+  PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums,  // NOLINT(misc-const-correctness) - modified by ProcessBufferRecords (ref members)
+                        mft_reader_ptr, mft_success_count, mft_failure_count, mft_total_files};
 #else
-  PopulationContext ctx{file_index, indexed_file_count};  // NOLINT(misc-const-correctness) - passed by non-const ref to ProcessBufferRecords
+  PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums};  // NOLINT(misc-const-correctness) - passed by non-const ref to ProcessBufferRecords
 #endif  // ENABLE_MFT_METADATA_READING
 
   // Main enumeration loop - refactored to avoid nested breaks
@@ -291,10 +362,11 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
 #endif  // ENABLE_MFT_METADATA_READING
 
   // RecomputeAllPaths() is intentionally NOT called here.
-  // The caller (WindowsIndexBuilder) calls it under the finalizing_population
-  // guard once IsPopulatingIndex() returns false, which is the correct place to
-  // set the flag and prevent search from observing inconsistent paths.
-  // Calling it here too would double the O(N) work on every USN/MFT population.
+  // On the Windows USN path, UsnMonitor::RunInitialPopulationAndPrivileges
+  // calls RecomputeAllPaths() before setting is_populating_index_ to false, so
+  // paths are fully resolved before monitoring starts. On the crawler path the
+  // builder calls it under the finalizing_population guard. Calling it here too
+  // would duplicate the O(N) work.
 
   // Ensure the counter matches the final index size after all inserts.
   if (indexed_file_count != nullptr) {

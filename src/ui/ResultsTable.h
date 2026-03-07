@@ -6,7 +6,7 @@
  *
  * This component handles rendering the search results table with:
  * - Base columns: Filename, Size, Last Modified, Full Path, Extension
- * - Optional folder statistics columns: Files in Results, Size in Results
+ * - Optional folder statistics columns: Matched Files, Matched Size
  * - Column sorting with async attribute loading
  * - Row selection and interaction
  * - Double-click to open/reveal
@@ -46,8 +46,8 @@ namespace ui {
  * - Extension: File extension
  *
  * When folder statistics are enabled via GUI state, two additional columns appear:
- * - Files in Results: Recursive count of displayed files under a folder
- * - Size in Results: Recursive total size of displayed files under a folder
+ * - Matched Files: Recursive count of displayed files under a folder
+ * - Matched Size: Recursive total size of displayed files under a folder
  *
  * Features:
  * - Virtual scrolling for performance (ImGuiListClipper)

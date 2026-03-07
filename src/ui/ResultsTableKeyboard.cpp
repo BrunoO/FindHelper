@@ -175,8 +175,13 @@ void RenderIncrementalSearchFilterStatus(const IncrementalSearchState& increment
   }
 
   ImGui::SameLine();
+#ifdef __APPLE__
   ImGui::TextUnformatted(
-    u8"– Cmd+G cancels; '/' starts a new filter; Esc clears all filters.");
+    "- Cmd+G cancels; '/' starts a new filter; Esc clears all filters.");
+#else
+  ImGui::TextUnformatted(
+    "- Ctrl+G cancels; '/' starts a new filter; Esc clears all filters.");
+#endif  // __APPLE__
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Handles a cohesive set of keyboard shortcuts; splitting would fragment closely related logic

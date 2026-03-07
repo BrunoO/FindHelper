@@ -191,15 +191,29 @@ public:
   [[nodiscard]] PathAccessor GetPathAccessor() { return PathAccessor(this); }
   [[nodiscard]] PathAccessor GetPathAccessor() const { return PathAccessor(this); }
 
-  // Update cached file size for a given file ID (no-op for directories)
+  // Update cached file size for a given file ID (no-op for directories).
+  // Path is read under shared_lock; the I/O call is made without any lock;
+  // the result is written under unique_lock. This avoids blocking searches
+  // for the duration of a synchronous stat() call.
   [[nodiscard]] bool UpdateSize(uint64_t id) {
-    const std::unique_lock lock(index_mutex_);
-    if (const FileEntry* entry = storage_.GetEntry(id); entry == nullptr || entry->isDirectory) {  // NOLINT(cppcoreguidelines-init-variables) - Variable initialized in C++17 init-statement
+    // Phase 1: read path (shared lock — no I/O)
+    std::string path;
+    {
+      const std::shared_lock read_lock(index_mutex_);
+      const FileEntry* const entry = storage_.GetEntry(id);  // NOLINT(cppcoreguidelines-init-variables)
+      if (entry == nullptr || entry->isDirectory) {
+        return false;
+      }
+      path = GetPathLocked(id);
+    }
+    if (path.empty()) {
       return false;
     }
-    // Lock already held, use GetPathLocked
-    auto path = GetPathLocked(id);
-    storage_.UpdateFileSize(id, LazyAttributeLoader::GetFileSize(path));
+    // Phase 2: query the file system — no lock held
+    const uint64_t new_size = LazyAttributeLoader::GetFileSize(path);
+    // Phase 3: write result (unique lock)
+    const std::unique_lock write_lock(index_mutex_);
+    storage_.UpdateFileSize(id, new_size);
     return true;
   }
 

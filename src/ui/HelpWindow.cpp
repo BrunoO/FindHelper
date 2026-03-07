@@ -8,11 +8,22 @@
 #include "imgui.h"
 
 #include "core/Version.h"
+#include "gui/ShortcutRegistry.h"
 #include "ui/IconsFontAwesome.h"
 #include "ui/Theme.h"
 #include "ui/UiStyleGuards.h"
 
 namespace ui {
+
+namespace {
+
+// Renders a single shortcut as an ImGui bullet: "Ctrl+Shift+F - Toggle Matched Files / Matched Size columns"
+void RenderShortcutBullet(const ShortcutDef& def) {
+  const std::string text = FormatLabel(def) + " - " + std::string(def.description);
+  ImGui::BulletText("%s", text.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+}
+
+}  // namespace
 
 void HelpWindow::Render(bool* p_open) {
   if (p_open == nullptr || !*p_open) {
@@ -71,6 +82,8 @@ void HelpWindow::Render(bool* p_open) {
       ImGui::Bullet();
       ImGui::TextWrapped("2026-02-13: Export Search Results (CSV) feature added."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
       ImGui::Bullet();
+      ImGui::TextWrapped("2026-03-07: Windows: in-app elevation prompt restored so UAC can run when user chooses restart as administrator."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
+      ImGui::Bullet();
       ImGui::TextWrapped("2026-02-09: Multi-level UI mode toggle (Full, Simplified, Minimalistic)."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
       ImGui::Bullet();
       ImGui::TextWrapped("2026-02-02: Block search while index is building; 'Loading attributes...' for Size/Last Modified sort; Metrics hidden unless --show-metrics."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
@@ -102,24 +115,10 @@ void HelpWindow::Render(bool* p_open) {
     ImGui::Spacing();
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
     ImGui::TextColored(Theme::Colors::Success, "Global Shortcuts");
-#ifdef __APPLE__
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Cmd+F - Focus name search input");
-#else
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Ctrl+F - Focus name search input");
-#endif  // __APPLE__  // NOSONAR(cpp:S125) - directive-matching comment, not commented-out code
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("F5 - Refresh search (re-run current query)");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Escape - Clear all filters");
-#ifdef __APPLE__
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Cmd+Shift+H - Toggle path hierarchy indentation in results");
-#else
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Ctrl+Shift+H - Toggle path hierarchy indentation in results");
-#endif  // __APPLE__
+    RenderShortcutBullet(FindShortcut(ShortcutAction::FocusSearch));
+    RenderShortcutBullet(FindShortcut(ShortcutAction::RefreshSearch));
+    RenderShortcutBullet(FindShortcut(ShortcutAction::ClearFilters));
+    RenderShortcutBullet(FindShortcut(ShortcutAction::ToggleHierarchy));
 
   ImGui::Spacing();
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
@@ -140,13 +139,7 @@ void HelpWindow::Render(bool* p_open) {
   ImGui::Spacing();
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
   ImGui::TextColored(Theme::Colors::Success, "Saved Searches");
-#ifdef __APPLE__
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Cmd+S - Save current search (open Save Search dialog)");
-#else
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Ctrl+S - Save current search (open Save Search dialog)");
-#endif  // __APPLE__
+    RenderShortcutBullet(FindShortcut(ShortcutAction::SaveSearch));
 
     ImGui::Spacing();
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
@@ -158,13 +151,7 @@ void HelpWindow::Render(bool* p_open) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
     ImGui::BulletText("Ctrl+C - Copy name (hover over name) or full path (hover over path)");
 #endif  // __APPLE__
-#ifdef __APPLE__
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Cmd+E - Export current results to CSV");
-#else
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Ctrl+E - Export current results to CSV");
-#endif  // __APPLE__  // NOSONAR(cpp:S125) - directive-matching comment, not commented-out code
+    RenderShortcutBullet(FindShortcut(ShortcutAction::ExportCsv));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
     ImGui::BulletText("Delete - Delete selected file (opens confirmation)");
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
@@ -188,6 +175,7 @@ void HelpWindow::Render(bool* p_open) {
 #endif  // __APPLE__  // NOSONAR(cpp:S125) - directive-matching comment, not commented-out code
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
     ImGui::BulletText("Tab - Focus name search (from results table)");
+    RenderShortcutBullet(FindShortcut(ShortcutAction::ToggleFolderStats));
 #ifdef _WIN32
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
     ImGui::BulletText("Ctrl+Shift+P - Pin selected file or folder to Quick Access");

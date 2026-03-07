@@ -60,43 +60,43 @@ void UpdateMaxQueueDepth(std::atomic<size_t>& max_queue_depth, size_t queue_size
   }
 }
 
-// Helper function to handle system file filtering and removal
-// Returns true if file was filtered out (should continue to next record)
-// Extracted to reduce nesting depth
+// Returns true if the file should be filtered out (name starts with '$').
+// Side effects: removes the entry from the index (safety net for any $-file
+// that slipped in during initial population) and updates delete metrics.
+// Does NOT touch offset — offset management is the caller's responsibility.
 bool HandleSystemFileFilter(PUSN_RECORD_V2 record, std::string_view filename,
-                            FileIndex& file_index, UsnMonitorMetrics& metrics, DWORD& offset) {
+                            FileIndex& file_index, UsnMonitorMetrics& metrics) {
   if (filename.empty() || filename[0] != usn_monitor_constants::kSystemFilePrefix) {
-    return false;  // Not a system file, continue processing
+    return false;
   }
-  
-  // Ensure these are removed from index if they were present
-  // This handles Rename to $Recycle.Bin (should disappear) and Deletions
-  // NOTE: If this is a delete event, we should still count it in
-  // metrics even though we're filtering out the file
+
+  // Count genuine delete events even though we skip the record.
   if (record->Reason & USN_REASON_FILE_DELETE) {
     metrics.files_deleted.fetch_add(1, std::memory_order_relaxed);
   }
+  // Evict from index on any event type: acts as a safety net in case a
+  // $-prefixed file was indexed (e.g. via MFT enumeration on an older build).
   file_index.Remove(record->FileReferenceNumber);
-  offset += record->RecordLength;
-  return true;  // File was filtered, continue to next record
+  return true;
 }
 
-// Helper function to process interesting USN record
-// Extracted to reduce nesting depth in ProcessorThread()
+// Helper function to process interesting USN record.
+// Returns true if the record was filtered (caller should advance offset and
+// continue). Returns false if the record was processed normally.
+// Does NOT touch offset — offset management belongs in ProcessOneBuffer.
 bool ProcessInterestingUsnRecord(PUSN_RECORD_V2 record,
                                  FileIndex& file_index,
-                                 UsnMonitorMetrics& metrics,
-                                 DWORD& offset) {
+                                 UsnMonitorMetrics& metrics) {
   std::wstring wfilename(
       reinterpret_cast<wchar_t*>(reinterpret_cast<std::byte*>(record) + record->FileNameOffset),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR(cpp:S3630) - USN_RECORD_V2 variable-offset filename; bounds checked by ValidateAndParseUsnRecord
       record->FileNameLength / sizeof(wchar_t));
 
   auto filename = WideToUtf8(wfilename);
 
-  // Filter out system/temporary files (e.g. $Recycle.Bin artifacts, MFT
-  // metadata) - early return to reduce nesting
-  if (HandleSystemFileFilter(record, filename, file_index, metrics, offset)) {
-    return true;  // File was filtered, offset already updated
+  // Filter out NTFS system files ($MFT, $LogFile, $Bitmap, $Recycle.Bin
+  // artefacts, etc.).  Offset is advanced by the caller.
+  if (HandleSystemFileFilter(record, filename, file_index, metrics)) {
+    return true;
   }
 
   uint64_t file_ref_num = record->FileReferenceNumber;
@@ -156,17 +156,29 @@ void ProcessUsnRecordReasons(PUSN_RECORD_V2 record,
 void HandleFileRename(PUSN_RECORD_V2 record, uint64_t file_ref_num, uint64_t parent_ref_num,
                       std::string_view filename, bool is_directory, FileIndex& file_index,
                       UsnMonitorMetrics& metrics) {
-  // Check if parent changed (file moved to different directory)
-  // This handles both simple renames (same parent) and moves (different parent)
-  const FileEntry* current_entry = file_index.GetEntry(file_ref_num);
-  if (current_entry == nullptr) {
+  // Read the current parent ID under a shared lock.
+  // GetEntry returns a raw pointer into the hash map; it must not be used after
+  // the lock is released because a concurrent unique_lock acquisition (e.g.
+  // Maintain, UpdateFileSizeById) could trigger a rehash and invalidate it.
+  // Copying parentID before releasing the lock avoids the dangling-pointer risk
+  // and protects against the data race with any concurrent writer.
+  uint64_t current_parent = 0;
+  bool entry_exists = false;
+  {
+    const std::shared_lock read_lock(file_index.GetMutex());
+    const FileEntry* const entry = file_index.GetEntry(file_ref_num);
+    if (entry != nullptr) {
+      entry_exists = true;
+      current_parent = entry->parentID;
+    }
+  }
+
+  if (!entry_exists) {
     // Entry doesn't exist yet - treat as create (shouldn't happen, but handle gracefully)
     file_index.Insert(file_ref_num, parent_ref_num, filename, is_directory, kFileTimeNotLoaded);
     metrics.files_renamed.fetch_add(1, std::memory_order_relaxed);
     return;
   }
-  
-  const uint64_t current_parent = current_entry->parentID;
   if (current_parent != parent_ref_num) {
     // Parent changed - this is a move operation
     // Update parent first, then update name if it also changed
@@ -246,8 +258,9 @@ bool UsnMonitor::Start() {
     processor_thread_.join();
   }
 
-  // Reset metrics for new monitoring session
+  // Reset metrics and internal counters for new monitoring session
   metrics_.Reset();
+  reader_push_count_ = 0;
 
   // Create queue with configured size
   queue_ = std::make_unique<UsnJournalQueue>(config_.max_queue_size);
@@ -453,6 +466,19 @@ bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
   indexed_file_count_.store(file_index_.Size(), std::memory_order_release);
   LOG_INFO_BUILD("Initial index populated with "
                  << indexed_file_count_.load() << " entries");
+
+  // Recompute all paths before marking population complete and before monitoring
+  // starts. This resolves every placeholder path (entries whose parent arrived
+  // out-of-order during MFT enumeration) so that the processor thread never
+  // sees incomplete paths. Calling here eliminates the race window that existed
+  // when WindowsIndexBuilder called RecomputeAllPaths via a polling loop: the
+  // old design left a gap of up to ~500 ms during which USN events were applied
+  // against placeholder paths by the processor thread.
+  {
+    const ScopedTimer recompute_timer("RecomputeAllPaths (post-population)");
+    file_index_.RecomputeAllPaths();
+  }
+
   is_populating_index_.store(false, std::memory_order_release);
 
 #ifdef _WIN32
@@ -578,8 +604,7 @@ void UsnMonitor::ProcessSuccessfulReadAndEnqueue(
     UpdateMaxQueueDepth(metrics_.max_queue_depth, queue_size);
   }
 
-  static size_t push_count = 0;  // NOLINT(misc-const-correctness) - modified by ++push_count
-  if (++push_count % usn_monitor_constants::kLogIntervalBuffers == 0 &&
+  if (++reader_push_count_ % usn_monitor_constants::kLogIntervalBuffers == 0 &&
       queue_) {
     size_t queue_size = queue_->Size();  // NOLINT(cppcoreguidelines-init-variables) - initialized by Size()
     if (queue_size > usn_monitor_constants::kQueueWarningThreshold) {
@@ -765,7 +790,7 @@ void UsnMonitor::ProcessOneBuffer(std::vector<char>& buffer) {  // NOLINT(readab
       continue;
     }
 
-    if (ProcessInterestingUsnRecord(record, file_index_, metrics_, offset)) {
+    if (ProcessInterestingUsnRecord(record, file_index_, metrics_)) {
       offset += record->RecordLength;
       continue;
     }

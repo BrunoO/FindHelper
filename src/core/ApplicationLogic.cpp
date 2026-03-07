@@ -22,7 +22,7 @@
 #include "core/Application.h"
 #include "core/Settings.h"
 #include "gui/GuiState.h"
-#include "gui/ImGuiUtils.h"
+#include "gui/ShortcutRegistry.h"
 #include "index/FileIndex.h"
 #include "search/SearchController.h"
 #include "search/SearchResultsService.h"
@@ -33,53 +33,76 @@
 
 namespace application_logic {
 
+// Executes the action for a triggered global shortcut. All preconditions
+// (UI mode, index state, streaming state) are evaluated here, not in the registry.
+void DispatchGlobalShortcut(ShortcutAction action,
+                            GuiState& state,
+                            AppSettings& settings,
+                            const SearchController& search_controller,
+                            SearchWorker& search_worker,
+                            bool is_index_building,
+                            Application& application) {
+  switch (action) {
+    case ShortcutAction::FocusSearch:
+      if (settings.uiMode == AppSettings::UIMode::Full) {
+        state.focusFilenameInput = true;
+      }
+      break;
+    case ShortcutAction::RefreshSearch:
+      if (!is_index_building) {
+        search_controller.TriggerManualSearch(state, search_worker, settings);
+      }
+      break;
+    case ShortcutAction::ClearFilters:
+      // Skip when inline results filter is active so Esc only cancels that filter.
+      if (!state.incrementalSearchActive) {
+        state.ClearInputs();
+        state.timeFilter = TimeFilter::None;
+      }
+      break;
+    case ShortcutAction::SaveSearch:
+      state.openSaveSearchPopup = true;
+      break;
+    case ShortcutAction::ExportCsv: {
+      // application is always valid here; ExportToCsv guards against null file_index_ internally.
+      const auto* const results = search::SearchResultsService::GetDisplayResults(state);
+      if (results != nullptr && !results->empty()) {
+        application.ExportToCsv(state);
+      }
+      break;
+    }
+    case ShortcutAction::ToggleHierarchy:
+      settings.showPathHierarchyIndentation = !settings.showPathHierarchyIndentation;
+      SaveSettings(settings);
+      break;
+    case ShortcutAction::ToggleFolderStats:
+      state.showFolderStatsColumns = !state.showFolderStatsColumns;
+      break;
+  }
+}
+
 void HandleKeyboardShortcuts(GuiState &state,
                              const SearchController &search_controller,
                              SearchWorker &search_worker,
                              bool is_index_building,
                              Application &application,
                              AppSettings &settings) {
-  // Only process when no text input is active (to avoid stealing input)
-  if (!ImGui::GetIO().WantTextInput) {
-    const ImGuiIO& io = ImGui::GetIO();
-
-    // Ctrl+F (Windows/Linux) or Cmd+F (macOS): Focus filename search input (disabled when not in Full UI mode)
-    if (settings.uiMode == AppSettings::UIMode::Full && IsPrimaryShortcutModifierDown(io) &&
-        ImGui::IsKeyPressed(ImGuiKey_F)) {
-      state.focusFilenameInput = true;
+  if (ImGui::GetIO().WantTextInput) {
+    return;
+  }
+  const ImGuiIO& io = ImGui::GetIO();
+  for (const auto& def : kShortcuts) {
+    if (def.scope != ShortcutScope::Global) {
+      continue;
     }
-
-    // F5: Refresh/re-run current search
-    if (ImGui::IsKeyPressed(ImGuiKey_F5) && !is_index_building) {
-      search_controller.TriggerManualSearch(state, search_worker, settings);
+    if (!IsAvailableOnPlatform(def)) {
+      continue;
     }
-
-    // Escape: Clear all filters (skip when inline results filter is active so Esc only cancels that filter)
-    if (!state.incrementalSearchActive && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-      state.ClearInputs();
-      state.timeFilter = TimeFilter::None;
+    if (!IsTriggered(def, io)) {
+      continue;
     }
-
-    // Ctrl+S (Windows/Linux) or Cmd+S (macOS): Save current search (open Save Search dialog)
-    if (IsPrimaryShortcutModifierDown(io) && ImGui::IsKeyPressed(ImGuiKey_S)) {
-      state.openSaveSearchPopup = true;
-    }
-
-    // Ctrl+E (Windows/Linux) or Cmd+E (macOS): Export current results to CSV (when results are displayed).
-    // application is always valid here (HandleKeyboardShortcuts is only called from Update() with Application& from Application::RunFrame). If the signature is ever changed to Application*, add a null check before calling ExportToCsv. ExportToCsv itself guards against file_index_ being null.
-    if (IsPrimaryShortcutModifierDown(io) && ImGui::IsKeyPressed(ImGuiKey_E)) {
-      const auto* results = search::SearchResultsService::GetDisplayResults(state);
-      if (results != nullptr && !results->empty()) {
-        application.ExportToCsv(state);
-      }
-    }
-
-    // Ctrl+Shift+H (Windows/Linux) or Cmd+Shift+H (macOS): Toggle path hierarchy indentation
-    if (IsPrimaryShortcutModifierDown(io) && io.KeyShift &&
-        ImGui::IsKeyPressed(ImGuiKey_H)) {
-      settings.showPathHierarchyIndentation = !settings.showPathHierarchyIndentation;
-      SaveSettings(settings);
-    }
+    DispatchGlobalShortcut(def.action, state, settings, search_controller,
+                           search_worker, is_index_building, application);
   }
 }
 

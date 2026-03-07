@@ -69,11 +69,11 @@ public:
         while (!state->cancel_requested.load(std::memory_order_acquire)) {
           // Check if index population is complete
           if (!monitor_->IsPopulatingIndex()) {
-            // Set finalizing flag to prevent search during FinalizeInitialPopulation
-            // (prevents race condition where search uses offsets that become invalid)
-            state->finalizing_population.store(true, std::memory_order_release);
-            file_index_.RecomputeAllPaths();
-            state->finalizing_population.store(false, std::memory_order_release);
+            // RecomputeAllPaths was already called inside
+            // UsnMonitor::RunInitialPopulationAndPrivileges, before
+            // is_populating_index_ was set to false. By the time we reach
+            // here all paths are fully resolved and monitoring is already
+            // running against correct PathStorage state.
             size_t final_count = monitor_->GetIndexedFileCount();
             state->entries_processed.store(final_count, std::memory_order_release);
             state->MarkCompleted();

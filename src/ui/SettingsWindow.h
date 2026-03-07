@@ -45,8 +45,8 @@ public:
    * - Index Configuration: Folder selection for crawling (Windows: only when no admin or USN Journal inactive)
    *
    * Settings are saved to a JSON file next to the executable when the Save
-   * button is clicked. Some changes (font, thread pool size) require application
-   * restart or take effect on the next search.
+   * button is clicked. Font family, font size, and UI scale (including the "Auto"
+   * button) apply immediately without restart.
    *
    * @param p_open Pointer to window visibility flag (modified when window is closed)
    * @param settings Application settings (modified in-place, saved on Save button click)

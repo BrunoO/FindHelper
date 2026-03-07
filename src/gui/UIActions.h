@@ -15,6 +15,7 @@
 #include <string>  // NOLINT(clang-diagnostic-error) - False positive on macOS header analysis
 
 // Forward declarations
+struct AppSettings;
 class GuiState;
 struct SavedSearch;
 
