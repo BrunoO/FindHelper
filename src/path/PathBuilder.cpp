@@ -26,10 +26,9 @@ int PathBuilder::CollectPathComponents(uint64_t parent_id,
     if (entry == nullptr) {
       break;
     }
-
     const auto it = name_cache.find(current_id);
     if (it == name_cache.end()) {
-      break;  // Name not in cache (entry inserted after ReleaseNameCache — shouldn't happen)
+      break;  // Name not in cache (entry inserted after ReleaseNameCache — shouldn't happen) NOSONAR(cpp:S924) - second break avoids name_cache.find when entry is null
     }
     components.at(static_cast<size_t>(component_count)) = &it->second;
     ++component_count;

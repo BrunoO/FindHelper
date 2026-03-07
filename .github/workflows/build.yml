@@ -11,9 +11,6 @@ on:
     branches: [main]
     tags: ['v*.*.*']
 
-permissions:
-  contents: write
-
 jobs:
   build:
     strategy:
@@ -147,6 +144,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout

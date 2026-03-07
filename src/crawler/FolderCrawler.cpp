@@ -150,7 +150,7 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
     const auto log_interval = std::chrono::seconds(2);  // Log every 2 seconds
 
     {
-      std::unique_lock<std::mutex> comp_lock(completion_mutex_);
+      std::unique_lock comp_lock(completion_mutex_);
 
       // Wait until completion signal or cancellation.
       // Use wait_for with timeout to poll for cancellation even if not notified.
@@ -354,7 +354,7 @@ bool ProcessEntries(  // NOSONAR(cpp:S107) - Function has 13 parameters
 }
 }  // namespace
 
-// NOLINTNEXTLINE(readability-identifier-naming,readability-function-cognitive-complexity) - WorkerThread is public API; loop and error handling required for crawler
+// NOLINTNEXTLINE(readability-identifier-naming,readability-function-cognitive-complexity) - WorkerThread is public API; loop and error handling required for crawler NOSONAR(cpp:S3776)
 void FolderCrawler::WorkerThread(size_t worker_idx,
                                  std::atomic<size_t>* indexed_file_count,
                                  const std::atomic<bool>* cancel_flag) {
@@ -473,7 +473,7 @@ std::string FolderCrawler::TryGetWork(size_t worker_idx) {
   // Own queue empty — try stealing from peers in round-robin order.
   for (size_t j = 1; j < num_workers_; ++j) {
     const size_t victim = (worker_idx + j) % num_workers_;
-    const std::unique_lock<std::mutex> lock(*wq_mutexes_[victim], std::try_to_lock);
+    const std::unique_lock lock(*wq_mutexes_[victim], std::try_to_lock);
     if (lock.owns_lock() && !wq_items_[victim].empty()) {
       std::string dir = std::move(wq_items_[victim].front());
       wq_items_[victim].pop_front();
@@ -838,8 +838,40 @@ struct LinuxDirent64 {
   int64_t  d_off;     // NOLINT(readability-identifier-naming) - kernel ABI
   uint16_t d_reclen;  // NOLINT(readability-identifier-naming) - kernel ABI
   uint8_t  d_type;    // NOLINT(readability-identifier-naming) - kernel ABI
-  char     d_name[1]; // NOLINT(readability-identifier-naming,modernize-avoid-c-arrays) - kernel ABI (variable-length)
+  char     d_name[1]; // NOLINT(readability-identifier-naming,modernize-avoid-c-arrays) - kernel ABI (variable-length) NOSONAR(cpp:S5945)
 };
+
+namespace {
+// Appends one getdents64 entry to entries; skips "." and "..". Reduces nesting in EnumerateDirectory.
+void AppendLinuxDirent(const LinuxDirent64* d, std::string_view dir_path,
+                       std::vector<FolderCrawler::DirectoryEntry>& entries) {
+  if (strcmp(d->d_name, ".") == 0 || strcmp(d->d_name, "..") == 0) {
+    return;
+  }
+  FolderCrawler::DirectoryEntry dir_entry;
+  dir_entry.name = d->d_name;
+
+  if (d->d_type != DT_UNKNOWN) {
+    dir_entry.is_directory = (d->d_type == DT_DIR);
+    dir_entry.is_symlink   = (d->d_type == DT_LNK);
+  } else {
+    std::string full_path(dir_path);
+    if (full_path.back() != '/') {
+      full_path += '/';
+    }
+    full_path += d->d_name;
+    struct stat stat_buf = {};
+    if (lstat(full_path.c_str(), &stat_buf) != 0) {
+      LOG_WARNING_BUILD("lstat failed for: " << full_path << ", error: " << errno);
+      return;
+    }
+    const auto mode = stat_buf.st_mode;
+    dir_entry.is_directory = (S_ISDIR(mode) != 0);
+    dir_entry.is_symlink   = (S_ISLNK(mode) != 0);
+  }
+  entries.push_back(std::move(dir_entry));
+}
+}  // namespace
 
 // NOLINTNEXTLINE(readability-identifier-naming) - EnumerateDirectory is public API name
 bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
@@ -865,58 +897,30 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
 
   std::vector<char> buf(kGetdents64BufSize);
   bool success = true;
+  bool read_done = false;
 
   // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-type-reinterpret-cast)
   // Buffer parsing uses pointer arithmetic and reinterpret_cast per the
   // kernel's getdents64 ABI contract; layout is documented by the syscall spec.
-  for (;;) {
+  while (!read_done) {
     const long nread = syscall(SYS_getdents64, fd,  // NOLINT(google-runtime-int,cppcoreguidelines-pro-type-vararg,hicpp-vararg) - syscall() signature uses long
                                buf.data(), buf.size());
     if (nread < 0) {
       LOG_WARNING_BUILD("getdents64 failed for: " << dir_path << ", error: " << errno);
       success = false;
-      break;
-    }
-    if (nread == 0) {
-      break;  // End of directory
-    }
-
-    long offset = 0;  // NOLINT(google-runtime-int) - must match nread type for comparison
-    while (offset < nread) {
-      const auto* d = reinterpret_cast<const LinuxDirent64*>(buf.data() + offset);
-      if (d->d_reclen == 0) {
-        break;  // Guard against malformed entry
-      }
-      offset += d->d_reclen;
-
-      if (strcmp(d->d_name, ".") == 0 || strcmp(d->d_name, "..") == 0) {
-        continue;
-      }
-
-      DirectoryEntry dir_entry;
-      dir_entry.name = d->d_name;
-
-      if (d->d_type != DT_UNKNOWN) {
-        dir_entry.is_directory = (d->d_type == DT_DIR);
-        dir_entry.is_symlink   = (d->d_type == DT_LNK);
-      } else {
-        // d_type not filled (some network/pseudo filesystems): fall back to lstat
-        std::string full_path(dir_path);
-        if (full_path.back() != '/') {
-          full_path += '/';
+      read_done = true;
+    } else if (nread == 0) {
+      read_done = true;
+    } else {
+      long offset = 0;  // NOLINT(google-runtime-int) - must match nread type for comparison
+      while (offset < nread) {
+        const auto* d = reinterpret_cast<const LinuxDirent64*>(buf.data() + offset);  // NOSONAR(cpp:S3630) - kernel ABI layout
+        if (d->d_reclen == 0) {
+          break;  // Guard against malformed entry
         }
-        full_path += d->d_name;
-        struct stat stat_buf = {};
-        if (lstat(full_path.c_str(), &stat_buf) != 0) {
-          LOG_WARNING_BUILD("lstat failed for: " << full_path << ", error: " << errno);
-          continue;
-        }
-        const auto mode = stat_buf.st_mode;
-        dir_entry.is_directory = (S_ISDIR(mode) != 0);
-        dir_entry.is_symlink   = (S_ISLNK(mode) != 0);
+        offset += d->d_reclen;
+        AppendLinuxDirent(d, dir_path, entries);
       }
-
-      entries.push_back(std::move(dir_entry));
     }
   }
   // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-type-reinterpret-cast)
