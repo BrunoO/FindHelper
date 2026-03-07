@@ -1,0 +1,32 @@
+# Per-directory clang-tidy overrides for the tests/ directory.
+# Inherits all rules from the root .clang-tidy, then disables checks that
+# produce unavoidable false-positives in doctest-based test code.
+InheritParentConfig: true
+
+Checks: >-
+  -cert-err33-c,
+  -readability-function-cognitive-complexity,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-identifier-naming
+
+# Rationale for each disabled check:
+#
+# cert-err33-c:
+#   doctest CHECK()/REQUIRE() macros expand to expressions whose return value
+#   is intentionally discarded by the framework. Every assertion in every test
+#   triggers this false-positive. Suppressing per-line is impractical.
+#
+# readability-function-cognitive-complexity:
+#   doctest TEST_CASE / TEST_SUITE macros generate anonymous functions that
+#   aggregate many small assertions. The "complexity" is artificial scaffolding,
+#   not actual code complexity.
+#
+# readability-magic-numbers / cppcoreguidelines-avoid-magic-numbers:
+#   Test assertions use concrete expected values (lengths, counts, IDs) that
+#   are intentionally literal — naming them as constants would obscure intent.
+#
+# readability-identifier-naming:
+#   Test infrastructure (fixtures, mocks) follows the same snake_case_ member
+#   convention as production code. The identifier-naming check conflicts with
+#   some test-specific patterns (e.g. mutable members in mock classes).

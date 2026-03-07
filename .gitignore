@@ -1,0 +1,146 @@
+# Visual C++ build artifacts
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.idb
+*.res
+*.suo
+*.user
+*.ncb
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+
+# Compiled Object files
+*.o
+*.ko
+*.elf
+
+# Linker output
+*.map
+*.exp
+*.lib
+!external/glfw/lib/glfw3.lib
+*.a
+*.la
+*.lo
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.dll
+*.so
+*.dylib
+
+# Executables
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.vcxproj.filters
+ipch/
+x64/
+x86/
+Debug/
+Release/
+*.log
+
+
+
+# Qt
+*.pro.user
+*.autosave
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.qm
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+settings.json
+
+# Local / generated (jules CLI completion – regenerate with: jules completion zsh)
+.jules-completion.zsh
+
+# ImGui
+imgui/
+
+# Makefile
+build_debug/
+build_release/
+
+# CMake
+build/
+build_scan/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+.cache/
+compile_commands.json
+
+# scan-build static analyzer
+scan-results/
+
+# Duplo duplicate code detection
+duplo
+duplo-macos.zip
+duplo_report.*
+
+# Generated version file - should not be tracked
+GitVersion.h
+gitversion.h
+
+build_tests/
+build_engine/
+
+imgui.ini
+
+coverage/
+build_coverage/
+
+# LLVM profiling / coverage output
+*.profraw
+*.profdata
+
+# CTest temporary/cache (CMake test runner)
+Testing/Temporary/
+
+# SonarCloud issues data (temporary files)
+sonar-tmp/
+
+# SonarQube / SonarScanner local files
+.scannerwork/
+.sonar/
+sonar-report.json
+sonar-report.xml
+sonar.log
+build-wrapper-dump.json
+build-wrapper-out.json
+*.scannerwork
+.scannerwork/
+sonar-results/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local AI / tooling artifacts
+.claude/
+clang-tidy-report-*.txt

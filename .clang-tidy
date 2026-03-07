@@ -1,0 +1,424 @@
+---
+# clang-tidy Configuration for USN_WINDOWS (FindHelper)
+#
+# This configuration enforces:
+# - C++17 naming conventions (see docs/standards/CXX17_NAMING_CONVENTIONS.md)
+# - Modern C++ practices (RAII, smart pointers, const correctness)
+# - SonarQube rule alignment (see SonarQube Rule Mapping below)
+# - Cross-platform code quality (Windows, macOS, Linux)
+#
+# For usage instructions, see: docs/analysis/CLANG_TIDY_GUIDE.md
+# For check categorization, see: docs/analysis/CLANG_TIDY_CLASSIFICATION.md
+# For this project's development guidelines, see the project documentation under docs/
+#
+# SonarQube Rule Mapping:
+# This configuration is designed to catch issues similar to SonarQube rules:
+# - S1181 (Generic exception catch): Caught by cppcoreguidelines-* checks
+# - S954 (Include order): readability-include-order (if available)
+# - S109 (Magic numbers): readability-magic-numbers (ENABLED)
+# - S3776 (Cognitive complexity): readability-function-cognitive-complexity (ENABLED)
+# - S134 (Deep nesting): readability-else-after-return
+# - S1231 (free() usage): bugprone-*, cppcoreguidelines-*
+# - S5025 (Manual delete): cppcoreguidelines-*
+# - S859 (const_cast): cppcoreguidelines-pro-type-const-cast
+# - S3630 (reinterpret_cast): cppcoreguidelines-pro-type-reinterpret-cast
+# - S5277 (Ignored return values): misc-unused-result
+# - S1481 (Unused variables): misc-unused-parameters, misc-unused-using-decls
+# - S1172 (Unused parameters): readability-unused-parameters (enabled via misc-unused-*)
+# - S3670 (C-style casts): cppcoreguidelines-pro-type-cstyle-cast
+# - S995 (Const correctness): readability-non-const-parameter (enabled via *)
+# - S134 (Nesting depth): SonarQube rule (readability-else-after-return helps catch patterns)
+# - S3776 (Cognitive complexity): readability-function-cognitive-complexity (ENABLED, threshold: 25)
+# - S6004 (Init-statement): SonarQube rule (no direct clang-tidy equivalent, but readability-use-anyofallof for related patterns)
+# - S6009 (String view): modernize-use-string-view (enabled via *)
+# - S924 (Nested breaks): SonarQube rule (no direct clang-tidy equivalent)
+# - S3972 (If/else formatting): SonarQube rule (no clang-tidy equivalent; see project coding guidelines)
+# - S5827 (Redundant type, use auto): modernize-use-auto (enabled via *)
+
+# Checks: do not add inline # comments here; YAML treats # as comment and strips the rest of the line, so the check name would not be disabled.
+Checks: >-
+  *,
+  -abseil-*,
+  -altera-*,
+  -android-*,
+  -boost-use-ranges,
+  -boost-use-to-string,
+  -clang-analyzer-*,
+  -google-readability-avoid-underscore-in-googletest-name,
+  -google-upgrade-googletest-case,
+  -linuxkernel-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-macro-to-enum,
+  -cppcoreguidelines-special-member-functions,
+  -fuchsia-*,
+  -google-readability-namespace-comments,
+  -hicpp-special-member-functions,
+  -hicpp-uppercase-literal-suffix,
+  -llvm-header-guard,
+  -llvm-namespace-comment,
+  -llvm-prefer-static-over-anonymous-namespace,
+  -llvmlibc-*,
+  -misc-include-cleaner,
+  -misc-use-anonymous-namespace,
+  -misc-use-internal-linkage,
+  -modernize-macro-to-enum,
+  -modernize-use-trailing-return-type,
+  -portability-avoid-pragma-once,
+  -readability-convert-member-functions-to-static,
+  -readability-identifier-length,
+  -readability-redundant-inline-specifier,
+  -readability-redundant-preprocessor,
+  -readability-uppercase-literal-suffix,
+  -readability-use-concise-preprocessor-directives
+
+# Note: The following checks are enabled to catch SonarQube-style issues:
+# - bugprone-*: Catches bugs similar to SonarQube reliability issues
+# - cppcoreguidelines-*: Catches code quality issues (except those disabled above)
+# - performance-*: Catches performance issues
+# - readability-*: Catches code smell issues (except those disabled above)
+# - clang-analyzer-*: DISABLED for performance (see Disabled Checks Rationale)
+# - misc-*: Miscellaneous checks including unused variables, const correctness
+
+# --- Disabled Checks Rationale ---
+# The following check families are disabled for project-specific reasons:
+#
+# LLVM libc checks (-llvmlibc-*):
+#   These checks are designed for libc implementation, not general application code.
+#   Disabling: llvmlibc-implementation-in-namespace, llvmlibc-callee-namespace,
+#              llvmlibc-inline-function-decl, llvmlibc-restrict-system-libc-headers
+#   Reason: They incorrectly assume libc coding standards should apply to all code
+#
+# Special member functions (-cppcoreguidelines-special-member-functions):
+#   This project uses the Rule of Zero paradigm with smart pointers
+#   (std::unique_ptr, std::shared_ptr) and RAII containers.
+#   All memory management is automatic, so classes should not need custom
+#   destructors. Enabling would incorrectly flag classes without explicit
+#   destructors, which is correct for this project's RAII-based design.
+#   If custom memory management is ever needed, use smart pointers instead.
+#
+# Abseil checks (-abseil-*):
+#   Project does not use Google Abseil. These checks suggest absl::* APIs (e.g. absl::StrContains
+#   instead of find() != npos). Disabling avoids NOLINT throughout the codebase.
+#
+# Altera checks (-altera-*):
+#   Intel FPGA-specific checks not applicable to this desktop application
+#
+# Android checks (-android-*):
+#   Android-specific (cloexec, temp-failure-retry). Project targets Windows/macOS/Linux desktop.
+#
+# Boost checks (-boost-use-ranges, -boost-use-to-string):
+#   Project does not use Boost in application code. These suggest Boost APIs; we use std/STL.
+#
+# Clang Analyzer (-clang-analyzer-*):
+#   The analyzer family (core, security, unix, deadcode, etc.) is among the most expensive
+#   checks and significantly increases run time. Disabled for normal CI and pre-commit.
+#   To run with analyzer for security/reliability audits, use a separate config or
+#   -checks=... with clang-analyzer-* added. See docs/analysis/2026-02-19_CLANG_TIDY_REDUCE_WORK_PER_FILE.md.
+#
+# GTest/Googletest (-google-readability-avoid-underscore-in-googletest-name, -google-upgrade-googletest-case):
+#   Project uses doctest, not Google Test. Disabling avoids Googletest-specific suggestions.
+#
+# Linux kernel (-linuxkernel-*):
+#   Project is userspace application, not Linux kernel.
+#
+# Fuchsia checks (-fuchsia-*):
+#   Google Fuchsia OS-specific checks not applicable to Windows/macOS/Linux desktop app
+#
+# Other disabled checks:
+#   -llvm-header-guard: We use #pragma once project-wide. This check enforces LLVM-style
+#     include guards and has no option to allow #pragma once; disabling it is the way to
+#     "teach" clang-tidy our convention (no NOLINT in every header).
+#   -portability-avoid-pragma-once: Warns against #pragma once. We prefer #pragma once;
+#     disabling matches our choice (same outcome as llvm-header-guard: no header-guard warnings).
+#   -llvm-* (other): LLVM-specific style (namespace comments, etc.)
+#   -google-*: Google-specific style preferences (namespace comments)
+#   -hicpp-*: High Integrity C++ checks that conflict with project conventions
+#   -readability-identifier-length: Project allows single-letter variables (i, j, x, y)
+#   -modernize-use-trailing-return-type: Project prefers traditional return type syntax
+#   -misc-use-anonymous-namespace: Some compilers/contexts require non-anonymous linkage
+#   -readability-redundant-preprocessor: Nested #ifdef in cross-platform code is often
+#     intentional for clarity; check flags valid patterns.
+#
+# Local constant naming (LocalConstantCase, LocalConstexprVariableCase: aNy_CasE):
+#   Both kPascalCase and snake_case accepted for local constants. Avoids ~150 renames and
+#   NOLINT proliferation. See docs/standards/CXX17_NAMING_CONVENTIONS.md "Local Constants (Tolerance)".
+
+# --- Platform Considerations ---
+# This is a cross-platform project (Windows, macOS, Linux)
+# Code is conditionally compiled via: #ifdef _WIN32, #ifdef __APPLE__, #ifdef __linux__
+#
+# clang-tidy running on any platform only sees active code paths for that platform.
+# To verify cross-platform correctness:
+# 1. Run clang-tidy on each platform
+# 2. Generate compile_commands.json on each platform and run cross-compilation analysis
+# 3. Use platform-specific build flags to test conditional code paths
+#
+# Note: Some platform-specific warnings are expected and acceptable
+
+# Header Filter Regex:
+# Pattern: '^(?!external/)(?!.*/curl/).*\.(h|hpp|cpp)$'
+#
+# This regex:
+# - INCLUDES: All .h, .hpp, .cpp files in project (src/, tests/, etc.)
+# - EXCLUDES: All files in external/ directory (third-party dependencies)
+# - EXCLUDES: System/libcurl headers (paths containing /curl/) to avoid
+#   misc-header-include-cycle and other diagnostics from third-party curl
+#   (e.g. /Library/Developer/.../usr/include/curl/*.h on macOS).
+#
+# Third-party libraries excluded:
+# - external/imgui/ (Dear ImGui GUI library)
+# - external/nlohmann_json/ (JSON library)
+# - external/doctest/ (Testing framework)
+# - external/freetype/ (Font rendering)
+# - external/vectorscan/ (Pattern matching library)
+# - external/hyperscan/ (Pattern matching library)
+#
+# Rationale: Third-party code follows different standards and should not
+# trigger project-specific checks. Enable manually for specific analysis.
+#
+# Generated embedded files (Embedded*.cpp, Embedded*.h) are excluded from
+# clang-tidy in scripts (pre-commit-clang-tidy.sh, run_clang_tidy.sh,
+# run_clang_tidy.sh) because they are tool-generated and very large.
+#
+# Note: HeaderFilterRegex uses POSIX ERE, which does NOT support negative
+# lookahead ((?!...) ). So (?!.*/curl/) does not actually exclude curl paths.
+# Use ExcludeHeaderFilterRegex to explicitly exclude system/third-party curl.
+HeaderFilterRegex: '^(?!external/)(?!.*/curl/).*\.(h|hpp|cpp)$'
+# Exclude diagnostics from headers under .../curl/ (system libcurl on macOS/Linux).
+# Without this, misc-header-include-cycle and other curl header warnings appear.
+ExcludeHeaderFilterRegex: '.*/curl/.*'
+
+CheckOptions:
+  # Naming conventions (readability-identifier-naming)
+  # Types (Classes, Structs, Enums, Typedefs, Type Aliases): PascalCase
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
+  
+  # Functions and Methods: PascalCase
+  readability-identifier-naming.FunctionCase: CamelCase
+  readability-identifier-naming.MethodCase: CamelCase
+  
+  # Local Variables and Parameters: snake_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.LocalVariableCase: lower_case
+  # Local constants: accept both kPascalCase and snake_case (see CXX17_NAMING_CONVENTIONS.md)
+  # aNy_CasE disables enforcement so both styles pass; avoids ~150 renames and NOLINT proliferation
+  readability-identifier-naming.LocalConstantCase: aNy_CasE
+  readability-identifier-naming.LocalConstexprVariableCase: aNy_CasE
+  
+  # Member Variables: snake_case_ (with trailing underscore)
+  # ENABLED: Member variable naming checks with suffix support
+  # Note: clang-tidy's readability-identifier-naming supports MemberSuffix option
+  # to enforce trailing underscores. This will catch violations of the snake_case_
+  # convention (e.g., fileIndex, FileIndex, file_index without underscore).
+  readability-identifier-naming.MemberCase: lower_case
+  readability-identifier-naming.PrivateMemberCase: lower_case
+  readability-identifier-naming.ProtectedMemberCase: lower_case
+  readability-identifier-naming.PublicMemberCase: lower_case
+  # Suffix enforcement for member variables (trailing underscore)
+  # Note: MemberSuffix may not be available in all clang-tidy versions.
+  # If not supported, the lower_case check will still catch camelCase violations.
+  # Manual review may still be needed to verify trailing underscore presence.
+  readability-identifier-naming.MemberSuffix: '_'
+  
+  # Global Variables: g_snake_case
+  # Global/constants use CamelCase with a 'k' prefix to enforce kPascalCase
+  readability-identifier-naming.GlobalConstantCase: CamelCase
+  readability-identifier-naming.GlobalConstantPrefix: 'k'
+  readability-identifier-naming.GlobalVariableCase: lower_case
+  # Note: The 'g_' prefix is not directly enforceable via clang-tidy naming checks
+  # Consider using a custom check or manual review for this
+  
+  # Constants: kPascalCase (recommended) or UPPER_SNAKE_CASE (acceptable)
+  # We'll enforce kPascalCase with a 'k' prefix
+  readability-identifier-naming.ConstantCase: CamelCase
+  readability-identifier-naming.ConstantPrefix: 'k'
+  readability-identifier-naming.ConstantMemberCase: CamelCase
+  readability-identifier-naming.ConstantMemberPrefix: 'k'
+  readability-identifier-naming.StaticConstantCase: CamelCase
+  readability-identifier-naming.StaticConstantPrefix: 'k'
+  
+  # Namespaces: snake_case
+  readability-identifier-naming.NamespaceCase: lower_case
+  
+  # Macros: UPPER_SNAKE_CASE (Windows API macros are exempt)
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+  
+  # Other
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.UnionMemberCase: lower_case
+  
+  # Include order enforcement
+  # Standard C++ include order:
+  # 1. #pragma once (or header guards)
+  # 2. System includes (<iostream>, <string>, etc.)
+  # 3. Project includes ("MyClass.h", etc.)
+  # 4. Forward declarations
+  # Note: readability-include-order check may not be available in all clang-tidy versions
+  # The check is configured but may need to be enabled explicitly if available
+  
+  # performance-enum-size: AppSettings::UIMode already uses std::uint8_t; false positive when header analyzed in isolation
+  performance-enum-size.EnumIgnoreList: 'AppSettings::UIMode'
+
+  # Magic numbers enforcement (S109)
+  # Ignore common integer values that are self-explanatory
+  readability-magic-numbers.IgnoredIntegerValues: '0;1;-1;2;3;4;8;16;32;64;128;256;512;1024'
+  # Ignore powers of 2 (common in bit operations, buffer sizes)
+  readability-magic-numbers.IgnorePowersOf2IntegerValues: true
+  # Ignore common floating point values (including UI constants)
+  # UI constants: 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.7, 0.8 are common in ImGui code (percentages, ratios)
+  # Standard values: 0.0, 0.5, 1.0, -1.0, 2.0, 100.0 are self-explanatory
+  readability-magic-numbers.IgnoredFloatingPointValues: '0.0;0.2;0.25;0.3;0.35;0.4;0.5;0.7;0.8;1.0;-1.0;2.0;100.0'
+  # Don't ignore all floating point values (we want to catch magic floats)
+  readability-magic-numbers.IgnoreAllFloatingPointValues: false
+  # Ignore magic numbers in template arguments (common pattern)
+  readability-magic-numbers.IgnoreNumericTemplateArguments: true
+  # Ignore magic numbers in array sizes (often self-explanatory)
+  readability-magic-numbers.IgnoreArrayIndexes: false
+  # Ignore magic numbers in raw string literals (file paths, etc.)
+  readability-magic-numbers.IgnoreUserDefinedLiterals: false
+  
+  # --- ImGui Considerations ---
+  # This project uses Dear ImGui for the GUI, which has some unconventional APIs:
+  # - Variadic argument functions (ImGui::TextWrapped, ImGui::Selectable, etc.)
+  # - Magic numbers for UI sizing (0.0-1.0 for percentages and ratios)
+  # - Immediate mode paradigm (UI rebuilt every frame)
+  #
+  # Related checks:
+  # - cppcoreguidelines-pro-type-vararg: DISABLED (ImGui uses var args)
+  # - readability-magic-numbers: CONFIGURED with 0.0-1.0 allowed for UI constants
+  # (see IgnoredFloatingPointValues above)
+  #
+  # See docs/design/IMGUI_IMMEDIATE_MODE_PARADIGM.md for ImGui patterns
+  
+  # Cognitive complexity enforcement (SonarQube cpp:S3776)
+  # Threshold: 25 (matches SonarQube limit)
+  #
+  # Rationale:
+  # - General code: Keep under 15 for maintainability
+  # - Performance-critical code: Up to 25 acceptable for SIMD/parallelization logic
+  # - Example: SearchEngine SIMD implementations intentionally exceed 15 due to vectorization complexity
+  # - Example: ParallelSearch thread coordination code uses platform conditionals
+  #
+  # When exceeding threshold: Document with comment explaining performance necessity
+  readability-function-cognitive-complexity.Threshold: 25
+  
+  # In-class member initializers (S3230)
+  # Prefer in-class initializers over constructor initializer lists for default values
+  # This prevents S3230 violations by encouraging modern C++11+ style
+  modernize-use-default-member-init.UseAssignment: false  # Use brace initialization {} instead of =
+  modernize-use-default-member-init.IgnoreMacros: true     # Ignore members declared in macros
+  
+  # --- RAII and Smart Pointer Enforcement ---
+# This project emphasizes RAII (Resource Acquisition Is Initialization)
+# and explicitly forbids manual memory management (see project coding guidelines)
+  #
+  # Related checks (enabled via modernize-* and cppcoreguidelines-*):
+  # - modernize-make-unique: Prefer std::make_unique over new/delete
+  # - modernize-make-shared: Prefer std::make_shared over new
+  # - cppcoreguidelines-owning-memory: Track ownership via gsl::owner (rarely needed)
+  # - cppcoreguidelines-no-malloc: Forbid malloc/free
+  #
+  # Forbidden patterns (will trigger warnings):
+  # - new T() / delete ptr  (use std::make_unique instead)
+  # - malloc / free (use std::vector or std::string instead)
+  # - raw new[] / delete[] (use std::array or std::vector instead)
+  #
+# See the project coding guidelines for details on memory management requirements
+  
+  # SonarQube-style checks configuration
+  # These checks are enabled by default via the '*' wildcard in Checks section
+  # The following notes map SonarQube rules to clang-tidy checks:
+  #
+  # Enabled checks that catch SonarQube issues:
+  # - bugprone-*: Catches bugs (S1231 free(), S5025 delete, etc.)
+  # - cppcoreguidelines-pro-type-*: Catches unsafe casts (S859, S3630, S3670)
+  # - cppcoreguidelines-*: Catches code quality issues
+  # - misc-unused-*: Catches unused variables/parameters (S1481, S1172)
+  # - readability-unused-parameters: Catches unused function parameters (S1172)
+  # - readability-else-after-return: Catches deep nesting patterns (S134)
+  # - readability-non-const-parameter: Catches const correctness issues (S995)
+  # - readability-use-anyofallof: Catches patterns that could use std::any_of/all_of (related to S6004)
+  # - modernize-use-string-view: Catches string view usage issues (S6009)
+  # - modernize-use-default-member-init: Catches in-class initializer issues (S3230) - ENABLED via *
+  # - bugprone-redundant-branch-condition: Catches redundant nested conditions (S1066) - ENABLED via bugprone-*
+  # - cppcoreguidelines-avoid-non-const-global-variables: Catches non-const globals (S5421) - ENABLED via cppcoreguidelines-*
+  # - clang-analyzer-*: DISABLED for performance (see Disabled Checks Rationale)
+  # Note: S134 (Nesting depth), S6004 (Init-statement), and S924 (Nested breaks) 
+  #       are caught by SonarQube. S3776 (Cognitive complexity) is now enforced by 
+  #       readability-function-cognitive-complexity (threshold: 25).
+  #
+  # Note: Some SonarQube rules don't have direct clang-tidy equivalents:
+  # - S1181 (Generic exception catch): Manual review needed
+  # - S954 (Include order): readability-include-order (if available)
+  # - S1192 (Code duplication): Use other tools (e.g., PMD CPD)
+  # - S3776 (Cognitive complexity): readability-function-cognitive-complexity (ENABLED, threshold: 25)
+  # - S109 (Magic numbers): readability-magic-numbers (ENABLED, with common values ignored)
+# - S134 (Nesting depth): No direct clang-tidy check (readability-else-after-return helps indirectly)
+# - S924 (Nested breaks): No clang-tidy equivalent (SonarQube-only)
+# - S6004 (Init-statements): No clang-tidy equivalent (SonarQube-only)
+# - S3972 (If/else formatting): No clang-tidy equivalent (SonarQube-only; guideline in AGENTS.md)
+# - S5827 (Redundant type): modernize-use-auto (enabled via *)
+
+# --- Enforcement Strategy ---
+# The project follows a phased approach to enforce code quality:
+#
+# Phase 1 (Current): WARNINGS ONLY
+# - clang-tidy runs on all code
+# - Warnings reported but not treated as errors
+# - Developers address warnings voluntarily or during code review
+# - Goal: Establish patterns and baselines
+#
+# Phase 2 (Future): WARNINGS AS ERRORS for critical categories
+# - Enable WarningsAsErrors for high-severity checks
+# - Target categories: bugprone-*, cppcoreguidelines-pro-type-*
+# - Prevents new issues while allowing existing warnings to be grandfathered
+#
+# Phase 3 (Future): WARNINGS AS ERRORS for all checks
+# - Enable globally to achieve zero-warning state
+# - May require fine-tuning with pragma suppression
+#
+# Current Configuration (Phase 1):
+# Warnings as errors (optional - can be disabled for gradual adoption)
+WarningsAsErrors: ''
+
+# Example Phase 2 configuration (commented for future use):
+# WarningsAsErrors: 'bugprone-*,cppcoreguidelines-pro-type-*,misc-unused-*'
+
+# System headers to ignore
+SystemHeaders: false
+
+# User headers to check
+User: ''
+
+# --- Verification Commands ---
+# Run these commands to verify clang-tidy configuration is working correctly:
+#
+# 1. Generate compile_commands.json (required for clang-tidy):
+#    cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+#
+# 2. Test on single file:
+#    clang-tidy -p build src/api/GeminiApiUtils.cpp
+#
+# 3. List all enabled checks:
+#    clang-tidy -p build --list-checks 2>&1 | wc -l
+#    (Expected: ~200+ checks enabled)
+#
+# 4. Test specific check:
+#    clang-tidy -p build --checks='readability-identifier-naming' src/api/GeminiApiUtils.cpp
+#
+# 5. Run on all source files (Linux/macOS):
+#    find src -name "*.cpp" -not -path "*/external/*" | xargs clang-tidy -p build
+#
+# 6. Fix issues automatically (where applicable):
+#    clang-tidy -p build -fix src/api/GeminiApiUtils.cpp
+#
+# For more details, see: docs/analysis/CLANG_TIDY_GUIDE.md
