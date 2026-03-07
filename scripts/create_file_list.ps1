@@ -15,7 +15,7 @@
     The path to the file where the list of paths will be saved.
 
 .EXAMPLE
-    .\\create_file_list.ps1 -RootDirectory "C:\\Users" -OutputFile "C:\\temp\\file_list.txt"
+    .\\create_file_list.ps1 -RootDirectory "C:\\Source\\MyProject" -OutputFile "C:\\Output\\file_list.txt"
 #>
 param(
     [Parameter(Mandatory=$true)]

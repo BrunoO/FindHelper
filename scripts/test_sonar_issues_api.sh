@@ -3,9 +3,14 @@
 
 set -euo pipefail
 
-TOKEN="${SONARQUBE_TOKEN:-5a8ab94076d36127f8e6580e1e521629f5dfb8e7}"
-ORG="BrunoO"
-PROJECT="BrunoO_USN_WINDOWS"
+TOKEN="${SONARQUBE_TOKEN:-}"
+ORG="${SONARQUBE_ORG:-BrunoO}"
+PROJECT="${SONARQUBE_PROJECT:-BrunoO_USN_WINDOWS}"
+
+if [[ -z "$TOKEN" ]]; then
+    echo "ERROR: SONARQUBE_TOKEN is required. Set it or run: export SONARQUBE_TOKEN=your_token" >&2
+    exit 1
+fi
 
 # Python code to parse and display issue counts (reused multiple times)
 PYTHON_PARSE_SCRIPT="import sys, json; data=json.load(sys.stdin); print(f\"  Total: {data.get('total', 0)}, Issues: {len(data.get('issues', []))}\")"
