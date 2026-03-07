@@ -144,3 +144,5 @@ __pycache__/
 # Local AI / tooling artifacts
 .claude/
 clang-tidy-report-*.txt
+nolint_classified.json
+nolint_scan.json
