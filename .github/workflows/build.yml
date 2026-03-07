@@ -1,0 +1,124 @@
+# Build FindHelper on Windows, macOS, Linux. Manual trigger only (no push/PR) to save Actions minutes.
+# Run: Actions → Build → Run workflow. Windows builds without Boost to stay under 6h job limit.
+name: Build
+
+on:
+  workflow_dispatch:
+  # Uncomment below to run on every push/PR (uses more Actions minutes on free plan):
+  # push:
+  #   branches: [main, master]
+  # pull_request:
+  #   branches: [main, master]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            config: Release
+            artifact_name: FindHelper-Windows-x64
+            artifact_path: build/Release/FindHelper.exe
+            build_with_boost: false
+          - os: macos-latest
+            config: Release
+            artifact_name: FindHelper-macOS
+            # Unix Makefiles (default on macos-latest) puts bundle in build/
+            artifact_path: build/FindHelper.app
+            build_with_boost: true
+          - os: ubuntu-24.04
+            config: Release
+            artifact_name: FindHelper-Linux-x64
+            # OUTPUT_NAME is FindHelper (CMakeLists.txt); Unix Makefiles puts it in build/
+            artifact_path: build/FindHelper
+            build_with_boost: true
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      BUILD_WITH_BOOST: ${{ matrix.build_with_boost }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache vcpkg (Windows, Boost)
+        id: vcpkg-cache
+        uses: actions/cache@v4
+        with:
+          path: vcpkg
+          key: vcpkg-win-boost-minimal-2
+        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true'
+
+      - name: Install vcpkg and Boost (Windows, minimal)
+        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git vcpkg
+          .\vcpkg\bootstrap-vcpkg.bat
+          # Subset we use: headers (base) + unordered + regex + lockfree (only regex is built)
+          .\vcpkg\vcpkg install boost-headers boost-unordered boost-regex boost-lockfree
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          PACKAGES="build-essential cmake pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev libcurl4-openssl-dev libfontconfig1-dev libx11-dev libxss-dev wayland-protocols libwayland-dev libxkbcommon-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libwayland-bin"
+          if [ "${{ env.BUILD_WITH_BOOST }}" = "true" ]; then PACKAGES="$PACKAGES libboost-dev"; fi
+          sudo apt-get update
+          sudo apt-get install -y $PACKAGES
+
+      - name: Install macOS dependencies (Boost)
+        if: matrix.os == 'macos-latest' && env.BUILD_WITH_BOOST == 'true'
+        run: brew install boost
+
+      - name: Configure (Windows, with Boost)
+        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true'
+        run: cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_MFT_METADATA_READING=ON -DFAST_LIBS_BOOST=ON -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Configure (Windows, without Boost)
+        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST != 'true'
+        run: cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_MFT_METADATA_READING=ON
+
+      - name: Configure (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          EXTRA=""; [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA
+
+      - name: Configure (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          EXTRA=""; [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: cmake --build build --config ${{ matrix.config }}
+
+      - name: Build (macOS)
+        if: matrix.os == 'macos-latest'
+        run: cmake --build build --config ${{ matrix.config }}
+
+      - name: Build (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: cmake --build build
+
+      - name: Run tests (Windows)
+        if: matrix.os == 'windows-latest'
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+
+      - name: Run tests (macOS)
+        if: matrix.os == 'macos-latest'
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Run tests (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
