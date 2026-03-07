@@ -306,7 +306,9 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
   // $Extend) encountered during MFT enumeration so that ProcessUsnRecord can skip their
   // non-$-prefixed children (e.g. per-user SID subfolders inside $Recycle.Bin).
   // See the detailed comment in ProcessUsnRecord for the full rationale.
+  // Reserve to avoid rehashes during enumeration (typically < 64 $-dir refs).
   std::unordered_set<uint64_t> filtered_dir_ref_nums;
+  filtered_dir_ref_nums.reserve(64);
 
 #ifdef ENABLE_MFT_METADATA_READING
   PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums,  // NOLINT(misc-const-correctness) - modified by ProcessBufferRecords (ref members)
