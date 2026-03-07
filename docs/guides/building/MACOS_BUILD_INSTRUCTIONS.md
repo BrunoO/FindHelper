@@ -120,7 +120,7 @@ cmake --build . --target string_search_tests
 ### Check CMake Version
 
 ```bash
-cmake --version  # Should be 3.14 or higher
+cmake --version  # Should be 3.16 or higher
 ```
 
 ### Check Compiler

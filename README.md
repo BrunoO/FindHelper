@@ -10,7 +10,7 @@ A cross-platform file search application with a modern GUI built using ImGui and
 
 ## About This Project
 
-This repository is my **personal playground for learning how to code with AI agents**. I use it to explore and improve my workflow with AI-assisted development—mainly **Cursor** and **Jules**—while building a real application. The goal is to get hands-on experience with pair programming, prompt design, and keeping code quality high when AI suggests changes. If you’re curious about AI-assisted C++ development or want to see how one project evolves with that workflow, you’re in the right place.
+This repository is my **personal playground for learning how to code with AI agents**. I use it to explore and improve my workflow with AI-assisted development—mainly **Cursor**, **Jules**, and **Claude Code**—while building a real application. The goal is to get hands-on experience with pair programming, prompt design, and keeping code quality high when AI suggests changes. If you’re curious about AI-assisted C++ development or want to see how one project evolves with that workflow, you’re in the right place.
 
 **What this project is:** An experiment in building software by **dialoguing with AI assistants in natural language**—no hand-written implementation plans, just prompts and conversation. I try to strike a balance between giving the agents room to work and enforcing guardrails (coding standards, design rules, tests, reviews) so that quality stays high. Despite those efforts, this remains experimental: **flaws or bugs may have slipped through**, and the codebase may carry trade-offs that a traditional development process would have avoided. Use or contribute with that in mind.
 
@@ -43,7 +43,7 @@ FindHelper is designed primarily as a search and discovery tool and **mostly doe
 ### All Platforms
 
 1. **Git** (with submodule support)
-2. **CMake** 3.14 or newer
+2. **CMake** 3.16 or newer
 3. **C++17 compatible compiler**
 
 ### Windows
@@ -204,6 +204,7 @@ The following test executables are built:
 |------|-------------|
 | `string_search_tests` | Core string search API |
 | `string_search_avx2_tests` | AVX2 string search integration |
+| `string_search_neon_tests` | ARM NEON string search integration |
 | `cpu_features_tests` | CPU feature detection |
 | `path_utils_tests` | Path utility functions |
 | `path_pattern_matcher_tests` | Path pattern matching |
@@ -227,6 +228,8 @@ The following test executables are built:
 | `gui_state_tests` | GUI state management |
 | `settings_tests` | Settings persistence and loading |
 | `gemini_api_utils_tests` | Gemini API utilities |
+| `total_size_computation_tests` | Total size computation |
+| `incremental_search_state_tests` | Incremental search state |
 
 ### Disable Tests
 
@@ -289,6 +292,8 @@ These are **UI tests** driven by the test engine (not the same as the doctest-ba
 ```bash
 build/FindHelper.app/Contents/MacOS/FindHelper --index-from-file=tests/data/std-linux-filesystem.txt
 ```
+
+> **Note:** `tests/data/std-linux-filesystem.txt` is a large test dataset not included in this repository. An alternative dataset or generation script will be provided in a future update.
 
 ### Optional: Unit Tests with Same Config
 
