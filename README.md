@@ -1,6 +1,12 @@
 # FindHelper
 
+[![Build](https://github.com/BrunoO/FindHelper/actions/workflows/build.yml/badge.svg)](https://github.com/BrunoO/FindHelper/actions/workflows/build.yml)
+
 A cross-platform file search application with a modern GUI built using ImGui and AI-powered assistance. Index a folder, search by name/pattern/extension, filter by size or date, and view results in a table—with optional AI-assisted search.
+
+![FindHelper Experiment UI](docs/images/findhelper-experiment-ui.png)
+
+![Search Syntax Guide](docs/images/findhelper-search-help-ui.png)
 
 ## About This Project
 
