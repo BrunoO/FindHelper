@@ -245,6 +245,7 @@ set(COMMON_APP_SOURCES
     src/utils/LoadBalancingStrategy.cpp
     src/api/GeminiApiUtils.cpp
     src/gui/GuiState.cpp
+    src/gui/ShortcutRegistry.cpp
     src/gui/RendererInterface.h
     ${SHARED_UTIL_SOURCES}
 )

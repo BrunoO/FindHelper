@@ -24,7 +24,7 @@ public:
       : file_index_(file_index)
       , config_(std::move(config)) {}
 
-  ~FolderCrawlerIndexBuilder() override {
+  ~FolderCrawlerIndexBuilder() override {  // NOLINT(bugprone-exception-escape) - Stop() wraps thread::join in a catch-all; no exception can escape
     Stop();
   }
   
@@ -73,21 +73,21 @@ public:
 
           // After crawl completes (or fails), finalize index if successful.
           if (success) {
-#ifdef _WIN32
-            // On Windows, RecomputeAllPaths resets OneDrive cloud-placeholder
-            // files to lazy-load sentinels so their size/mtime are fetched via
-            // IShellItem2 rather than cached as zero. It also clears and rebuilds
-            // PathStorage entirely, so the finalizing flag is set to block
-            // concurrent searches from accessing freed path offsets.
+            // RecomputeAllPaths() is required on all platforms:
+            // - On Windows: resets OneDrive cloud-placeholder sentinels so
+            //   size/mtime are fetched via IShellItem2 rather than cached as zero.
+            // - On all platforms: corrects paths for synthetic parent directories
+            //   created by DirectoryResolver. IndexOperations::Insert builds paths
+            //   as parent_path + name, but GetPathView(0) returns "" for the root
+            //   parent (ID 0 is never inserted), so root-level directories get
+            //   paths like "Users/foo" instead of "/Users/foo". PathBuilder uses
+            //   GetDefaultVolumeRootPath() ("/") to prepend the correct prefix.
+            //   Without this call, stat() fails on relative paths → N/A in UI.
+            // The finalizing flag blocks concurrent searches while PathStorage
+            // is cleared and rebuilt.
             state->finalizing_population.store(true, std::memory_order_release);
             file_index_.RecomputeAllPaths();
             state->finalizing_population.store(false, std::memory_order_release);
-#endif  // _WIN32
-            // On macOS/Linux there are no OneDrive placeholders, and paths are
-            // already correct in PathStorage after the crawl (each entry is
-            // inserted with its full path via InsertPathUnderLock, and
-            // DirectoryResolver stores synthetic parent paths through the same
-            // IndexOperations::Insert path). The O(N) recompute pass is skipped.
 
             // Update final metrics
             state->files_processed.store(crawler.GetFilesProcessed(), std::memory_order_relaxed);

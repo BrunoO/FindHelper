@@ -197,6 +197,15 @@ int RunApplication(int argc, char** argv) {  // NOLINT(google-objc-function-nami
   // Shared index build state (used by all platforms to report progress)
   IndexBuildState index_build_state;
 
+#ifdef _WIN32
+  // Offer elevation before creating the window when no explicit --crawl-folder.
+  // If user accepts, we restart via ShellExecuteEx "runas" (then Windows shows UAC once).
+  if (cmd_args.crawl_folder.empty() && !IsProcessElevated() &&
+      PromptForElevationAndRestart(nullptr)) {
+    return 0;  // Restart was initiated; no bootstrap to clean up
+  }
+#endif  // _WIN32
+
   // Initialize all platform-specific subsystems via AppBootstrap
   BootstrapResult bootstrap;
   if (int init_result = exception_handling::RunFatal(
@@ -218,20 +227,6 @@ int RunApplication(int argc, char** argv) {  // NOLINT(google-objc-function-nami
   }
 
 #ifdef _WIN32
-  // Windows: If not elevated, offer to restart as administrator for USN-based
-  // real-time indexing when no explicit crawl-folder is requested.
-  // If the user accepts and the restart is initiated, clean up and exit this
-  // process; the elevated instance will run separately.
-  // If the user declines or restart fails, continue running without elevation
-  // and use folder-based indexing only (AppBootstrap_win sets
-  // running_without_elevation).
-  if (const bool should_offer_elevation = cmd_args.crawl_folder.empty();
-      should_offer_elevation && !IsProcessElevated() &&
-      PromptForElevationAndRestart(nullptr)) {
-    BootstrapTraits::Cleanup(bootstrap);
-    return 0;
-  }
-
   // SECURITY: Check for fatal security errors (e.g., privilege drop failure)
   // This must be checked before creating Application to prevent running with elevated privileges
   if (bootstrap.security_fatal_error) {

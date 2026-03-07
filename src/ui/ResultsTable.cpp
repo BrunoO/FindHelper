@@ -560,49 +560,36 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   ImGui::PopID();
 
   // Optional folder statistics columns (recursive file count and total size).
-  // Always draw cells so columns are never left blank (show "-" when stats are unavailable).
+  // Show values only for folder rows; leave cells empty for file rows.
   size_t folder_file_count = 0;
   uint64_t folder_total_size_bytes = 0;
-  bool have_folder_stats = false;
+  bool show_folder_stats_cells = false;  // true only for directory rows
 
-  if (params.folder_stats != nullptr) {
-    have_folder_stats = true;
-    if (params.result.isDirectory) {
-      const auto it = params.folder_stats->find(std::string(params.result.fullPath));
-      if (it != params.folder_stats->end()) {
-        folder_file_count = it->second.fileCount;
-        folder_total_size_bytes = it->second.totalSizeBytes;
-      }
-    } else {
-      // For individual files, show 1 (one file) and the file's own size (if loaded).
-      folder_file_count = 1;
-      if (params.result.fileSize != kFileSizeNotLoaded &&
-          params.result.fileSize != kFileSizeFailed) {
-        folder_total_size_bytes = params.result.fileSize;
-      }
+  if (params.result.isDirectory && params.folder_stats != nullptr) {
+    show_folder_stats_cells = true;
+    const auto it = params.folder_stats->find(std::string(params.result.fullPath));
+    if (it != params.folder_stats->end()) {
+      folder_file_count = it->second.fileCount;
+      folder_total_size_bytes = it->second.totalSizeBytes;
     }
   }
 
   ImGui::TableSetColumnIndex(ResultColumn::FolderFileCount);
   ImGui::PushID(ResultColumn::FolderFileCount);
-  if (have_folder_stats) {
+  if (show_folder_stats_cells) {
     ImGui::Text("%zu", folder_file_count);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
-  } else {
-    ImGui::TextUnformatted("-");
   }
   ImGui::PopID();
 
   ImGui::TableSetColumnIndex(ResultColumn::FolderTotalSize);
   ImGui::PushID(ResultColumn::FolderTotalSize);
-  if (have_folder_stats) {
+  if (show_folder_stats_cells) {
     if (folder_total_size_bytes > 0U) {
       const std::string size_label = FormatFileSize(folder_total_size_bytes);
       ImGui::TextUnformatted(size_label.c_str());
     } else {
       ImGui::TextUnformatted("0 B");
     }
-  } else {
-    ImGui::TextUnformatted("-");
   }
   ImGui::PopID();
 
@@ -988,14 +975,26 @@ void RenderResultsTableHeaderArea(IncrementalSearchState& incremental_search,
     RenderMarkedActionsToolbar(state, glfw_window, file_index, shift);
   } else if (results_shortcuts_active) {
     const detail::StyleColorGuard text_color_guard(ImGuiCol_Text, Theme::Colors::Accent);
+#ifdef __APPLE__
     ImGui::TextUnformatted(
-      "Results table active \xE2\x80\x93 arrows/N/P navigate; '/' starts Filter in results; Esc "
-      "clears filters; Cmd+G cancels the filter (see Help).");  // "–" is UTF-8 EN DASH
+      "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
+      "clears filters; Cmd+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched Size columns (see Help).");
+#else
+    ImGui::TextUnformatted(
+      "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
+      "clears filters; Ctrl+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched Size columns (see Help).");
+#endif  // __APPLE__
   } else {
     const detail::StyleColorGuard text_color_guard(ImGuiCol_Text, Theme::Colors::TextDim);
+#ifdef __APPLE__
     ImGui::TextUnformatted(
-      "Click inside the results table to enable shortcuts \xE2\x80\x93 arrows/N/P navigate; "
+      "Click inside the results table to enable shortcuts - arrows/N/P navigate; "
       "'/' starts Filter in results; Esc clears filters; Cmd+G cancels the filter.");
+#else
+    ImGui::TextUnformatted(
+      "Click inside the results table to enable shortcuts - arrows/N/P navigate; "
+      "'/' starts Filter in results; Esc clears filters; Ctrl+G cancels the filter.");
+#endif  // __APPLE__
   }
   ImGui::Spacing();
 }
@@ -1052,7 +1051,7 @@ void ResultsTable::Render(
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |  // NOLINT(hicpp-signed-bitwise) - ImGui flags bitmask
                             ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX |
                             ImGuiTableFlags_Sortable | ImGuiTableFlags_Resizable |
-                            ImGuiTableFlags_Reorderable,
+                            ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable,
                           ImVec2(0.0F, 0.0F))) {
       // Use 0.0F width with WidthFixed to let ImGui autosize to label width ("Mark")
       ImGui::TableSetupColumn("Mark", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort, 0.0F);
@@ -1063,8 +1062,10 @@ void ResultsTable::Render(
       ImGui::TableSetupColumn("Full Path", ImGuiTableColumnFlags_WidthFixed,
                               full_path_column_default_width);
       ImGui::TableSetupColumn("Extension");
-      ImGui::TableSetupColumn("Files in Results", ImGuiTableColumnFlags_PreferSortDescending);
-      ImGui::TableSetupColumn("Size in Results", ImGuiTableColumnFlags_PreferSortDescending);
+      ImGui::TableSetupColumn("Matched Files", ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultHide);
+      ImGui::TableSetupColumn("Matched Size", ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultHide);
+      ImGui::TableSetColumnEnabled(ResultColumn::FolderFileCount, state.showFolderStatsColumns);
+      ImGui::TableSetColumnEnabled(ResultColumn::FolderTotalSize, state.showFolderStatsColumns);
       // Accent-tinted column headers; when streaming, header text uses Warning color for visibility
       const bool streaming =
           !state.resultsComplete && state.showingPartialResults;

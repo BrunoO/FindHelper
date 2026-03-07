@@ -84,13 +84,11 @@ namespace application_logic {
   /**
    * @brief Handle keyboard shortcuts (called from Update)
    *
-   * Processes keyboard shortcuts only when no text input is active:
-   * - Ctrl+F / Cmd+F: Focus filename search input (disabled when Simplified UI is enabled)
-   * - F5: Refresh/re-run current search (disabled while index is building)
-   * - Escape: Clear all filters
-   * - Ctrl+S / Cmd+S: Save current search (open Save Search dialog)
-   * - Ctrl+E / Cmd+E: Export current results to CSV (when results are displayed)
-   * - Ctrl+Shift+H / Cmd+Shift+H: Toggle path hierarchy indentation
+   * Processes keyboard shortcuts only when no text input is active.
+   * Shortcuts are declared in src/gui/ShortcutRegistry.h (kShortcuts).
+   * Adding a shortcut requires one entry in kShortcuts and one case in
+   * DispatchGlobalShortcut (ApplicationLogic.cpp). HelpWindow renders
+   * descriptions automatically from the registry.
    *
    * @param state GUI state (modified by shortcuts)
    * @param search_controller Search controller for triggering manual search

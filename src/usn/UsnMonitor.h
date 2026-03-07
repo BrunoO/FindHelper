@@ -534,6 +534,11 @@ private:
 
   // Metrics collection
   mutable UsnMonitorMetrics metrics_; // Performance and health metrics
+
+  // Internal reader-thread counter used to throttle periodic queue-depth logs.
+  // Stored as a member (not a static local) so it resets correctly on each
+  // Start() call and avoids the SonarQube S3010 static-inside-loop violation.
+  size_t reader_push_count_{0};  // NOLINT(readability-identifier-naming) - snake_case_ per project convention
 };
 
 #else // !_WIN32 (macOS stub)

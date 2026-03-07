@@ -423,7 +423,7 @@ std::string GetFolderSelectionVisibilityReason() {
   if (bool has_admin = IsProcessElevated(); !has_admin) {
     return "Running without administrator rights.\n"
            "Select a folder below to start indexing files.\n"
-           "(For real-time monitoring, restart as administrator)";
+           "(For real-time monitoring, restart as administrator or right-click FindHelper → Run as administrator)";
   }
   return "USN Journal monitoring may be active.\n"
          "Use folder indexing below if you prefer indexing a specific path.";

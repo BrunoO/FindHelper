@@ -138,6 +138,27 @@ After building, run the application:
 - **macOS:** Open `build/FindHelper.app` (or run the executable inside it). On first run, choose a folder to index.
 - **Linux:** Run the `FindHelper` binary from your build directory (e.g. `./build/FindHelper`). On first run, choose a folder to index.
 
+### Command-line arguments
+
+You can pass the following options when starting the app. Run with `--help` (or `-h`) to see the same list in the terminal.
+
+| Option | Description |
+|--------|--------------|
+| `-h`, `--help`, `-?` | Show help message and exit |
+| `-v`, `--version` | Show version information and exit |
+| `--show-metrics` | Show Metrics button and window (for power users / debugging) |
+| `--thread-pool-size=<n>` | Override thread pool size (0=auto, 1–64) |
+| `--load-balancing=<strategy>` | Override load balancing strategy (`static`, `hybrid`, `dynamic`, `interleaved`; `work_stealing` when built with Boost) |
+| `--window-width=<n>` | Override initial window width (640–4096) |
+| `--window-height=<n>` | Override initial window height (480–2160) |
+| `--dump-index-to=<file>` | Save all indexed paths to file (one per line) |
+| `--index-from-file=<file>` | Populate index from a text file (one path per line) |
+| `--crawl-folder=<path>` | Folder to crawl and index (alternative to USN Journal on Windows; required on macOS/Linux if no index file) |
+| `--win-volume=<volume>` | Override volume to monitor (e.g. `D:`). **Windows only**; default is `C:` |
+| `--run-imgui-tests-and-exit` | Run all ImGui Test Engine tests and exit. Requires a build with `ENABLE_IMGUI_TEST_ENGINE=ON` |
+
+For **Profile-Guided Optimization (PGO)** on Windows, see [Profile-Guided Optimization (Windows Only)](#profile-guided-optimization-windows-only) for `--pgo-profile` and `--pgo-duration=<ms>`.
+
 ---
 
 ## Running Unit Tests
