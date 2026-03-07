@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # publish.sh — Publish current main to the public GitHub repo (findhelper remote).
 #
-# Usage: scripts/publish.sh
+# Usage:
+#   scripts/publish.sh              # push snapshot; CI creates/updates "latest" pre-release
+#   scripts/publish.sh v1.2.0       # push snapshot + tag; CI creates versioned release v1.2.0
 #
 # Workflow:
 #   1. Checks that main is clean and committed.
@@ -9,7 +11,8 @@
 #   3. Overlays the full tree from main.
 #   4. Removes internal-only content.
 #   5. Commits a snapshot and force-pushes to findhelper/main.
-#   6. Returns to main.
+#   6. If a version tag was given, pushes it to findhelper too (triggers versioned release).
+#   7. Returns to main.
 #
 # One-time setup (already done):
 #   git remote add findhelper https://github.com/BrunoO/FindHelper.git
@@ -19,6 +22,7 @@ set -euo pipefail
 REMOTE="findhelper"
 PUBLIC_BRANCH="findhelper-public"
 SOURCE_BRANCH="main"
+VERSION_TAG="${1:-}"
 
 # ── 1. Sanity check ────────────────────────────────────────────────────────────
 current_branch=$(git symbolic-ref --short HEAD)
@@ -32,10 +36,16 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
+if [[ -n "$VERSION_TAG" && ! "$VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "ERROR: Version tag must match vX.Y.Z (got: $VERSION_TAG)." >&2
+  exit 1
+fi
+
 SOURCE_SHA=$(git rev-parse --short HEAD)
 SOURCE_MSG=$(git log -1 --pretty=format:"%s")
 
 echo "Publishing main ($SOURCE_SHA: $SOURCE_MSG) → $REMOTE/main ..."
+[[ -n "$VERSION_TAG" ]] && echo "  + versioned release: $VERSION_TAG"
 
 # ── 2. Switch to orphan publish branch ────────────────────────────────────────
 git checkout "$PUBLIC_BRANCH"
@@ -79,7 +89,15 @@ fi
 
 git push "$REMOTE" "$PUBLIC_BRANCH:main" --force
 
-# ── 6. Return to main ──────────────────────────────────────────────────────────
+# ── 6. Push version tag (triggers versioned release in CI) ────────────────────
+if [[ -n "$VERSION_TAG" ]]; then
+  # Tag the current commit on the orphan branch and push it
+  git tag "$VERSION_TAG"
+  git push "$REMOTE" "$VERSION_TAG"
+  echo "Pushed tag $VERSION_TAG → CI will create release $VERSION_TAG"
+fi
+
+# ── 7. Return to main ──────────────────────────────────────────────────────────
 git checkout "$SOURCE_BRANCH"
 
-echo "Done. Published to https://github.com/BrunoO/FindHelper"
+echo "Done. https://github.com/BrunoO/FindHelper"
