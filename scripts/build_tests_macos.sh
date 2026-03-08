@@ -163,6 +163,7 @@ TEST_TARGETS=(
     "path_pattern_integration_tests"
     "simple_regex_tests"
     "search_pattern_utils_tests"
+    "regex_generator_utils_tests"
     "string_utils_tests"
     "file_system_utils_tests"
     "lazy_attribute_loader_tests"

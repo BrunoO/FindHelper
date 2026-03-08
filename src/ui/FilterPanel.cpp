@@ -253,8 +253,8 @@ static void RenderSettingsButton(bool show_settings_val, std::atomic<bool>& show
 // Stable ID ##toolbar_help for tests; avoids relying on visible label (icons/localization). See ImGuiTestEngineTests help_window_open.
 static void RenderHelpButton(GuiState& state) {
   const char* help_label =
-    state.showHelpWindow ? ICON_FA_CIRCLE_QUESTION " Hide Help##toolbar_help"
-                         : ICON_FA_CIRCLE_QUESTION " Help##toolbar_help";
+    state.showHelpWindow ? ICON_FA_BOOK_OPEN " Hide Help##toolbar_help"
+                         : ICON_FA_BOOK_OPEN " Help##toolbar_help";
   ImGui::SameLine();
   ImGui::SetNextItemAllowOverlap();
   if (ImGui::SmallButton(help_label)) {
@@ -305,8 +305,8 @@ void FilterPanel::RenderApplicationControls(GuiState& state, std::atomic<bool>& 
     show_settings_val ? ICON_FA_GEAR " Hide Settings" : ICON_FA_GEAR " Settings";
   const char* mode_label = GetUIModeButtonLabel(settings.uiMode);
   const float help_width =
-    ComputeButtonWidth(state.showHelpWindow ? ICON_FA_CIRCLE_QUESTION " Hide Help"
-                                            : ICON_FA_CIRCLE_QUESTION " Help");
+    ComputeButtonWidth(state.showHelpWindow ? ICON_FA_BOOK_OPEN " Hide Help"
+                                            : ICON_FA_BOOK_OPEN " Help");
   const bool show_metrics_val = metrics_available ? show_metrics.load() : false;
   const ImGuiStyle& style = ImGui::GetStyle();
 

@@ -7,7 +7,7 @@
 
 #include "imgui.h"
 
-#include "ui/IconsFontAwesome.h"
+#include "ui/CenteredToolWindow.h"
 #include "ui/Theme.h"
 #include "ui/UiStyleGuards.h"
 
@@ -23,15 +23,10 @@ void SearchHelpWindow::Render(bool *p_open) {
 
   const char *window_title = "Search Syntax Guide";
 
-  // Set window position and size - use FirstUseEver so position is only set once, allowing user to move it
-  const ImGuiViewport *main_viewport = ImGui::GetMainViewport();
-  const auto center = ImVec2(main_viewport->WorkPos.x + (main_viewport->WorkSize.x * 0.5F),
-                             main_viewport->WorkPos.y + (main_viewport->WorkSize.y * 0.5F));
-  ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5F, 0.5F));
-  constexpr float default_window_width = 600.0F;
-  constexpr float default_window_height = 700.0F;
-  ImGui::SetNextWindowSize(ImVec2(default_window_width, default_window_height), ImGuiCond_FirstUseEver);
-  
+  constexpr float kDefaultWidth = 600.0F;
+  constexpr float kDefaultHeight = 700.0F;
+  detail::SetupCenteredToolWindow(kDefaultWidth, kDefaultHeight);
+
   const detail::WindowGuard window_guard(window_title, p_open, ImGuiWindowFlags_None);
   if (window_guard.ShowContent()) {
     ImGui::TextColored(Theme::Colors::Success, "1. Item name (main search bar)"); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
@@ -104,6 +99,8 @@ void SearchHelpWindow::Render(bool *p_open) {
     ImGui::Bullet();
     ImGui::TextWrapped("Example: '^main' (without prefix) is a PathPattern;\n" // NOLINT(cppcoreguidelines-pro-type-vararg, hicpp-vararg)
                       "use 'rs:^main\\.(cpp|h)$' for alternation on extensions.");
+    ImGui::Bullet();
+    ImGui::TextWrapped("Use the [R] Regex Generator button next to Path or Item name to build rs: patterns from templates."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
 
     ImGui::Spacing();
     ImGui::TextColored(Theme::Colors::Success, "7. PathPattern Shorthands and Character Classes"); // NOLINT(cppcoreguidelines-pro-type-vararg, hicpp-vararg)
@@ -142,11 +139,7 @@ void SearchHelpWindow::Render(bool *p_open) {
     ImGui::TextWrapped("Mark-mode shortcuts (when table is focused): n/p (nav), m (mark), u (unmark), t (toggle), Shift+M (mark all), Shift+T (invert marks), Shift+U (clear), W (copy paths), Shift+W (copy names), Shift+D (delete)."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
 
     ImGui::Spacing();
-    ImGui::Separator();
-    if (const float close_button_width = 120.0F;
-        ImGui::Button(ICON_FA_XMARK " Close", ImVec2(close_button_width, 0))) {
-      *p_open = false;
-    }
+    detail::RenderToolWindowCloseButton(p_open);
   }
 }
 

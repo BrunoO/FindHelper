@@ -25,7 +25,7 @@
 #include "imgui.h"
 #include "imgui_te_context.h"  // ImGuiTestContext (SetRef, Yield), IM_CHECK, IM_CHECK_EQ, IM_ERRORF
 #include "imgui_te_engine.h"
-#include "ui/IconsFontAwesome.h"  // ICON_FA_CIRCLE_QUESTION - ref must match FilterPanel button label for ItemClick
+#include "ui/IconsFontAwesome.h"  // ICON_FA_BOOK_OPEN - ref must match FilterPanel/SearchInputs button labels for ItemClick
 #include "ui/ImGuiTestEngineRegressionExpected.h"
 #include "ui/ImGuiTestEngineRegressionHook.h"
 #include "utils/Logger.h"
@@ -432,7 +432,7 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   static const char* kSearchSyntaxGuideTitle = "Search Syntax Guide";  // SearchHelpWindow.cpp  // NOLINT(readability-identifier-naming)
   static const char* kMetricsWindowTitle = METRICS_WINDOW_TITLE_STR;  // MetricsWindow.cpp (only when app run with --show-metrics)  // NOLINT(readability-identifier-naming)
 
-  static const char* kHelpButtonRef = ICON_FA_CIRCLE_QUESTION " Help##toolbar_help";  // Full label so ItemClick finds widget  // NOLINT(readability-identifier-naming)
+  static const char* kHelpButtonRef = ICON_FA_BOOK_OPEN " Help##toolbar_help";  // Full label so ItemClick finds widget  // NOLINT(readability-identifier-naming)
   static const char* kHelpButtonPreconditionMsg =  // NOLINT(readability-identifier-naming)
     "Precondition failed: Help button not found. Ensure main window is visible.";
   static const char* kHelpWindowOpenErrorMsg =  // NOLINT(readability-identifier-naming)
@@ -466,7 +466,7 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   };
 
   // Search Syntax Guide: open via search-area button (SearchInputs ##SearchHelpToggle).
-  static const char* kSearchHelpButtonRef = "**/" ICON_FA_CIRCLE_QUESTION "##SearchHelpToggle";  // NOLINT(readability-identifier-naming)
+  static const char* kSearchHelpButtonRef = "**/" ICON_FA_BOOK_OPEN "##SearchHelpToggle";  // NOLINT(readability-identifier-naming)
   static const char* kSearchHelpButtonPreconditionMsg =  // NOLINT(readability-identifier-naming)
     "Precondition failed: Search Syntax button not found. Ensure main window is visible.";
   static const char* kSearchHelpWindowOpenErrorMsg =  // NOLINT(readability-identifier-naming)

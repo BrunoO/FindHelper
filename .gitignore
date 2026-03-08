@@ -131,6 +131,7 @@ sonar-tmp/
 sonar-report.json
 sonar-report.xml
 sonar.log
+sonarqube_measures.json
 build-wrapper-dump.json
 build-wrapper-out.json
 *.scannerwork

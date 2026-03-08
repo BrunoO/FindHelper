@@ -117,6 +117,7 @@ endif()
 set(SHARED_UTIL_SOURCES
     src/utils/ClipboardUtils.cpp
     src/utils/ExceptionHandling.cpp
+    src/utils/RegexGeneratorUtils.cpp
     src/utils/SystemIdleDetector.cpp
 )
 # Subset for test targets that need ExceptionHandling but not ClipboardUtils/SystemIdleDetector
@@ -218,6 +219,7 @@ set(COMMON_APP_SOURCES
     src/ui/SearchInputsGeminiHelpers.cpp
     src/ui/HelpWindow.cpp
     src/ui/SearchHelpWindow.cpp
+    src/ui/CenteredToolWindow.cpp
     src/ui/SettingsWindow.cpp
     src/ui/UIRenderer.cpp
     src/ui/Theme.cpp
@@ -1261,6 +1263,15 @@ if(BUILD_TESTS)
         configure_test_target(search_pattern_utils_tests)
         add_test(NAME SearchPatternUtilsTests COMMAND search_pattern_utils_tests)
         message(STATUS "  Test executable: search_pattern_utils_tests")
+
+        # RegexGeneratorUtils tests
+        add_executable(regex_generator_utils_tests
+            tests/RegexGeneratorUtilsTests.cpp
+            src/utils/RegexGeneratorUtils.cpp
+        )
+        configure_test_target(regex_generator_utils_tests)
+        add_test(NAME RegexGeneratorUtilsTests COMMAND regex_generator_utils_tests)
+        message(STATUS "  Test executable: regex_generator_utils_tests")
 
         # StringUtils tests
         add_executable(string_utils_tests
