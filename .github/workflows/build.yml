@@ -14,6 +14,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: read
     if: github.event_name == 'workflow_dispatch' || github.event.repository.private != true
     strategy:
       fail-fast: false
@@ -129,7 +131,12 @@ jobs:
 
       - name: Package (macOS)
         if: matrix.os == 'macos-latest'
-        run: zip -r ${{ matrix.package_name }} ${{ matrix.artifact_path }}
+        run: |
+          # Remove quarantine/extended attributes so the .app inside the zip is clean.
+          # Users may still see "damaged" when opening (Gatekeeper on the downloaded zip);
+          # they can run: xattr -cr FindHelper.app — see README.
+          xattr -cr ${{ matrix.artifact_path }}
+          zip -r ${{ matrix.package_name }} ${{ matrix.artifact_path }}
 
       - name: Package (Linux)
         if: matrix.os == 'ubuntu-20.04'

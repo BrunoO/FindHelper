@@ -452,6 +452,18 @@ See [docs/DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md) for the full cont
 
 ## Troubleshooting
 
+### macOS: “FindHelper.app is damaged and can’t be opened”
+
+If you **downloaded** the app from a GitHub release (zip) and macOS says the app is damaged, it’s almost always **Gatekeeper** blocking an unsigned app that came from the internet (quarantine attribute), not real file damage.
+
+**Fix:** In Terminal, remove the quarantine attribute from the app (use your actual path if different):
+
+```bash
+xattr -cr FindHelper.app
+```
+
+Then open the app as usual. Only do this for apps you trust (e.g. official GitHub releases from this repo).
+
 ### Submodules Missing
 
 If build fails with missing files in `external/`:
