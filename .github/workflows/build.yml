@@ -1,8 +1,9 @@
 # Build FindHelper on Windows, macOS, Linux.
 # Triggers:
 #   - workflow_dispatch: manual run (build + test only, no release)
-#   - push to main: build + test + publish rolling "latest" pre-release
-#   - push of vX.Y.Z tag: build + test + publish versioned release
+#   - push to main: build + test + publish rolling "latest" pre-release (public repo only)
+#   - push of vX.Y.Z tag: build + test + publish versioned release (public repo only)
+# Private repo: only workflow_dispatch runs (no automatic runs on push).
 name: Build
 
 on:
@@ -13,6 +14,7 @@ on:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.private != true
     strategy:
       fail-fast: false
       matrix:
@@ -29,7 +31,8 @@ jobs:
             artifact_path: build/FindHelper.app
             package_name: FindHelper-macOS.zip
             build_with_boost: true
-          - os: ubuntu-24.04
+          - os: ubuntu-20.04
+            # 20.04 → glibc 2.31; keeps Linux artifact runnable on older distros (24.04 would require glibc 2.39)
             config: Release
             artifact_name: FindHelper-Linux-x64
             artifact_path: build/FindHelper
@@ -64,7 +67,7 @@ jobs:
           .\vcpkg\vcpkg install boost-headers boost-unordered boost-regex boost-lockfree
 
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.os == 'ubuntu-20.04'
         run: |
           PACKAGES="build-essential cmake pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev libcurl4-openssl-dev libfontconfig1-dev libx11-dev libxss-dev wayland-protocols libwayland-dev libxkbcommon-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libwayland-bin"
           if [ "${{ env.BUILD_WITH_BOOST }}" = "true" ]; then PACKAGES="$PACKAGES libboost-dev"; fi
@@ -90,7 +93,7 @@ jobs:
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA
 
       - name: Configure (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.os == 'ubuntu-20.04'
         run: |
           EXTRA=""; [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON"
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA
@@ -104,7 +107,7 @@ jobs:
         run: cmake --build build --config ${{ matrix.config }}
 
       - name: Build (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.os == 'ubuntu-20.04'
         run: cmake --build build
 
       - name: Run tests (Windows)
@@ -116,7 +119,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Run tests (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.os == 'ubuntu-20.04'
         run: ctest --test-dir build --output-on-failure
 
       - name: Package (Windows)
@@ -129,7 +132,7 @@ jobs:
         run: zip -r ${{ matrix.package_name }} ${{ matrix.artifact_path }}
 
       - name: Package (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.os == 'ubuntu-20.04'
         run: tar -czf ${{ matrix.package_name }} -C build FindHelper
 
       - name: Upload artifact

@@ -420,8 +420,8 @@ bool SearchInputs::RenderInputFieldWithEnter(const char *label, const char *id,
     // ImGui automatically brightens text on hover for better contrast
     // ID is scoped by PushID above, so each button has unique ID
     // Show "Hide Search Help" when window is open, icon only when closed (like Settings/Metrics)
-    if (ImGui::SmallButton(state.showSearchHelpWindow ? ICON_FA_CIRCLE_QUESTION " Hide Search Help##SearchHelpToggle"
-                                                      : ICON_FA_CIRCLE_QUESTION "##SearchHelpToggle")) {
+    if (ImGui::SmallButton(state.showSearchHelpWindow ? ICON_FA_BOOK_OPEN " Hide Search Help##SearchHelpToggle"
+                                                      : ICON_FA_BOOK_OPEN "##SearchHelpToggle")) {
       // Toggle search help window
       state.showSearchHelpWindow = !state.showSearchHelpWindow;
     }

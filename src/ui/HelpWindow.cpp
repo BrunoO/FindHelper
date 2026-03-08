@@ -9,7 +9,7 @@
 
 #include "core/Version.h"
 #include "gui/ShortcutRegistry.h"
-#include "ui/IconsFontAwesome.h"
+#include "ui/CenteredToolWindow.h"
 #include "ui/Theme.h"
 #include "ui/UiStyleGuards.h"
 
@@ -34,14 +34,9 @@ void HelpWindow::Render(bool* p_open) {
 
   const char* window_title = HELP_WINDOW_TITLE_STR;
 
-  const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
-  constexpr float kPivot = 0.5F;
-  const ImVec2 center(main_viewport->WorkPos.x + (main_viewport->WorkSize.x * kPivot),
-                      main_viewport->WorkPos.y + (main_viewport->WorkSize.y * kPivot));
-  ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(kPivot, kPivot));
   constexpr float kDefaultWidth = 450.0F;
   constexpr float kDefaultHeight = 500.0F;
-  ImGui::SetNextWindowSize(ImVec2(kDefaultWidth, kDefaultHeight), ImGuiCond_FirstUseEver);
+  detail::SetupCenteredToolWindow(kDefaultWidth, kDefaultHeight);
 
   // Do not use SetNextWindowClass/NoAutoMerge: keep Help in the main viewport (like Settings).
   // That avoids the font scaling issue when resizing, which only affected Help when it had its own OS window.
@@ -208,11 +203,7 @@ void HelpWindow::Render(bool* p_open) {
     ImGui::BulletText("Shift+D - Bulk delete marked files (opens confirmation)");
 
     ImGui::Spacing();
-    ImGui::Separator();
-    if (const float kCloseButtonWidth = 120.0F;
-        ImGui::Button(ICON_FA_XMARK " Close", ImVec2(kCloseButtonWidth, 0))) {
-      *p_open = false;
-    }
+    detail::RenderToolWindowCloseButton(p_open);
   }
 }
 

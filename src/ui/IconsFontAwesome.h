@@ -36,6 +36,7 @@
 #define ICON_FA_CHART_BAR "\xef\x82\x80"        // U+F080 // NOSONAR(cpp:S5028) // NOLINT(cppcoreguidelines-macro-usage)
 #define ICON_FA_CHART_LINE "\xef\x88\x81"      // U+F201 // NOSONAR(cpp:S5028) // NOLINT(cppcoreguidelines-macro-usage)
 #define ICON_FA_BOOKMARK "\xef\x86\xae"         // U+F02E // NOSONAR(cpp:S5028) // NOLINT(cppcoreguidelines-macro-usage)
+#define ICON_FA_BOOK_OPEN "\xef\x94\x98"        // U+F518 (FA6) // NOSONAR(cpp:S5028) // NOLINT(cppcoreguidelines-macro-usage)
 #define ICON_FA_SEARCH "\xef\x80\x82"           // U+F002 // NOSONAR(cpp:S5028) // NOLINT(cppcoreguidelines-macro-usage)
 #define ICON_FA_MAGNIFYING_GLASS "\xef\x80\x82" // U+F002 (FA6 alias) // NOSONAR(cpp:S5028) // NOLINT(cppcoreguidelines-macro-usage)
 #define ICON_FA_SEARCH_PLUS "\xef\x80\x8e"      // U+F00E // NOSONAR(cpp:S5028) // NOLINT(cppcoreguidelines-macro-usage)

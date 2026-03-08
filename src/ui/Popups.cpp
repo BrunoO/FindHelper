@@ -21,6 +21,7 @@
 #include "ui/IconsFontAwesome.h"
 #include "ui/Theme.h"
 #include "utils/RegexAliases.h"
+#include "utils/RegexGeneratorUtils.h"
 #include "utils/StdRegexUtils.h"
 #include "utils/StringUtils.h"
 
@@ -175,16 +176,7 @@ bool RenderSaveCancelButtons(const char* save_button_label, char* name_buffer,
  * that users can customize with parameters.
  */
 // NOLINTNEXTLINE(performance-enum-size) - Enum size optimization not needed for this small enum (8 values)
-enum class RegexTemplateType {
-  StartsWith,
-  EndsWith,
-  Contains,
-  DoesNotContain,
-  FileExtension,
-  NumericPattern,
-  DatePattern,
-  Custom
-};
+using RegexTemplateType = regex_generator_utils::RegexTemplateType;
 
 /**
  * @brief State structure for regex generator popup
@@ -380,94 +372,6 @@ void RenderActionButtons(
 
 }  // anonymous namespace
 
-/**
- * @brief Escapes special regex characters in a string
- *
- * Prepends backslash to special regex characters to make them literal.
- * Used when generating regex patterns from user input to prevent regex
- * syntax from being interpreted as pattern operators.
- *
- * @param text Input text to escape
- * @return Text with special characters escaped
- */
-static std::string EscapeRegexSpecialChars(std::string_view text) {
-  std::string result;
-  result.reserve(text.size() * 2);
-  for (const char c : text) {
-    if (c == '.' || c == '\\' || c == '+' || c == '*' || c == '?' || c == '^' || c == '$' ||
-        c == '[' || c == ']' || c == '{' || c == '}' || c == '(' || c == ')' || c == '|') {
-      result += '\\';
-    }
-    result += c;
-  }
-  return result;
-}
-
-/**
- * @brief Generates a regex pattern from a template type and parameters
- *
- * Converts a template type (e.g., StartsWith, EndsWith) and user parameters
- * into a valid regex pattern string. Handles escaping and pattern construction.
- *
- * @param template_type Type of regex template to generate
- * @param param1 First parameter (text to match, pattern, etc.)
- * @param param2 Second parameter (unused for most templates)
- * @return Generated regex pattern string, or empty string on error
- */
-static std::string GenerateRegexPattern(RegexTemplateType template_type, std::string_view param1,
-                                        [[maybe_unused]] std::string_view param2) {
-  switch (template_type) {
-    // NOLINTNEXTLINE(bugprone-branch-clone) - Cases have similar structure but different pattern generation logic (intentional design)
-    case RegexTemplateType::StartsWith: {
-      if (param1.empty()) {
-        return "";
-      }
-      return std::string("^") + EscapeRegexSpecialChars(param1) + ".*";
-    }
-
-    case RegexTemplateType::EndsWith: {
-      if (param1.empty()) {
-        return "";
-      }
-      return std::string(".*") + EscapeRegexSpecialChars(param1) + "$";
-    }
-
-    case RegexTemplateType::Contains: {
-      if (param1.empty()) {
-        return "";
-      }
-      return std::string(".*") + EscapeRegexSpecialChars(param1) + ".*";
-    }
-
-    case RegexTemplateType::DoesNotContain: {
-      if (param1.empty()) {
-        return "";
-      }
-      return std::string("^(?!.*") + EscapeRegexSpecialChars(param1) + ").*$";
-    }
-
-    case RegexTemplateType::FileExtension: {
-      if (param1.empty()) {
-        return "";
-      }
-      return std::string(".*\\.(") + std::string(param1) + ")$";
-    }
-
-    case RegexTemplateType::NumericPattern:
-      return ".*\\d+.*";
-
-    case RegexTemplateType::DatePattern:
-      // NOLINTNEXTLINE(modernize-raw-string-literal) - Escaped string literal is clearer than raw string for regex pattern
-      return ".*\\d{4}[-_]\\d{2}[-_]\\d{2}.*";
-
-    case RegexTemplateType::Custom:
-      return std::string(param1);
-
-    default:
-      return "";
-  }
-}
-
 // ============================================================================
 // Public Rendering Methods
 // ============================================================================
@@ -546,9 +450,9 @@ void Popups::RenderRegexGeneratorPopupContent(char* target_buffer, size_t buffer
   // Generate pattern button
   // NOLINTNEXTLINE(readability-magic-numbers) - Button width in pixels is self-explanatory
   if (ImGui::Button("Generate Pattern", ImVec2(180, 0))) {
-    const std::string pattern =
-      GenerateRegexPattern(state.selected_template, std::string_view(state.param1.data()),
-                           std::string_view(state.param2.data()));
+    const std::string pattern = regex_generator_utils::GenerateRegexPattern(
+      state.selected_template, std::string_view(state.param1.data()),
+      std::string_view(state.param2.data()));
     ValidateAndSetPattern(state, pattern);
   }
   ImGui::Spacing();
