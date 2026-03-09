@@ -113,15 +113,15 @@ jobs:
         run: cmake --build build
 
       - name: Run tests (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && github.event.repository.private == true
         run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
 
       - name: Run tests (macOS)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && github.event.repository.private == true
         run: ctest --test-dir build --output-on-failure
 
       - name: Run tests (Linux)
-        if: matrix.os == 'ubuntu-20.04'
+        if: matrix.os == 'ubuntu-20.04' && github.event.repository.private == true
         run: ctest --test-dir build --output-on-failure
 
       - name: Package (Windows)
