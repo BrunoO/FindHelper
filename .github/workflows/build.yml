@@ -53,26 +53,41 @@ jobs:
           submodules: recursive
 
       - name: Cache vcpkg (Windows, Boost)
-        id: vcpkg-cache
+        id: vcpkg-cache-win
         uses: actions/cache@v4
         with:
           path: vcpkg
           key: vcpkg-win-boost-minimal-2
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true'
 
+      - name: Cache vcpkg (Linux, Boost)
+        id: vcpkg-cache-linux
+        uses: actions/cache@v4
+        with:
+          path: vcpkg
+          key: vcpkg-linux-boost-minimal-2
+        if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true'
+
       - name: Install vcpkg and Boost (Windows, minimal)
-        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true' && steps.vcpkg-cache-win.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/Microsoft/vcpkg.git vcpkg
           .\vcpkg\bootstrap-vcpkg.bat
           # Subset we use: headers (base) + unordered + regex + lockfree (only regex is built)
           .\vcpkg\vcpkg install boost-headers boost-unordered boost-regex boost-lockfree
 
+      - name: Install vcpkg and Boost (Linux, minimal)
+        if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true' && steps.vcpkg-cache-linux.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git vcpkg
+          ./vcpkg/bootstrap-vcpkg.sh
+          # Subset we use: headers (base) + unordered + regex + lockfree (only regex is built)
+          ./vcpkg/vcpkg install boost-headers boost-unordered boost-regex boost-lockfree
+
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-22.04'
         run: |
           PACKAGES="build-essential cmake pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev libcurl4-openssl-dev libfontconfig1-dev libx11-dev libxss-dev wayland-protocols libwayland-dev libxkbcommon-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libwayland-bin"
-          if [ "${{ env.BUILD_WITH_BOOST }}" = "true" ]; then PACKAGES="$PACKAGES libboost-dev"; fi
           sudo apt-get update
           sudo apt-get install -y $PACKAGES
 
@@ -97,7 +112,7 @@ jobs:
       - name: Configure (Linux)
         if: matrix.os == 'ubuntu-22.04'
         run: |
-          EXTRA=""; [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON"
+          EXTRA=""; [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA
 
       - name: Build (Windows)
