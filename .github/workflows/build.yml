@@ -33,7 +33,7 @@ jobs:
             artifact_path: build/FindHelper.app
             package_name: FindHelper-macOS.zip
             build_with_boost: true
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             # 20.04 → glibc 2.31; keeps Linux artifact runnable on older distros (24.04 would require glibc 2.39)
             config: Release
             artifact_name: FindHelper-Linux-x64
