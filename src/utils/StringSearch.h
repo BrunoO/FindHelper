@@ -252,7 +252,8 @@ inline bool FuzzyMatchInternal(std::string_view text, std::string_view pattern) 
     return false;
   }
 
-  const auto* it_text = text.begin();
+  // Use auto (not const auto*) so MSVC deduces iterator type; .begin() returns an iterator, not a pointer.
+  auto it_text = text.begin();  // NOLINT(llvm-qualified-auto,readability-qualified-auto) - MSVC C3535 if const auto* used with iterator
   for (const char p : pattern) {
     it_text = std::find_if(it_text, text.end(), [p](char t) {
       return ComparePolicy::Equal(t, p);
