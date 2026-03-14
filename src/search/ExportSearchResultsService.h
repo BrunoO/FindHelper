@@ -28,7 +28,6 @@ namespace search {
                             const FileIndex& file_index,
                             std::string_view output_path);
 
-  private:
     /**
      * @brief Escape a string for CSV format
      *

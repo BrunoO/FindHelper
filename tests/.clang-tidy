@@ -4,23 +4,48 @@
 InheritParentConfig: true
 
 Checks: >-
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-throwing-static-initialization,
   -cert-err33-c,
-  -readability-function-cognitive-complexity,
-  -readability-magic-numbers,
+  -cert-err58-cpp,
   -cppcoreguidelines-avoid-magic-numbers,
-  -readability-identifier-naming
+  -hicpp-signed-bitwise,
+  -modernize-raw-string-literal,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-naming,
+  -readability-magic-numbers
 
 # Rationale for each disabled check:
+#
+# bugprone-implicit-widening-of-multiplication-result:
+#   Test helpers pass integer literals like 24 * 60 * 60 to int64_t parameters.
+#   The products fit in int; widening on assignment is safe and conventional.
+#
+# bugprone-throwing-static-initialization / cert-err58-cpp:
+#   TEST_SUITE-level helper variables (e.g. TextWidthCalculator) are shared
+#   across TEST_CASEs and must be constructed at scope entry. The constructor
+#   of std::function may throw in theory; in practice these are safe lambdas
+#   and the pattern is idiomatic for doctest test fixtures.
 #
 # cert-err33-c:
 #   doctest CHECK()/REQUIRE() macros expand to expressions whose return value
 #   is intentionally discarded by the framework. Every assertion in every test
 #   triggers this false-positive. Suppressing per-line is impractical.
 #
+# modernize-raw-string-literal:
+#   Test cases intentionally use escaped string literals like "C:\\Users\\..."
+#   to make the Windows-style paths easy to read and compare against expected
+#   values. Raw string literals would not improve clarity here.
+#
 # readability-function-cognitive-complexity:
 #   doctest TEST_CASE / TEST_SUITE macros generate anonymous functions that
 #   aggregate many small assertions. The "complexity" is artificial scaffolding,
 #   not actual code complexity.
+#
+# hicpp-signed-bitwise:
+#   FILETIME epoch-conversion helpers perform bitwise AND/shift on int64_t
+#   values (Windows 100-ns timestamp arithmetic). The operations are safe
+#   and idiomatic; the signed type is dictated by the Windows API structs.
 #
 # readability-magic-numbers / cppcoreguidelines-avoid-magic-numbers:
 #   Test assertions use concrete expected values (lengths, counts, IDs) that

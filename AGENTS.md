@@ -2048,6 +2048,66 @@ Then document *why* in a separate comment block:
 
 ---
 
+## Handling `cppcoreguidelines-pro-bounds-avoid-unchecked-container-access`
+
+This check flags every `container[i]` (`operator[]`) as potentially unsafe because it performs no bounds checking and causes undefined behaviour on out-of-range access. The check is intentionally kept **enabled** in this project to surface real issues; it is **not** disabled globally. Each occurrence must be resolved by one of the following approaches, chosen by context:
+
+### 1. Range-for (preferred refactor)
+
+Use when the loop only needs the value and carries no index arithmetic. Eliminates the warning cleanly and often produces clearer code. This is the default first choice for non-DFA loop bodies.
+
+```cpp
+// ❌ flagged
+for (size_t i = 0; i < vec.size(); ++i) {
+    process(vec[i]);
+}
+
+// ✅ range-for — no warning, no overhead
+for (const auto& item : vec) {
+    process(item);
+}
+```
+
+### 2. `.at()` (external data boundaries only)
+
+Use **only** where the access reads external or user-supplied data whose structure cannot be verified at compile time and where throwing `std::out_of_range` is an appropriate error response. The canonical case is JSON parsing (`GeminiApiUtils.cpp`). Do **not** use `.at()` in hot search paths — the extra branch and exception mechanism have measurable overhead on millions of iterations.
+
+```cpp
+// ✅ appropriate — external JSON data, catching bad API responses
+const auto& candidates = response.at("candidates");
+const auto& content = candidates.at(0).at("content");
+```
+
+### 3. `NOLINT` with justification (performance-critical / proven safe)
+
+Use when:
+- The access is inside a hot path (search workers, DFA, SIMD, string search) where the branch overhead of `.at()` is unacceptable.
+- The bounds are provably established by surrounding logic (loop condition, prior size check, construction invariant) but cannot be expressed as a range-for because the index is used in arithmetic or multi-array access.
+
+The `NOLINT` comment **must** state why the access is safe:
+
+```cpp
+// ✅ NOLINT with invariant documented
+const uint16_t next = dfa_table_[state][ch];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state < states_.size() enforced by DFA construction; ch is uint8_t (0-255)
+
+// ✅ block-level NOLINT for a function where all accesses share the same invariant
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+// All accesses below are guarded by: i < pattern_.size(), established by the loop condition.
+... indexed DFA traversal ...
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+```
+
+### Decision summary
+
+| Context | Fix |
+|---|---|
+| Simple value loop, no index needed | Range-for |
+| External / user-supplied data at I/O boundary | `.at()` |
+| Hot path (search, DFA, SIMD, regex) with proven bounds | `NOLINT` + justification comment |
+| Multi-array indexed access (e.g. `a[i]` and `b[i]`) | `NOLINT` + justification comment |
+
+---
+
 ## SonarQube Code Quality Rules
 
 This section provides specific rules to prevent common SonarQube violations that degrade code quality. These rules are based on actual issues found in the codebase and should be strictly followed. For a current snapshot of open issues and rule distribution, run `scripts/fetch_sonar_results.sh --open-only`.

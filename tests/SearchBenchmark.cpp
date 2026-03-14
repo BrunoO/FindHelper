@@ -191,7 +191,7 @@ const char* RequireNextArg(int argc, char** argv, int& i, const char* err_msg) {
     std::cerr << err_msg << "\n";
     return nullptr;
   }
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Standard C main argv access
+
   return argv[++i];
 }
 
@@ -272,7 +272,7 @@ int DispatchOption(std::string_view arg, int argc, char** argv, int& i, ParsedAr
 // Returns 0 if --help (caller should exit 0), 1 on parse error, 2 on success.
 int ParseArgs(int argc, char** argv, ParsedArgs& out) {
   for (int i = 1; i < argc; ++i) {  // NOSONAR(cpp:S924) - Standard argv iteration; single loop
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Standard C main argv iteration
+
     const std::string_view arg(argv[i]);
     const int r = DispatchOption(arg, argc, argv, i, out);
     if (r == -2) {
@@ -341,21 +341,21 @@ int main(int argc, char** argv) {
   using search_benchmark_detail::PrintUsage;
 
   ParsedArgs parsed;
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Standard C main argv
+
   const int parse_result = ParseArgs(argc, argv, parsed);
   if (parse_result == 0) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Standard C main argv[0]
+
     PrintUsage(argv[0]);
     return 0;
   }
   if (parse_result == 1) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Standard C main argv[0]
+
     PrintUsage(argv[0]);
     return 1;
   }
   if (parsed.index_path.empty() || parsed.config_arg.empty()) {
     std::cerr << "Error: --index and --config are required\n";
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Standard C main argv[0]
+
     PrintUsage(argv[0]);
     return 1;
   }

@@ -1,6 +1,7 @@
 #include "index/InitialIndexPopulator.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
@@ -30,7 +31,6 @@ class MftMetadataReader;
 // Constants for MFT enumeration
 namespace {
 constexpr int kBufferSize = 256 * 1024; // 256KB buffer: reduces FSCTL_ENUM_USN_DATA kernel transitions by ~4x
-constexpr int kProgressUpdateInterval = 100000; // Update progress every N files
 
 // Mask to extract the 48-bit file record number from a 64-bit
 // file reference (upper 16 bits are the NTFS sequence number).
@@ -57,6 +57,7 @@ struct PopulationContext {
   // transitively to any deeper subtree rooted under a filtered parent.
   // Ownership: references a local variable in PopulateInitialIndex; must outlive the call.
   std::unordered_set<uint64_t>& filtered_dir_ref_nums;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members) - context struct, ref by design
+  std::chrono::steady_clock::time_point last_progress_update_time;
 
 #ifdef ENABLE_MFT_METADATA_READING
   MftMetadataReader* mft_reader = nullptr;  // Non-owning; points to PopulateInitialIndex stack object
@@ -187,13 +188,14 @@ static bool ProcessUsnRecord(PUSN_RECORD_V2 record, int& file_count,
 
   // Periodically update the indexed file count and log progress
   // so the UI can display live progress during initial enumeration.
-  // PERFORMANCE FIX #3: Consolidated duplicate progress logging
-  if ((file_count % kProgressUpdateInterval) == 0) { // NOSONAR(cpp:S134) - Nested if acceptable: simple progress update logic in loop
+  if (const auto now = std::chrono::steady_clock::now();
+      now - ctx.last_progress_update_time >= std::chrono::seconds(1)) {
     if (ctx.indexed_file_count != nullptr) {
       ctx.indexed_file_count->store(static_cast<size_t>(file_count),
                                     std::memory_order_relaxed);
     }
     LOG_INFO_BUILD("Enumerated " << file_count << " files...");
+    ctx.last_progress_update_time = now;
   }
 
   return true; // Success
@@ -259,24 +261,24 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
   }
 
   ScopedTimer total_timer("PopulateInitialIndex - Total");
-  
+
 #ifdef ENABLE_MFT_METADATA_READING
   // PERFORMANCE: Create MftMetadataReader once and reuse for all files
   // This avoids creating a new reader instance for each file, which is expensive
   MftMetadataReader mft_reader(volume_handle);
   MftMetadataReader* const mft_reader_ptr = &mft_reader;  // NOLINT(misc-const-correctness) - pointee used as non-const by MFT APIs
-  
+
   // Validate volume handle is still valid before MFT reading
   if (volume_handle == INVALID_HANDLE_VALUE || volume_handle == nullptr) {
     LOG_ERROR("PopulateInitialIndex: Invalid volume handle when creating MftMetadataReader");
     return false;
   }
-  
+
   // MFT statistics counters
   size_t mft_success_count = 0;
   size_t mft_failure_count = 0;
   size_t mft_total_files = 0;
-  
+
   LOG_INFO_BUILD("MFT metadata reading enabled - will attempt to read file attributes from MFT");
 #else
   MftMetadataReader* mft_reader_ptr = nullptr;  // NOLINT(misc-const-correctness) - type must match PopulationContext.mft_reader (non-const)
@@ -311,10 +313,12 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
   filtered_dir_ref_nums.reserve(64);
 
 #ifdef ENABLE_MFT_METADATA_READING
-  PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums,  // NOLINT(misc-const-correctness) - modified by ProcessBufferRecords (ref members)
+  PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums,
+                        std::chrono::steady_clock::now(),
                         mft_reader_ptr, mft_success_count, mft_failure_count, mft_total_files};
 #else
-  PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums};  // NOLINT(misc-const-correctness) - passed by non-const ref to ProcessBufferRecords
+  PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums,
+                        std::chrono::steady_clock::now()};
 #endif  // ENABLE_MFT_METADATA_READING
 
   // Main enumeration loop - refactored to avoid nested breaks
@@ -349,8 +353,8 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
   // Log MFT statistics
   if (mft_total_files > 0) {
     double success_rate = (static_cast<double>(mft_success_count) / mft_total_files) * 100.0;
-    LOG_INFO_BUILD("MFT Statistics: " << mft_success_count << " succeeded, " 
-                  << mft_failure_count << " failed out of " << mft_total_files 
+    LOG_INFO_BUILD("MFT Statistics: " << mft_success_count << " succeeded, "
+                  << mft_failure_count << " failed out of " << mft_total_files
                   << " files (" << std::fixed << std::setprecision(2) << success_rate << "% success rate)");
   } else {
     LOG_INFO_BUILD("MFT Statistics: No files processed (all directories or MFT disabled)");

@@ -29,8 +29,8 @@ uint64_t DirectoryResolver::GetOrCreateDirectoryId(std::string_view path) {
     if (const uint64_t existing_id = storage_.GetDirectoryId(current_path); existing_id != 0) {
       uint64_t parent_id = existing_id;
       for (std::size_t i = paths_to_create.size(); i > 0; --i) {
-        const std::string& full_path = paths_to_create[i - 1];
-        const std::string& dir_name = names_to_create[i - 1];
+        const std::string& full_path = paths_to_create[i - 1];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - loop-guarded: i decrements from size() to 1, so i-1 is always valid
+        const std::string& dir_name = names_to_create[i - 1];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - loop-guarded: i decrements from size() to 1, so i-1 is always valid
         const uint64_t dir_id = next_file_id_.fetch_add(1, std::memory_order_relaxed);
         operations_.Insert(dir_id, parent_id, dir_name, true, kFileTimeNotLoaded);
         storage_.CacheDirectory(full_path, dir_id);
@@ -49,8 +49,8 @@ uint64_t DirectoryResolver::GetOrCreateDirectoryId(std::string_view path) {
 
   uint64_t parent_id = 0;
   for (std::size_t i = paths_to_create.size(); i > 0; --i) {
-    const std::string& full_path = paths_to_create[i - 1];
-    const std::string& dir_name = names_to_create[i - 1];
+    const std::string& full_path = paths_to_create[i - 1];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - loop-guarded: i decrements from size() to 1, so i-1 is always valid
+    const std::string& dir_name = names_to_create[i - 1];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - loop-guarded: i decrements from size() to 1, so i-1 is always valid
     const uint64_t dir_id = next_file_id_.fetch_add(1, std::memory_order_relaxed);
     operations_.Insert(dir_id, parent_id, dir_name, true, kFileTimeNotLoaded);
     storage_.CacheDirectory(full_path, dir_id);

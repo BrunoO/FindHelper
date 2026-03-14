@@ -16,7 +16,9 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,6 +27,7 @@
 #include "imgui.h"
 #include "imgui_te_context.h"  // ImGuiTestContext (SetRef, Yield), IM_CHECK, IM_CHECK_EQ, IM_ERRORF
 #include "imgui_te_engine.h"
+#include "path/PathUtils.h"
 #include "ui/IconsFontAwesome.h"  // ICON_FA_BOOK_OPEN - ref must match FilterPanel/SearchInputs button labels for ItemClick
 #include "ui/ImGuiTestEngineRegressionExpected.h"
 #include "ui/ImGuiTestEngineRegressionHook.h"
@@ -51,7 +54,6 @@ static bool WaitForIndexReady(ImGuiTestContext* ctx, const IRegressionTestHook* 
     ++waited;
   }
   if (!hook->IsIndexReady()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Regression test %s: index not ready after %d frames", case_id, kMaxWaitFrames);
     return false;
   }
@@ -65,7 +67,6 @@ static bool WaitForSearchComplete(ImGuiTestContext* ctx, const IRegressionTestHo
     ++waited;
   }
   if (!hook->IsSearchComplete()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Regression test %s: search did not complete after %d frames", case_id, kMaxWaitFrames);
     return false;
   }
@@ -77,7 +78,6 @@ static bool WaitForSearchComplete(ImGuiTestContext* ctx, const IRegressionTestHo
 /** Fails test with precondition_msg if item_ref is not found. Call before ItemClick when the button is required. */
 static void RequireItemExists(ImGuiTestContext* ctx, const char* item_ref, const char* precondition_msg) {
   if (!ctx->ItemExists(item_ref)) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("%s", precondition_msg);
     // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
     IM_CHECK(ctx->ItemExists(item_ref));
@@ -107,7 +107,6 @@ static ImGuiWindow* WaitForFloatingWindowAfterClick(ImGuiTestContext* ctx,
     win = nullptr;
   }
   if (win == nullptr || win->Hidden) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("%s", error_msg);
     return nullptr;
   }
@@ -120,6 +119,106 @@ static void CloseFloatingWindowAndYield(ImGuiTestContext* ctx, ImGuiWindow* win)
   ctx->WindowClose("");
   ctx->Yield();
   ctx->Yield();
+}
+
+/** Resolves folder path for index_configuration test: IMGUI_TEST_INDEX_FOLDER if set, else walk up from executable to find tests/data. */
+static std::string ResolveIndexConfigFolderPath() {
+  static std::string folder_path;
+  if (!folder_path.empty()) {
+    return folder_path;
+  }
+  if (const char* env_path = std::getenv("IMGUI_TEST_INDEX_FOLDER");  // NOLINT(concurrency-mt-unsafe) - test runs once on main thread
+      env_path != nullptr && env_path[0] != '\0') {
+    folder_path = env_path;
+    return folder_path;
+  }
+  constexpr int kMaxResolutionLevels = 8;
+  std::string base = path_utils::GetExecutableDirectory();
+  if (!base.empty() && base.back() == path_utils::kPathSeparator) {
+    base.pop_back();
+  }
+  for (int level = 0; level < kMaxResolutionLevels; ++level) {
+    if (base.empty()) {
+      break;
+    }
+    const std::filesystem::path candidate(path_utils::JoinPath(base, "tests/data"));
+    try {
+      if (std::filesystem::exists(candidate) && std::filesystem::is_directory(candidate)) {
+        folder_path = candidate.string();
+        return folder_path;
+      }
+    } catch (const std::filesystem::filesystem_error&) {  // NOLINT(bugprone-empty-catch) - ignore and try parent directory. NOSONAR(cpp:S2486) - intentionally swallow to try next parent path
+    }
+    base = path_utils::GetParentDirectory(base);
+  }
+  folder_path = "tests/data";
+  return folder_path;
+}
+
+/** Runs the "select folder and start indexing" test steps. Extracted to reduce lambda length (S1188) and nesting (S134). */
+static void RunSelectFolderAndIndexTest(ImGuiTestContext* ctx) {
+  constexpr const char* kCaseId = "select_folder_and_start_indexing";
+  ctx->SetRef(kMainWindowTitle);
+  ctx->Yield();
+  const IRegressionTestHook* hook = g_regression_hook;
+  if (hook == nullptr) {
+    IM_ERRORF("Index config test %s: IRegressionTestHook is null.", kCaseId);
+    return;
+  }
+  const size_t index_size_before = hook->GetIndexSize();
+  const std::string folder_path = ResolveIndexConfigFolderPath();
+  RequireItemExists(ctx, kSettingsButtonRef, kSettingsButtonPreconditionMsg);
+  ImGuiWindow* win =
+      WaitForFloatingWindowAfterClick(ctx, kSettingsButtonRef, kSettingsWindowTitle, kSettingsWindowOpenErrorMsg);
+  // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  IM_CHECK(win != nullptr);
+  if (win == nullptr) {
+    return;
+  }
+  ctx->SetRef(win);
+  ctx->Yield();
+  ctx->ItemClick("Index Configuration");
+  ctx->Yield();
+  ctx->ItemInput("##crawl_folder");
+  ctx->KeyCharsReplace(folder_path.c_str());
+  ctx->Yield();
+  ctx->Yield();
+  ctx->Yield();
+  ctx->ItemClick(ICON_FA_PLAY " Start Indexing");
+  ctx->Yield();
+  if (!WaitForIndexReady(ctx, hook, kCaseId)) {
+    CloseFloatingWindowAndYield(ctx, win);
+    return;
+  }
+  const size_t index_size_after = hook->GetIndexSize();
+  AssertIndexReplacedAndClose(ctx, win, index_size_before, index_size_after, folder_path, kCaseId);
+}
+
+/** Asserts index was replaced (size changed) and closes Settings window; call from select_folder_and_start_indexing. */
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - IM_CHECK macros and two branches; threshold 25
+static void AssertIndexReplacedAndClose(ImGuiTestContext* ctx,
+                                        ImGuiWindow* win,
+                                        size_t index_size_before,
+                                        size_t index_size_after,
+                                        const std::string& folder_path,
+                                        const char* case_id) {
+  const bool size_zero = (index_size_after == 0U);
+  const bool not_replaced = (index_size_after == index_size_before);
+  if (size_zero) {
+    IM_ERRORF("Index config test %s: index size 0 after indexing (path=%s). Check folder exists.",
+              case_id, folder_path.c_str());
+    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+    IM_CHECK(index_size_after > 0U);
+  }
+  if (not_replaced) {
+    IM_ERRORF(
+      "Index config test %s: index was not replaced (size still %zu). UI may show 'Error: Folder does not exist' "
+      "if path is wrong. Use absolute path: IMGUI_TEST_INDEX_FOLDER=/path/to/tests/data",
+      case_id, index_size_after);
+    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+    IM_CHECK(index_size_after != index_size_before);
+  }
+  CloseFloatingWindowAndYield(ctx, win);
 }
 
 /** Runs the copy-marked-paths shortcut test body (W / Copy Paths path). Call after index ready. */
@@ -137,7 +236,6 @@ static void RunCopyMarkedPathsShortcutTest(ImGuiTestContext* ctx,
 
   if (const size_t result_count = hook->GetSearchResultCount();
       result_count == 0U) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Shortcut test %s: search returned 0 results; expected non-empty result list.", case_id);
     // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
     IM_CHECK(result_count > 0U);
@@ -156,7 +254,6 @@ static void RunCopyMarkedPathsShortcutTest(ImGuiTestContext* ctx,
 
   const std::string clipboard_after = hook->GetClipboardText();
   if (clipboard_after.empty()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Shortcut test %s: clipboard is empty after copy; expected at least one path.", case_id);
   }
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
@@ -186,7 +283,6 @@ static void RunCopyMarkedFilenamesShortcutTest(ImGuiTestContext* ctx,
 
   if (const size_t result_count = hook->GetSearchResultCount();
       result_count == 0U) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Shortcut test %s: search returned 0 results; expected non-empty result list.", case_id);
     // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
     IM_CHECK(result_count > 0U);
@@ -205,7 +301,6 @@ static void RunCopyMarkedFilenamesShortcutTest(ImGuiTestContext* ctx,
 
   const std::string clipboard_after = hook->GetClipboardText();
   if (clipboard_after.empty()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Shortcut test %s: clipboard is empty after copy; expected at least one filename.", case_id);
   }
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
@@ -230,7 +325,6 @@ static void RunCopyMarkedFilenamesShortcutTest(ImGuiTestContext* ctx,
     }
   }
   if (!all_lines_without_separators) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Shortcut test %s: clipboard should contain filenames only (no / or \\ in any line); got path-like content.", case_id);
   }
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
@@ -258,7 +352,6 @@ static void RunCopySelectedPathShortcutTest(ImGuiTestContext* ctx,
 
   if (const size_t result_count = hook->GetSearchResultCount();
       result_count == 0U) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Shortcut test %s: search returned 0 results; expected non-empty result list.", case_id);
     // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
     IM_CHECK(result_count > 0U);
@@ -277,7 +370,6 @@ static void RunCopySelectedPathShortcutTest(ImGuiTestContext* ctx,
 
   const std::string clipboard_after = hook->GetClipboardText();
   if (clipboard_after.empty()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Shortcut test %s: clipboard is empty after copy; expected selected path.", case_id);
   }
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
@@ -286,7 +378,6 @@ static void RunCopySelectedPathShortcutTest(ImGuiTestContext* ctx,
   const bool looks_like_path = clipboard_after.find('/') != std::string::npos ||
                               clipboard_after.find('\\') != std::string::npos;
   if (!looks_like_path) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Shortcut test %s: clipboard should contain a path (with / or \\); got non-path content.", case_id);
   }
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
@@ -316,7 +407,6 @@ static void RunRegressionTestCase(ImGuiTestContext* ctx,  // NOSONAR(cpp:S107) -
   IRegressionTestHook* hook = g_regression_hook;
   ctx->SetRef(kMainWindowTitle);
   if (hook == nullptr) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Regression test %s: IRegressionTestHook is null (misconfiguration). Ensure Application passes a non-null hook to RegisterFindHelperTests.", case_id);
     return;
   }
@@ -327,7 +417,6 @@ static void RunRegressionTestCase(ImGuiTestContext* ctx,  // NOSONAR(cpp:S107) -
 
   if (const size_t index_size = hook->GetIndexSize();
       index_size != regression_expected::kIndexSize) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Regression test %s: wrong index (got %zu entries, expected %zu). Run app with: --index-from-file=tests/data/std-linux-filesystem.txt", case_id, index_size, regression_expected::kIndexSize);
     // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
     IM_CHECK(index_size == regression_expected::kIndexSize);
@@ -339,7 +428,6 @@ static void RunRegressionTestCase(ImGuiTestContext* ctx,  // NOSONAR(cpp:S107) -
     // Precondition: verify the strategy was applied (surfaces settings_ null or config misapplication early).
     const std::string applied = hook->GetLoadBalancingStrategy();
     if (applied != strategy) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
       IM_ERRORF("Load balancing precondition failed for %s: set \"%.*s\" but getter returned \"%s\". Check that settings are available (settings_ non-null).",
                 case_id, static_cast<int>(strategy.size()), strategy.data(), applied.c_str());
     }
@@ -350,7 +438,6 @@ static void RunRegressionTestCase(ImGuiTestContext* ctx,  // NOSONAR(cpp:S107) -
     hook->SetStreamPartialResults(*stream_partial_results);
     const std::optional<bool> stream_opt = hook->GetStreamPartialResults();
     if (!stream_opt.has_value()) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
       IM_ERRORF("Streaming precondition failed for %s: setting unavailable (settings_ null). Tests require availability to assert value.", case_id);
       return;  // Early-fail: do not run subsequent steps under invalid preconditions
     }
@@ -361,12 +448,10 @@ static void RunRegressionTestCase(ImGuiTestContext* ctx,  // NOSONAR(cpp:S107) -
     hook->SetStreamPartialResults(false);
     const std::optional<bool> stream_opt = hook->GetStreamPartialResults();
     if (!stream_opt.has_value()) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
       IM_ERRORF("Streaming precondition failed for %s: setting unavailable (settings_ null). Non-streaming tests require streaming to be explicitly off.", case_id);
       return;
     }
     if (*stream_opt) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
       IM_ERRORF("Streaming precondition failed for %s: expected streaming off but getter returned true. Non-streaming tests must run with streaming disabled.", case_id);
       // Early-fail: do not run subsequent steps under invalid preconditions
       // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
@@ -382,7 +467,6 @@ static void RunRegressionTestCase(ImGuiTestContext* ctx,  // NOSONAR(cpp:S107) -
   // Precondition: verify search params were applied (surfaces state_ or hook misapplication early).
   if (hook->GetSearchParamFilename() != expected_filename || hook->GetSearchParamPath() != expected_path ||
       hook->GetSearchParamExtensions() != expected_ext || hook->GetSearchParamFoldersOnly() != folders_only) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Search params precondition failed for %s: set filename=\"%s\" path=\"%s\" ext=\"%s\" folders_only=%s but getters differ. Check state_ and hook.",
               case_id, expected_filename.c_str(), expected_path.c_str(), expected_ext.c_str(), folders_only ? "true" : "false");
   }
@@ -409,7 +493,6 @@ static void RunRegressionTestCase(ImGuiTestContext* ctx,  // NOSONAR(cpp:S107) -
 
   const size_t count = hook->GetSearchResultCount();
   if (count != expected_count) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
     IM_ERRORF("Regression test %s: expected %zu results, got %zu (run app with --index-from-file=tests/data/std-linux-filesystem.txt)", case_id, expected_count, count);
   }
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
@@ -508,7 +591,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     ctx->SetRef(kMainWindowTitle);
     IRegressionTestHook* hook = g_regression_hook;
     if (hook == nullptr) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
       IM_ERRORF("Shortcut test %s: IRegressionTestHook is null (misconfiguration). Ensure Application passes a non-null hook to RegisterFindHelperTests.", kCaseId);
       return;
     }
@@ -524,7 +606,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     ctx->SetRef(kMainWindowTitle);
     IRegressionTestHook* hook = g_regression_hook;
     if (hook == nullptr) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
       IM_ERRORF("Shortcut test %s: IRegressionTestHook is null (misconfiguration). Ensure Application passes a non-null hook to RegisterFindHelperTests.", kCaseId);
       return;
     }
@@ -540,7 +621,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     ctx->SetRef(kMainWindowTitle);
     IRegressionTestHook* hook = g_regression_hook;
     if (hook == nullptr) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui Test Engine API
       IM_ERRORF("Shortcut test %s: IRegressionTestHook is null (misconfiguration). Ensure Application passes a non-null hook to RegisterFindHelperTests.", kCaseId);
       return;
     }
@@ -587,6 +667,8 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
 
   static constexpr int kLastRegressionCaseIndex = kRegressionCaseCount - 1;
 
+  // Regression / load_balancing / streaming: kRegressionCases indices are 0..5 and kLastRegressionCaseIndex (5).
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   // Regression: one test per case (index 0..5).
   ImGuiTest* r0 = IM_REGISTER_TEST(engine, "regression", kRegressionCases[0].case_id);
   r0->TestFunc = [](ImGuiTestContext* ctx) {
@@ -772,6 +854,15 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     const auto& c = kRegressionCases[kLastRegressionCaseIndex];
     RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, {}, false);
   };
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+
+  // Index configuration: select a folder and start indexing. Must run LAST because it replaces the
+  // initial index (from --index-from-file); all regression/load_balancing/streaming/shortcut tests
+  // depend on that index. Folder path: IMGUI_TEST_INDEX_FOLDER env var if set, else resolved by
+  // walking up from the executable directory (so it works when .app CWD is bundle Resources). See
+  // internal-docs/analysis/2026-03-14_IMGUI_TEST_SELECT_FOLDER_TO_INDEX_ASSESSMENT.md.
+  ImGuiTest* t_index_cfg = IM_REGISTER_TEST(engine, "index_configuration", "select_folder_and_start_indexing");
+  t_index_cfg->TestFunc = [](ImGuiTestContext* ctx) { RunSelectFolderAndIndexTest(ctx); };
 }
 
 #else

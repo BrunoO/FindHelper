@@ -55,7 +55,7 @@ const char* InternalStrStrAVX2(const char* haystack, size_t haystack_len, const 
         const auto* chunk_ptr =
             reinterpret_cast<const __m256i*>(haystack + i);  // NOSONAR(cpp:S3630) - Required to load unaligned 256-bit chunk from byte buffer into AVX2 intrinsic; safer alternatives (memcpy/bit_cast) would add overhead in this hot path
         __m256i haystack_chunk = _mm256_loadu_si256(chunk_ptr);
-        
+
         __m256i cmp_mask_vec;
         if constexpr (CaseSensitive) {
             cmp_mask_vec = _mm256_cmpeq_epi8(haystack_chunk, v_first_char);
@@ -82,11 +82,11 @@ const char* InternalStrStrAVX2(const char* haystack, size_t haystack_len, const 
             if (FullCompare<CaseSensitive>(haystack + match_pos, needle, needle_len)) {
                 return haystack + match_pos;
             }
-            
+
             mask &= mask - 1; // Clear LSB
         }
     }
-    
+
     // Scalar loop for the remainder of the haystack (less than 32 bytes).
     for (size_t k = i; k <= max_start; ++k) {
         if (FullCompare<CaseSensitive>(haystack + k, needle, needle_len)) {
@@ -107,12 +107,12 @@ __attribute__((target("avx2")))
 bool ContainsSubstringIAVX2(const std::string_view& text, const std::string_view& pattern) {
     if (pattern.empty()) return true;
     if (text.length() < pattern.length()) return false;
-    
+
     // For small patterns, the AVX2 setup overhead is not worth it. Use scalar.
     if (pattern.length() < 4) {
         return string_search::ContainsSubstringI(text, pattern);
     }
-    
+
     return InternalStrStrAVX2<false>(text.data(), text.length(), pattern.data(), pattern.length()) != nullptr;
 }
 
@@ -136,16 +136,16 @@ __attribute__((target("avx2")))
 const char* StrStrCaseInsensitiveAVX2(const char* haystack, const char* needle) {
     if (!needle || !*needle) return haystack;
     if (!haystack) return nullptr;
-    
+
     size_t haystack_len = strlen(haystack);  // NOSONAR(cpp:S1081) - Safe: function parameter expected to be null-terminated C string (standard contract)
     size_t needle_len = strlen(needle);  // NOSONAR(cpp:S1081) - Safe: function parameter expected to be null-terminated C string (standard contract)
-    
+
     if (haystack_len < needle_len) return nullptr;
 
     if (needle_len < 4) {
         return string_search::StrStrCaseInsensitive(haystack, needle);
     }
-    
+
     return InternalStrStrAVX2<false>(haystack, haystack_len, needle, needle_len);
 }
 

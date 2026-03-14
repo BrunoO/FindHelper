@@ -51,9 +51,10 @@ class LazyAttributeLoader {
   [[nodiscard]] FILETIME GetModificationTime(uint64_t id) const;
 
   // Manual loading methods
-  // These are called explicitly (e.g., by UI for visible rows)
-  // They hold the lock during I/O (acceptable for manual loading)
-  // Returns true if attribute was loaded, false if already loaded or failed
+  // Called explicitly (e.g., by UI for visible rows).
+  // Use same 3-phase pattern as GetFileSize/GetModificationTime: shared lock for path read,
+  // I/O without lock, unique lock only for write (reduces index_mutex_ contention).
+  // Returns true if attribute was loaded, false if already loaded or failed.
   [[nodiscard]] bool LoadFileSize(uint64_t id);
   [[nodiscard]] bool LoadModificationTime(uint64_t id);
 

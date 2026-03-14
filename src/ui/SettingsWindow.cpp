@@ -23,6 +23,7 @@
 #include "index/FileIndex.h"
 #include "ui/FolderBrowser.h"
 #include "ui/IconsFontAwesome.h"
+#include "ui/LayoutConstants.h"
 #include "ui/SettingsWindow.h"
 #include "ui/Theme.h"
 #include "ui/UiStyleGuards.h"
@@ -168,7 +169,7 @@ void RenderAppearanceSettings(AppSettings& settings, GLFWwindow* glfw_window) {
     settings.fontSize = settings_defaults::kDefaultFontSize;
   }
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("Restore default font size (%.0f) and set UI scale from current monitor DPI.\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("Restore default font size (%.0f) and set UI scale from current monitor DPI.\n"
                       "Use after moving the window to another display.",
                       static_cast<double>(settings_defaults::kDefaultFontSize));
   }
@@ -181,13 +182,13 @@ void RenderAppearanceSettings(AppSettings& settings, GLFWwindow* glfw_window) {
   // and "Auto-refresh" for a streamlined experience.
   constexpr std::array<const char*, 3> kModeLabels = {"Full UI", "Simplified UI",
                                                       "Minimalistic UI"};
-  if (auto current_mode = static_cast<int>(settings.uiMode); ImGui::Combo(  // NOSONAR(cpp:S5827) NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  if (auto current_mode = static_cast<int>(settings.uiMode); ImGui::Combo(  // NOSONAR(cpp:S5827)
         "UI Mode", &current_mode, kModeLabels.data(), static_cast<int>(kModeLabels.size()))) {
     settings.uiMode = static_cast<AppSettings::UIMode>(current_mode);
   }
   if (ImGui::IsItemHovered()) {
     ImGui::BeginTooltip();
-    ImGui::Text("Full UI: Show all controls and panels.\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::Text("Full UI: Show all controls and panels.\n"
                 "Simplified UI: Hide advanced search options.\n"
                 "Minimalistic UI: Show only essential path search input.\n"
                 "Non-Full modes automatically enable 'Search as you type' and 'Auto-refresh'.");
@@ -197,7 +198,7 @@ void RenderAppearanceSettings(AppSettings& settings, GLFWwindow* glfw_window) {
   ImGui::Checkbox("Stream search results", &settings.streamPartialResults);
   if (ImGui::IsItemHovered()) {
     ImGui::BeginTooltip();
-    ImGui::Text("Shows search results incrementally as they are found.\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::Text("Shows search results incrementally as they are found.\n"
                 "Improves perceived performance, especially on large indexes.");
     ImGui::EndTooltip();
   }
@@ -205,7 +206,7 @@ void RenderAppearanceSettings(AppSettings& settings, GLFWwindow* glfw_window) {
   ImGui::Checkbox("Indent results by folder depth", &settings.showPathHierarchyIndentation);
   if (ImGui::IsItemHovered()) {
     ImGui::BeginTooltip();
-    ImGui::Text("Indents filenames in the results table by their folder depth.\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::Text("Indents filenames in the results table by their folder depth.\n"
                 "Makes the folder structure visible at a glance.");
     ImGui::EndTooltip();
   }
@@ -276,14 +277,14 @@ int RenderLoadBalancingStrategy(AppSettings& settings) {
   static const std::array<const char*, 4> kStrategyLabels = {
     "Static", "Hybrid", "Dynamic", "Interleaved"};
 #endif  // FAST_LIBS_BOOST
-  int current_strategy_index = GetStrategyIndexFromString(settings.loadBalancingStrategy);  // NOLINT(cppcoreguidelines-init-variables) - initialized by return value
+  int current_strategy_index = GetStrategyIndexFromString(settings.loadBalancingStrategy);
 
   if (ImGui::Combo("Load Balancing Strategy", &current_strategy_index, kStrategyLabels.data(),
                    static_cast<int>(kStrategyLabels.size()))) {
     settings.loadBalancingStrategy = GetStrategyStringFromIndex(current_strategy_index);
   }
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("Static: Fixed chunks assigned upfront\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("Static: Fixed chunks assigned upfront\n"
                       "Hybrid: Initial large chunks (configurable %%) + dynamic small chunks\n"
                       "Dynamic: Initial chunks (50%%) + guided dynamic scheduling (recommended)\n"
                       "Interleaved: Threads process items in an interleaved manner\n"
@@ -310,7 +311,7 @@ void RenderThreadPoolSize(AppSettings& settings) {
     settings.searchThreadPoolSize = pool_size;
   }
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("0 = Auto-detect (use hardware concurrency)\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("0 = Auto-detect (use hardware concurrency)\n"
                       "1-%d = Explicit thread count\n"
                       "Allows tuning performance for your hardware\n"
                       "Changes take effect immediately after saving (thread "
@@ -342,7 +343,7 @@ void RenderDynamicChunkSize(AppSettings& settings) {
     settings.dynamicChunkSize = chunk_size;
   }
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("Chunk size for dynamic load balancing (Hybrid and Dynamic "  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("Chunk size for dynamic load balancing (Hybrid and Dynamic "
                       "strategies)\n"
                       "Range: 100-100000 items per chunk (100K max for testing)\n"
                       "Larger chunks = less overhead, less fine-grained balancing\n"
@@ -379,7 +380,7 @@ void RenderHybridInitialWorkPercent(AppSettings& settings) {
     settings.hybridInitialWorkPercent = initial_percent;
   }
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("Percentage of work assigned as initial chunks in Hybrid "  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("Percentage of work assigned as initial chunks in Hybrid "
                       "strategy\n"
                       "Range: 50-95%%\n"
                       "Lower = more dynamic chunks = better load balancing, less cache "
@@ -435,7 +436,7 @@ std::string GetFolderSelectionVisibilityReason() {
 
 // Helper function to render folder path input and controls (reduces cognitive complexity)
 void RenderFolderPathInput(AppSettings& settings, FolderBrowser& folder_browser) {
-  ImGui::Text("Folder to Index:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::Text("Folder to Index:");
   std::array<char, 512> folder_buf = {0};
   if (!settings.crawlFolder.empty()) {
     strcpy_safe(folder_buf.data(), folder_buf.size(), settings.crawlFolder.c_str());
@@ -465,10 +466,10 @@ void RenderFolderValidation(const AppSettings& settings) {
     if (!is_valid &&
         !validation_error.empty()) {  // NOSONAR(cpp:S134) - Nested if acceptable: ImGui immediate
                                       // mode pattern requires validation nesting
-      ImGui::TextColored(Theme::Colors::Error, "Error: %s", validation_error.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+      ImGui::TextColored(Theme::Colors::Error, "Error: %s", validation_error.c_str());
     }
   } else {
-    ImGui::TextDisabled("(No folder selected)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextDisabled("(No folder selected)");
   }
 }
 
@@ -482,7 +483,7 @@ void RenderStopIndexingButton(ui::UIActions* actions) {
   }
   if (ImGui::IsItemHovered()) {  // NOSONAR(cpp:S134) - Nested if acceptable: ImGui immediate mode
                                  // pattern requires button->tooltip nesting
-    ImGui::SetTooltip("Stop the current index building process");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("Stop the current index building process");
   }
 }
 
@@ -519,7 +520,7 @@ void RenderStartIndexingButton(
     const char* tooltip_text =
       can_start ? "Start indexing the selected folder. This will replace the current index."
                 : display_message.c_str();
-    ImGui::SetTooltip("%s", tooltip_text);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("%s", tooltip_text);
   }
 }
 }  // namespace
@@ -557,10 +558,10 @@ void RenderRecrawlIntervalInput(AppSettings& settings) {
     }
   }
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("How often to automatically recrawl the folder (1-60 minutes).\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("How often to automatically recrawl the folder (1-60 minutes).\n"
                       "Recrawl behavior depends on idle requirement setting below.");
   }
-  ImGui::TextDisabled("(Current: %d minutes)", settings.recrawl.intervalMinutes);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::TextDisabled("(Current: %d minutes)", settings.recrawl.intervalMinutes);
 }
 
 // Helper: Render recrawl idle requirement and threshold
@@ -574,7 +575,7 @@ void RenderRecrawlIdleSettings(AppSettings& settings) {
       "Updated recrawl idle requirement to: " << (require_idle ? "enabled" : "disabled"));
   }
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("If enabled, recrawl only occurs when system and application are idle.\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::SetTooltip("If enabled, recrawl only occurs when system and application are idle.\n"
                       "If disabled, recrawl happens immediately when interval elapses.");
   }
   if (require_idle) {
@@ -590,9 +591,9 @@ void RenderRecrawlIdleSettings(AppSettings& settings) {
       }
     }
     if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip("How long system and application must be idle before recrawl (1-30 minutes).");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+      ImGui::SetTooltip("How long system and application must be idle before recrawl (1-30 minutes).");
     }
-    ImGui::TextDisabled("(Current: %d minutes)", settings.recrawl.idleThresholdMinutes);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextDisabled("(Current: %d minutes)", settings.recrawl.idleThresholdMinutes);
     ImGui::Unindent();
   }
 }
@@ -606,7 +607,7 @@ void RenderRecrawlSettings(AppSettings& settings) {
   ImGui::Spacing();
   ImGui::Separator();
   ImGui::Spacing();
-  ImGui::Text("Periodic Recrawl:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::Text("Periodic Recrawl:");
   ImGui::Spacing();
 
   RenderRecrawlIntervalInput(settings);
@@ -622,16 +623,16 @@ void RenderRecrawlSummary(const AppSettings& settings) {
 
   ImGui::Spacing();
   if (settings.recrawl.requireIdle) {
-    ImGui::TextDisabled(  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextDisabled(
       "Recrawl will run roughly every %d minutes, after the system has been idle for %d minutes.",
       settings.recrawl.intervalMinutes, settings.recrawl.idleThresholdMinutes);
   } else {
-    ImGui::TextDisabled(  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextDisabled(
       "Recrawl will run roughly every %d minutes, even when the system is active.",
       settings.recrawl.intervalMinutes);
   }
   if (settings.recrawl.intervalMinutes <= 2 && !settings.recrawl.requireIdle) {
-    ImGui::TextColored(  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextColored(
       Theme::Colors::Warning,
       "Frequent recrawls without idle requirement may increase background CPU and disk usage.");
   }
@@ -673,7 +674,7 @@ void RenderIndexConfiguration(AppSettings& settings, [[maybe_unused]] FileIndex&
     if (const std::string visibility_reason = GetFolderSelectionVisibilityReason();
         !visibility_reason
            .empty()) {  // NOSONAR(cpp:S6004) - Variable used after if statement for display
-      ImGui::TextColored(Theme::Colors::Warning, "%s", visibility_reason.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+      ImGui::TextColored(Theme::Colors::Warning, "%s", visibility_reason.c_str());
       ImGui::Spacing();
     }
 
@@ -718,10 +719,10 @@ void RenderLogFileSection(
   // Get log file path from Logger singleton
   if (const std::string log_file_path = Logger::Instance().GetLogFilePath();
       log_file_path.empty()) {
-    ImGui::TextDisabled("(Logging disabled or log file not available)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextDisabled("(Logging disabled or log file not available)");
   } else {
-    ImGui::TextWrapped("Location:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
-    ImGui::TextWrapped("%s", log_file_path.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextWrapped("Location:");
+    ImGui::TextWrapped("%s", log_file_path.c_str());
 
     ImGui::Spacing();
 
@@ -730,14 +731,14 @@ void RenderLogFileSection(
         clipboard_utils::SetClipboardText(glfw_window, log_file_path);
       }
       if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Click to copy log file path to clipboard");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+        ImGui::SetTooltip("Click to copy log file path to clipboard");
       }
     } else {
       ImGui::BeginDisabled();
       ImGui::Button(ICON_FA_COPY " Copy Path to Clipboard");
       ImGui::EndDisabled();
       if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("GLFW window not available - clipboard operations disabled");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+        ImGui::SetTooltip("GLFW window not available - clipboard operations disabled");
       }
     }
   }
@@ -751,15 +752,15 @@ void RenderTipsSection() {
   ImGui::Spacing();
 
   if (ImGui::CollapsingHeader("Tips")) {
-    ImGui::TextWrapped("Settings are saved to a small JSON file next to the executable.\n"  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextWrapped("Settings are saved to a small JSON file next to the executable.\n"
                        "Font changes will take effect after restarting the application.\n"
                        "Load balancing strategy takes effect on the next search.\n"
                        "Thread pool size takes effect after saving settings.");
 
     ImGui::Spacing();
 
-    ImGui::TextDisabled("Changes are only written when you click Save. Close discards unsaved changes.");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
-    ImGui::TextDisabled("Keyboard: Use Tab/Shift+Tab to move focus, Enter/Space to activate the focused button.");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextDisabled("Changes are only written when you click Save. Close discards unsaved changes.");
+    ImGui::TextDisabled("Keyboard: Use Tab/Shift+Tab to move focus, Enter/Space to activate the focused button.");
     ImGui::Spacing();
   }
 }
@@ -768,7 +769,7 @@ void RenderSaveStatus(bool has_save_result, bool last_save_success,
                       const std::string& last_save_message) {
   if (has_save_result) {
     const ImVec4 status_color = last_save_success ? Theme::Colors::Success : Theme::Colors::Error;
-    ImGui::TextColored(status_color, "%s", last_save_message.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextColored(status_color, "%s", last_save_message.c_str());
     ImGui::Spacing();
   }
 }
@@ -853,11 +854,11 @@ void SettingsWindow::Render(bool* p_open, AppSettings& settings, FileIndex& file
   auto center =
     ImVec2(main_viewport->WorkPos.x +
              (main_viewport->WorkSize.x *
-              0.5F),  // NOLINT(readability-math-missing-parentheses, readability-magic-numbers) -
+              0.5F),  // NOLINT(readability-math-missing-parentheses,readability-magic-numbers) -
                       // Parentheses added for clarity; 0.5 is standard center factor (50%)
            main_viewport->WorkPos.y +
              (main_viewport->WorkSize.y *
-              0.5F));  // NOLINT(readability-math-missing-parentheses, readability-magic-numbers) -
+              0.5F));  // NOLINT(readability-math-missing-parentheses,readability-magic-numbers) -
                        // Parentheses added for clarity; 0.5 is standard center factor (50%)
   ImGui::SetNextWindowPos(
     center, ImGuiCond_FirstUseEver,
@@ -884,7 +885,7 @@ void SettingsWindow::Render(bool* p_open, AppSettings& settings, FileIndex& file
                          previous_open);
       }
       ImGui::SameLine();
-      if (ImGui::Button(ICON_FA_XMARK " Close")) {
+      if (ImGui::Button(ICON_FA_XMARK " Close", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
         *p_open = false;
         previous_open = false;
         has_save_result = false;

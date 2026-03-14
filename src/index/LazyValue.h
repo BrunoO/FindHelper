@@ -30,7 +30,7 @@
  */
 class LazyFileSize {
 public:
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - POD-like wrapper, public value is intentional
+
   uint64_t value = kFileSizeNotLoaded;
 
   // Default constructor - value initialized in-class above
@@ -80,7 +80,7 @@ public:
  */
 class LazyFileTime {
 public:
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - POD-like wrapper, public value is intentional
+
   FILETIME value = kFileTimeNotLoaded;
 
   // Default constructor - value initialized in-class above

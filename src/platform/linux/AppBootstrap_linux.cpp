@@ -66,22 +66,22 @@ namespace {
                                   const AppSettings& app_settings) {
     last_window_width = app_settings.windowWidth;
     last_window_height = app_settings.windowHeight;
-    
+
     AppBootstrapCommon::SetupWindowResizeCallback(window, &opengl_manager, &last_window_width, &last_window_height);
-    
+
     if (!opengl_manager.Initialize(window)) {
       LOG_ERROR("Failed to initialize OpenGL");
       glfwDestroyWindow(window);
       glfwTerminate();
       return false;
     }
-    
+
     int width = 0;  // Output parameter for glfwGetFramebufferSize
     int height = 0;  // Output parameter for glfwGetFramebufferSize
 
     glfwGetFramebufferSize(window, &width, &height);
     opengl_manager.HandleResize(width, height);
-    
+
     return true;
   }
 
@@ -93,7 +93,7 @@ namespace {
       LOG_ERROR("Failed to initialize ImGui OpenGL3 backend");
       return false;
     }
-    
+
     return true;
   }
 
@@ -138,14 +138,14 @@ AppBootstrapResultLinux Initialize(const CommandLineArgs &cmd_args,
   result.last_window_height = &last_window_height;
 
   LOG_INFO("Application starting (Linux)");
-  
+
   AppBootstrapCommon::SetupGlfwErrorCallback();
-  
+
   if (glfwInit() == 0) {
     LOG_ERROR("Failed to initialize GLFW");
     return result;  // NOSONAR(cpp:S5274) - RVO (Return Value Optimization) applies to plain return statements in C++17
   }
-  
+
   AppBootstrapCommon::LogCpuInformation();
 
   // Load index from file if specified (before window creation)
@@ -167,8 +167,8 @@ AppBootstrapResultLinux Initialize(const CommandLineArgs &cmd_args,
 
     static OpenGLManager opengl_manager;
     result.renderer = &opengl_manager;
-    
-    if (!InitializeOpenGLAndWindow(window, opengl_manager, last_window_width, 
+
+    if (!InitializeOpenGLAndWindow(window, opengl_manager, last_window_width,
                                     last_window_height, app_settings)) {
       return result;  // NOSONAR(cpp:S5274) - RVO (Return Value Optimization) applies to plain return statements in C++17
     }
@@ -190,8 +190,8 @@ AppBootstrapResultLinux Initialize(const CommandLineArgs &cmd_args,
     ApplyFontSettings(app_settings);
     result.settings = &app_settings;
     glfwShowWindow(window);
-    
-    LOG_INFO_BUILD("Checking index options - index_from_file: '" << cmd_args.index_from_file 
+
+    LOG_INFO_BUILD("Checking index options - index_from_file: '" << cmd_args.index_from_file
                    << "', crawl_folder: '" << cmd_args.crawl_folder << "'");
     // Synchronous FolderCrawler call has been removed. Initial index population
     // is now handled by the shared IndexBuilder infrastructure in RunApplication().

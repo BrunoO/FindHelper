@@ -58,7 +58,7 @@ namespace application_logic {
               Application &application,
               AppSettings &settings,
               const std::chrono::steady_clock::time_point &last_interaction_time);
-  
+
   /**
    * @brief Check and trigger periodic recrawl if conditions are met
    *
@@ -80,7 +80,7 @@ namespace application_logic {
                             const std::chrono::steady_clock::time_point &last_interaction_time,
                             const std::chrono::steady_clock::time_point &last_crawl_completion_time,
                             bool recrawl_enabled);
-  
+
   /**
    * @brief Handle keyboard shortcuts (called from Update)
    *

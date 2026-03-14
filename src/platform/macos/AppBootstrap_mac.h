@@ -76,7 +76,7 @@ namespace AppBootstrapMac {
                                    FileIndex &file_index,
                                    int &last_window_width,
                                    int &last_window_height);
-  
+
   /**
    * @brief Cleanup all initialized resources in reverse order
    *

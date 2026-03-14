@@ -9,8 +9,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BUILD_DIR="$PROJECT_ROOT/build_tests"
 
-# ASan is ON by default (catches memory bugs like use-after-free)
+# ASan is ON by default (catches memory bugs like use-after-free). TSAN and ASAN are mutually exclusive.
 ENABLE_ASAN="ON"
+ENABLE_TSAN="OFF"
 ENABLE_COVERAGE="OFF"
 ENABLE_COVERAGE_ALL_SOURCES="OFF"
 BUILD_TYPE="Debug"  # Debug for debugging, Release for faster builds
@@ -28,6 +29,7 @@ Build and run tests on macOS for USN_WINDOWS project.
 
 Options:
     --no-asan          Disable Address Sanitizer (faster build, but won't catch memory bugs)
+    --tsan             Enable Thread Sanitizer (data-race detection; disables ASAN, macOS/Linux only)
     --coverage         Enable code coverage (generates .profraw files for coverage reports)
     --all-sources      Enable comprehensive coverage (includes all source files, requires --coverage)
     --release          Use Release build type (faster builds, less debugging info)
@@ -40,6 +42,7 @@ Examples:
     $0                          # Build and run doctest unit tests only (no ImGui test engine)
     $0 --run-imgui-tests        # Also run ImGui Test Engine (smoke, regression, ui_windows, etc.)
     $0 --no-asan                # Build without Address Sanitizer (faster)
+    $0 --tsan                   # Build with Thread Sanitizer (data-race detection)
     $0 --coverage               # Build with code coverage enabled
     $0 --coverage --run-imgui-tests  # Coverage + ImGui test engine
 EOF
@@ -54,6 +57,10 @@ for arg in "$@"; do
             show_help
             ;;
         --no-asan)
+            ENABLE_ASAN="OFF"
+            ;;
+        --tsan)
+            ENABLE_TSAN="ON"
             ENABLE_ASAN="OFF"
             ;;
         --coverage)
@@ -84,8 +91,11 @@ for arg in "$@"; do
     esac
 done
 
-if [[ "$ENABLE_ASAN" == "OFF" ]]; then
+if [[ "$ENABLE_ASAN" == "OFF" && "$ENABLE_TSAN" == "OFF" ]]; then
     echo "Address Sanitizer DISABLED (faster build, but won't catch memory bugs)"
+fi
+if [[ "$ENABLE_TSAN" == "ON" ]]; then
+    echo "Thread Sanitizer ENABLED (data-race detection; ASAN disabled)"
 fi
 
 if [[ "$ENABLE_COVERAGE" == "ON" ]]; then
@@ -107,6 +117,7 @@ echo "Project root: $PROJECT_ROOT"
 echo "Build directory: $BUILD_DIR"
 echo "Build type: $BUILD_TYPE"
 echo "Address Sanitizer: $ENABLE_ASAN"
+echo "Thread Sanitizer: $ENABLE_TSAN"
 echo "Code Coverage: $ENABLE_COVERAGE"
 echo "All Sources Coverage: $ENABLE_COVERAGE_ALL_SOURCES"
 echo "Run ImGui Test Engine: $RUN_IMGUI_TEST_ENGINE"
@@ -121,22 +132,25 @@ NEED_RECONFIGURE="YES"
 if [[ "$FORCE_RECONFIGURE" == "OFF" ]] && [[ -f "CMakeCache.txt" ]]; then
     CACHE_COVERAGE=$(grep "ENABLE_COVERAGE:BOOL=" CMakeCache.txt 2>/dev/null | cut -d= -f2) || true
     CACHE_ASAN=$(grep "ENABLE_ASAN:BOOL=" CMakeCache.txt 2>/dev/null | cut -d= -f2) || true
+    CACHE_TSAN=$(grep "ENABLE_TSAN:BOOL=" CMakeCache.txt 2>/dev/null | cut -d= -f2) || true
     CACHE_BUILD_TYPE=$(grep "CMAKE_BUILD_TYPE:" CMakeCache.txt 2>/dev/null | head -1 | cut -d= -f2) || true
     CACHE_IMGUI_TEST_ENGINE=$(grep "ENABLE_IMGUI_TEST_ENGINE:BOOL=" CMakeCache.txt 2>/dev/null | cut -d= -f2) || true
     CACHE_COVERAGE=${CACHE_COVERAGE:-OFF}
     CACHE_ASAN=${CACHE_ASAN:-OFF}
+    CACHE_TSAN=${CACHE_TSAN:-OFF}
     CACHE_BUILD_TYPE=${CACHE_BUILD_TYPE:-Debug}
     CACHE_IMGUI_TEST_ENGINE=${CACHE_IMGUI_TEST_ENGINE:-OFF}
     if grep -q "BUILD_TESTS:BOOL=ON" CMakeCache.txt 2>/dev/null && \
        grep -q "CROSS_PLATFORM_TESTS:BOOL=ON" CMakeCache.txt 2>/dev/null && \
        [[ "$CACHE_COVERAGE" == "$ENABLE_COVERAGE" ]] && \
        [[ "$CACHE_ASAN" == "$ENABLE_ASAN" ]] && \
+       [[ "$CACHE_TSAN" == "$ENABLE_TSAN" ]] && \
        [[ "$CACHE_BUILD_TYPE" == "$BUILD_TYPE" ]] && \
        [[ "$CACHE_IMGUI_TEST_ENGINE" == "$RUN_IMGUI_TEST_ENGINE" ]]; then
         NEED_RECONFIGURE="NO"
         echo "Using existing CMake configuration (use --reconfigure to force reconfiguration)"
     else
-        echo "CMake cache does not match requested options (e.g. coverage=$ENABLE_COVERAGE, ASan=$ENABLE_ASAN, ImGui test engine=$RUN_IMGUI_TEST_ENGINE), reconfiguring..."
+        echo "CMake cache does not match requested options (e.g. coverage=$ENABLE_COVERAGE, ASan=$ENABLE_ASAN, TSan=$ENABLE_TSAN, ImGui test engine=$RUN_IMGUI_TEST_ENGINE), reconfiguring..."
     fi
 fi
 
@@ -155,6 +169,7 @@ fi
 # Optional: gemini_api_utils_tests is only built when CURL is found; run loop skips if missing
 TEST_TARGETS=(
     "string_search_tests"
+    "fuzzy_search_tests"
     "cpu_features_tests"
     "string_search_avx2_tests"
     "string_search_neon_tests"
@@ -163,6 +178,7 @@ TEST_TARGETS=(
     "path_pattern_integration_tests"
     "simple_regex_tests"
     "search_pattern_utils_tests"
+    "export_search_results_service_tests"
     "regex_generator_utils_tests"
     "string_utils_tests"
     "file_system_utils_tests"
@@ -194,6 +210,7 @@ if [[ "$NEED_RECONFIGURE" == "YES" ]]; then
         -DBUILD_TESTS=ON
         -DCROSS_PLATFORM_TESTS=ON
         -DENABLE_ASAN=$ENABLE_ASAN
+        -DENABLE_TSAN=$ENABLE_TSAN
         -DENABLE_COVERAGE=$ENABLE_COVERAGE
         -DENABLE_COVERAGE_ALL_SOURCES=$ENABLE_COVERAGE_ALL_SOURCES
         -DENABLE_IMGUI_TEST_ENGINE=$RUN_IMGUI_TEST_ENGINE
@@ -283,6 +300,8 @@ if [[ "$RUN_IMGUI_TEST_ENGINE" == "ON" && -x "$FINDHELPER_EXE" && -n "$IMGUI_TES
     if [[ ! -f "$INDEX_FILE" ]]; then
         echo "  Note: $INDEX_FILE not found; regression tests may fail (other tests still run)."
     fi
+    # Absolute path for index_configuration test (select_folder_and_start_indexing) so it passes regardless of CWD
+    export IMGUI_TEST_INDEX_FOLDER="$PROJECT_ROOT/tests/data"
     if [[ "$ENABLE_COVERAGE" == "ON" ]]; then
         if (cd "$PROJECT_ROOT" && LLVM_PROFILE_FILE="$BUILD_DIR/FindHelper_%p.profraw" "$FINDHELPER_EXE" \
             --run-imgui-tests-and-exit \

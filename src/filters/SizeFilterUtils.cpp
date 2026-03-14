@@ -128,7 +128,7 @@ bool MatchesSizeFilter(uint64_t file_size, SizeFilter filter) {
   }
 
   // Unknown filter value - should never reach here
-  // NOLINTNEXTLINE(readability-simplify-boolean-expr, readability-implicit-bool-conversion) - Common assert pattern with message
+  // NOLINTNEXTLINE(readability-simplify-boolean-expr,readability-implicit-bool-conversion) - Common assert pattern with message
   assert(false && "Unknown SizeFilter value");
   return false;
 }

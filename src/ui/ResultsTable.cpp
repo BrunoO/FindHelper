@@ -33,6 +33,7 @@
 #include "search/SearchResultsService.h"
 #include "ui/IconsFontAwesome.h"
 #include "ui/IncrementalSearchState.h"
+#include "ui/LayoutConstants.h"
 #include "ui/ResultsTableKeyboard.h"
 #include "ui/Theme.h"
 #include "ui/UiStyleGuards.h"
@@ -88,7 +89,7 @@ inline const char* CalculateDisplayPath(
   // NOLINTNEXTLINE(readability-identifier-naming) - Local constant follows project convention with
   // k prefix. Using F suffix for float literals is acceptable
   constexpr float kWidthTolerance = 5.0F;
-  if (const bool cache_valid =  // NOLINT(cppcoreguidelines-init-variables) - Variable initialized
+  if (const bool cache_valid =
                                 // in C++17 init-statement
       result.truncatedPathColumnWidth >= 0.0F &&
       std::fabs(result.truncatedPathColumnWidth - max_width) < kWidthTolerance &&
@@ -147,14 +148,13 @@ inline void RenderPathTooltip(std::string_view full_path) {
 
   // Render path with manual line breaks after separators to avoid string allocation
   const char* start = full_path.data();
-  const char* end = start + full_path.size();  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                                               // - ImGui text buffer pattern
+  const char* end = start + full_path.size();
   const char* current = start;
 
-  for (const char* p = start; p < end; ++p) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - ImGui text buffer pattern
-    if ((*p == '\\' || *p == '/') && (p + 1 < end)) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - buffer bounds check
-      ImGui::TextUnformatted(current, p + 1);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - buffer segment
-      current = p + 1;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - buffer advance
+  for (const char* p = start; p < end; ++p) {
+    if ((*p == '\\' || *p == '/') && (p + 1 < end)) {
+      ImGui::TextUnformatted(current, p + 1);
+      current = p + 1;
     }
   }
   // Render remaining part
@@ -338,10 +338,12 @@ void BuildFolderStatsIfNeeded(GuiState& state, const std::vector<SearchResult>& 
 
   if (!base_name.empty()) {
     const size_t copy_len = (std::min)(base_name.size(), max_len);
-    for (size_t i = 0; i < copy_len; ++i) {
-      filename_buffer.at(i) = base_name[i];
+    if (copy_len > 0U) {
+      std::copy_n(base_name.begin(),
+                  static_cast<std::ptrdiff_t>(copy_len),
+                  filename_buffer.begin());
+      write_len += copy_len;
     }
-    write_len += copy_len;
   }
 
   if (has_extension && write_len < max_len) {
@@ -350,10 +352,14 @@ void BuildFolderStatsIfNeeded(GuiState& state, const std::vector<SearchResult>& 
     const size_t remaining = max_len - write_len;
     if (remaining > 0U) {
       const size_t ext_copy_len = (std::min)(extension.size(), remaining);
-      for (size_t i = 0; i < ext_copy_len; ++i) {
-        filename_buffer.at(write_len + i) = extension[i];
+      if (ext_copy_len > 0U) {
+        auto dest_it = filename_buffer.begin()
+                       + static_cast<std::ptrdiff_t>(write_len);
+        std::copy_n(extension.begin(),
+                    static_cast<std::ptrdiff_t>(ext_copy_len),
+                    dest_it);
+        write_len += ext_copy_len;
       }
-      write_len += ext_copy_len;
     }
   }
 
@@ -442,7 +448,7 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   }
   ImGui::PushID(ResultColumn::Filename);
   static thread_local std::array<char, 512> filename_buffer;
-  if (const char* filename_cstr = GetRowFilenameCstr(params.result, filename_buffer);  // NOLINT(cppcoreguidelines-init-variables) - initialized by GetRowFilenameCstr
+  if (const char* filename_cstr = GetRowFilenameCstr(params.result, filename_buffer);
       ImGui::Selectable(filename_cstr, is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
     params.state.selectedRow = row;
   }
@@ -577,7 +583,7 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   ImGui::TableSetColumnIndex(ResultColumn::FolderFileCount);
   ImGui::PushID(ResultColumn::FolderFileCount);
   if (show_folder_stats_cells) {
-    ImGui::Text("%zu", folder_file_count);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::Text("%zu", folder_file_count);
   }
   ImGui::PopID();
 
@@ -652,7 +658,7 @@ void HandleDragAndDrop(bool& drag_candidate_active, int& drag_candidate_row,
     } else if (!drag_started) {
       auto delta =
         ImVec2(imgui_io.MousePos.x - drag_start_pos.x, imgui_io.MousePos.y - drag_start_pos.y);
-      const bool over_threshold =  // NOLINT(cppcoreguidelines-init-variables) - initialized by expression
+      const bool over_threshold =
         std::fabs(delta.x) >= drag_threshold || std::fabs(delta.y) >= drag_threshold;
       const bool row_valid =
         drag_candidate_row >= 0 &&
@@ -674,25 +680,14 @@ void HandleDragAndDrop(bool& drag_candidate_active, int& drag_candidate_row,
 /**
  * @brief Handle delete key and confirmation popup
  *
- * Processes delete key press and renders confirmation modal.
- * Uses display_results so the delete target matches the visible table (streaming/filtered).
+ * Renders the single-file delete confirmation modal.
+ * Delete key handling is in HandleResultsTableKeyboardShortcuts; this only opens and draws the popup.
  *
  * @param state GUI state (modified by delete operations)
- * @param display_results Currently displayed results (same source as table)
+ * @param display_results Unused; kept for API compatibility with call site
  */
-void HandleDeleteKeyAndPopup(GuiState& state, const std::vector<SearchResult>& display_results) {
-  // Handle Delete Key: use display_results so we delete the row the user sees (streaming/filtered)
-  if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
-      ImGui::IsKeyPressed(ImGuiKey_Delete) && state.selectedRow >= 0 &&
-      state.selectedRow <
-        static_cast<int>(
-          display_results.size())) {  // NOSONAR(cpp:S1905) - Required cast for signed/unsigned
-    state.fileToDelete = display_results[static_cast<std::size_t>(state.selectedRow)]
-                           .fullPath;  // NOSONAR(cpp:S1905) - Required cast for array indexing
-    state.showDeletePopup = true;
-    LOG_INFO_BUILD("Opening delete popup for: " << state.fileToDelete);
-  }
-
+void HandleDeleteKeyAndPopup(GuiState& state,
+                             [[maybe_unused]] const std::vector<SearchResult>& display_results) {
   if (state.showDeletePopup) {
     ImGui::OpenPopup("Confirm Delete");
     state.showDeletePopup = false;
@@ -700,22 +695,14 @@ void HandleDeleteKeyAndPopup(GuiState& state, const std::vector<SearchResult>& d
 
   // Confirmation Modal
   // Center popup in main window every time it appears
-  const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
-  // NOLINTNEXTLINE(readability-identifier-naming) - Local constant follows project convention with
-  // k prefix. Using F suffix for float literals is acceptable
-  constexpr float kCenterFactor = 0.5F;
-  ImGui::SetNextWindowPos(
-    ImVec2(main_viewport->WorkPos.x + (main_viewport->WorkSize.x * kCenterFactor),
-           main_viewport->WorkPos.y + (main_viewport->WorkSize.y * kCenterFactor)),
-    ImGuiCond_Appearing, ImVec2(kCenterFactor, kCenterFactor));
+  CenterNextWindowInMainWindow();
 
   if (ImGui::BeginPopupModal("Confirm Delete", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-    ImGui::Text("Are you sure you want to delete this file?");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-    ImGui::TextColored(Theme::Colors::Error, "%s", state.fileToDelete.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
+    ImGui::Text("Are you sure you want to delete this file?");
+    ImGui::TextColored(Theme::Colors::Error, "%s", state.fileToDelete.c_str());
     ImGui::Separator();
 
-    constexpr float delete_cancel_button_width = 120.0F;
-    if (ImGui::Button(ICON_FA_TRASH " Delete", ImVec2(delete_cancel_button_width, 0))) {
+    if (ImGui::Button(ICON_FA_TRASH " Delete", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
       // DeleteFileToRecycleBin is implemented on both Windows and macOS
       // Windows: Moves to Recycle Bin, macOS: Moves to Trash
       if (const bool deleted = file_operations::DeleteFileToRecycleBin(state.fileToDelete);
@@ -727,7 +714,7 @@ void HandleDeleteKeyAndPopup(GuiState& state, const std::vector<SearchResult>& d
     }
     ImGui::SetItemDefaultFocus();
     ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_XMARK " Cancel", ImVec2(delete_cancel_button_width, 0))) {
+    if (ImGui::Button(ICON_FA_XMARK " Cancel", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
       ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
@@ -762,12 +749,7 @@ void HandleBulkDeletePopup(GuiState& state, const FileIndex& file_index) {
     state.showBulkDeletePopup = false;
   }
 
-  const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
-  constexpr float kCenterFactor = 0.5F;
-  auto center =
-    ImVec2(main_viewport->WorkPos.x + (main_viewport->WorkSize.x * kCenterFactor),
-           main_viewport->WorkPos.y + (main_viewport->WorkSize.y * kCenterFactor));
-  ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(kCenterFactor, kCenterFactor));
+  CenterNextWindowInMainWindow();
 
   if (ImGui::BeginPopupModal("Confirm Bulk Delete", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     const size_t marked_count = state.markedFileIds.size();
@@ -782,13 +764,12 @@ void HandleBulkDeletePopup(GuiState& state, const FileIndex& file_index) {
     }
     ImGui::Separator();
 
-    constexpr float delete_cancel_button_width = 120.0F;
-    if (ImGui::Button(ICON_FA_TRASH " Delete All", ImVec2(delete_cancel_button_width, 0))) {
+    if (ImGui::Button(ICON_FA_TRASH " Delete All", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
       ExecuteBulkDelete(state, file_index);
     }
     ImGui::SetItemDefaultFocus();
     ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_XMARK " Cancel", ImVec2(delete_cancel_button_width, 0))) {
+    if (ImGui::Button(ICON_FA_XMARK " Cancel", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
       ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
@@ -809,8 +790,8 @@ bool ResultsTable::RenderPathColumnWithEllipsis(const SearchResult& result, bool
   const std::string_view directory_path = GetDirectoryPath(result);
 
   // Calculate display path with caching and truncation (extracted to reduce complexity)
-  const char* display_path_cstr = CalculateDisplayPath(  // NOLINT(cppcoreguidelines-init-variables)
-    const_cast<SearchResult&>(result), directory_path, max_width);  // NOSONAR(cpp:S859) NOLINT(cppcoreguidelines-pro-type-const-cast) - caching optimization
+  const char* display_path_cstr = CalculateDisplayPath(
+      const_cast<SearchResult&>(result), directory_path, max_width);  // NOSONAR(cpp:S859) NOLINT(cppcoreguidelines-pro-type-const-cast) - caching optimization
 
   bool selection_changed = false;
   if (ImGui::Selectable(display_path_cstr, is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
@@ -961,10 +942,10 @@ std::string ResultsTable::TruncatePathAtBeginning(std::string_view path, float m
 
 // Renders the visual area above the table: inline filter prompt, filter status, marked actions,
 // or status label. Extracted to reduce cognitive complexity of Render() (Sonar S3776).
-void RenderResultsTableHeaderArea(IncrementalSearchState& incremental_search,
+void RenderResultsTableHeaderArea(const IncrementalSearchState& incremental_search,
                                  GuiState& state,
                                  GLFWwindow* glfw_window,
-                                 FileIndex& file_index,
+                                 const FileIndex& file_index,
                                  bool results_shortcuts_active,
                                  bool shift) {
   if (incremental_search.IsPromptVisible()) {
@@ -975,15 +956,42 @@ void RenderResultsTableHeaderArea(IncrementalSearchState& incremental_search,
     RenderMarkedActionsToolbar(state, glfw_window, file_index, shift);
   } else if (results_shortcuts_active) {
     const detail::StyleColorGuard text_color_guard(ImGuiCol_Text, Theme::Colors::Accent);
+    const float available_width = ImGui::GetContentRegionAvail().x;
 #ifdef __APPLE__
-    ImGui::TextUnformatted(
+    constexpr const char* k_full_shortcuts_text =
       "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
-      "clears filters; Cmd+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched Size columns (see Help).");
+      "clears filters; Cmd+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched "
+      "Size columns (see Help).";
+    constexpr const char* k_short_shortcuts_text =
+      "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
+      "clears filters; Cmd+G cancels the filter.";
+    constexpr const char* k_compact_shortcuts_label =
+      "Results table active - shortcuts";
 #else
-    ImGui::TextUnformatted(
+    constexpr const char* k_full_shortcuts_text =
       "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
-      "clears filters; Ctrl+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched Size columns (see Help).");
+      "clears filters; Ctrl+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched "
+      "Size columns (see Help).";
+    constexpr const char* k_short_shortcuts_text =
+      "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
+      "clears filters; Ctrl+G cancels the filter.";
+    constexpr const char* k_compact_shortcuts_label =
+      "Results table active - shortcuts";
 #endif  // __APPLE__
+
+    const ImVec2 full_size = ImGui::CalcTextSize(k_full_shortcuts_text);
+    if (full_size.x <= available_width) {
+      ImGui::TextUnformatted(k_full_shortcuts_text);
+    } else {
+      const ImVec2 short_size = ImGui::CalcTextSize(k_short_shortcuts_text);
+      if (short_size.x <= available_width) {
+        ImGui::TextUnformatted(k_short_shortcuts_text);
+      } else {
+        ImGui::TextUnformatted(k_compact_shortcuts_label);
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+      }
+    }
   } else {
     const detail::StyleColorGuard text_color_guard(ImGuiCol_Text, Theme::Colors::TextDim);
 #ifdef __APPLE__
@@ -996,6 +1004,34 @@ void RenderResultsTableHeaderArea(IncrementalSearchState& incremental_search,
       "'/' starts Filter in results; Esc clears filters; Ctrl+G cancels the filter.");
 #endif  // __APPLE__
   }
+
+  // When results shortcuts are active and the compact help label is shown,
+  // attach a tooltip with the full shortcuts text without increasing nesting depth.
+  if (results_shortcuts_active) {
+#ifdef __APPLE__
+    constexpr const char* k_full_shortcuts_text_tooltip =
+      "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
+      "clears filters; Cmd+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched "
+      "Size columns (see Help).";
+#else
+    constexpr const char* k_full_shortcuts_text_tooltip =
+      "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
+      "clears filters; Ctrl+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched "
+      "Size columns (see Help).";
+#endif  // __APPLE__
+
+    const ImVec2 full_size_tooltip = ImGui::CalcTextSize(k_full_shortcuts_text_tooltip);
+    if (full_size_tooltip.x > ImGui::GetContentRegionAvail().x &&
+        ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+      constexpr float kTooltipWrapWidthInEm = 40.0F;
+      ImGui::BeginTooltip();
+      ImGui::PushTextWrapPos(ImGui::GetFontSize() * kTooltipWrapWidthInEm);
+      ImGui::TextUnformatted(k_full_shortcuts_text_tooltip);
+      ImGui::PopTextWrapPos();
+      ImGui::EndTooltip();
+    }
+  }
+
   ImGui::Spacing();
 }
 

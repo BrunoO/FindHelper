@@ -17,14 +17,14 @@ using LONG = int32_t;
 struct FILETIME {
     uint32_t dwLowDateTime;
     uint32_t dwHighDateTime;
-    
+
     // Allow initialization: FILETIME{0, 0}
     FILETIME() : dwLowDateTime(0), dwHighDateTime(0) {}
     FILETIME(uint32_t low, uint32_t high) : dwLowDateTime(low), dwHighDateTime(high) {}
-    
+
     // Comparison operators for test assertions
     bool operator==(const FILETIME& other) const {  // NOSONAR(cpp:S2807) - Member operator is acceptable for test stub; could be refactored to hidden friend later if needed
-        return dwLowDateTime == other.dwLowDateTime && 
+        return dwLowDateTime == other.dwLowDateTime &&
                dwHighDateTime == other.dwHighDateTime;
     }
     bool operator!=(const FILETIME& other) const {  // NOSONAR(cpp:S2807) - Member operator is acceptable for test stub; could be refactored to hidden friend later if needed

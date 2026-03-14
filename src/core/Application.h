@@ -90,24 +90,24 @@ public:
               bool should_auto_crawl = false,
               std::string_view auto_crawl_folder = "",
               bool start_index_build_after_first_frame = false);
-  
+
   /**
    * @brief Destructor - cleans up owned resources
-   * 
+   *
    * All resources are cleaned up via unique_ptr destructors or AppBootstrap:
    * - ThreadPool, UsnMonitor, and IIndexBuilder are cleaned up automatically via unique_ptr
    * - Renderer is cleaned up by AppBootstrap
    */
   ~Application() override;
-  
+
   // Delete copy constructor and assignment (Application is not copyable)
   Application(const Application&) = delete;
   Application& operator=(const Application&) = delete;
-  
+
   // Delete move constructor and assignment (Application is not movable - owns resources for lifetime)
   Application(Application&&) = delete;
   Application& operator=(Application&&) = delete;
-  
+
   /**
    * @brief Run the main application loop
    *
@@ -138,14 +138,14 @@ public:
    * @return Time point of last crawl completion
    */
   [[nodiscard]] std::chrono::steady_clock::time_point GetLastCrawlCompletionTime() const;
-  
+
   /**
    * @brief Check if periodic recrawl is enabled
    *
    * @return true if periodic recrawl is enabled, false otherwise
    */
   [[nodiscard]] bool IsRecrawlEnabled() const;
-  
+
   /**
    * @brief Trigger periodic recrawl if conditions are met
    *
@@ -168,7 +168,7 @@ public:
    * @param state Current GUI state (read-only)
    */
   void TriggerManualSearch(const GuiState& state) override;
-  
+
   /**
    * @brief Apply a saved search configuration to state
    * @param state GUI state to modify
@@ -211,27 +211,27 @@ public:
   /** @brief For regression test hook: clipboard text from app's GLFW window (same as copy path uses). */
   [[nodiscard]] std::string GetClipboardTextForRegressionTest() const;
 #endif  // ENABLE_IMGUI_TEST_ENGINE
-  
+
   /**
    * @brief Check if index building is currently in progress
    *
    * @return true if index building is active, false otherwise
    */
   [[nodiscard]] bool IsIndexBuilding() const override;
-  
+
   /**
    * @brief Get indexed file count
    * @return Number of files in index
    */
   [[nodiscard]] size_t GetIndexedFileCount() const override;
-  
+
   /**
    * @brief Start indexing a folder (runtime index building)
    * @param folder_path Path to folder to crawl and index
    * @return true if indexing started successfully, false otherwise
    */
   [[nodiscard]] bool StartIndexBuilding(std::string_view folder_path) override;
-  
+
   /**
    * @brief Stop current index building
    *
@@ -306,27 +306,27 @@ private:
   // Shared index build state (owned by caller, referenced here)
   IndexBuildState& index_build_state_;
   // NOLINTEND(readability-identifier-naming)
-  
+
   // Private helper methods
   void ProcessFrame();
   void HandleIndexDump();
   void SaveSettingsOnShutdown();
   void RenderFrame();
-  
+
   // Helper methods for Run() to reduce cognitive complexity
   bool HandleMinimizedWindow();
   bool HandleUnfocusedWindow();
   bool HandleFocusedWindow(double idle_timeout_seconds, double idle_wait_timeout);
   bool DetectUserInteraction(ImVec2& last_mouse_pos) const;
   void UpdateIdleStateLogging(bool is_idle, bool& was_idle) const;
-  
+
   // Helper methods for ProcessFrame() to reduce cognitive complexity
   void UpdateIndexBuildState();
   void UpdateSearchState(bool is_index_building);
-  
+
   // Auto-crawl helper method
   void TriggerAutoCrawl();
-  
+
   // Stopping overlay removed - now using StoppingState component instead
 };
 

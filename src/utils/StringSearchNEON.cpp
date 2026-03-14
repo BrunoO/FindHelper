@@ -19,8 +19,8 @@ inline bool FullCompare(const char* a, const char* b, size_t len) {
         return std::memcmp(a, b, len) == 0;
     } else {
         for (size_t i = 0; i < len; ++i) {
-            if (ToLowerChar(static_cast<unsigned char>(a[i])) !=  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer iteration over char buffer is intentional in this SIMD hot path
-                ToLowerChar(static_cast<unsigned char>(b[i]))) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer iteration over char buffer is intentional in this SIMD hot path
+            if (ToLowerChar(static_cast<unsigned char>(a[i])) !=
+                ToLowerChar(static_cast<unsigned char>(b[i]))) {
                 return false;
             }
         }
@@ -38,15 +38,15 @@ const char* InternalStrStrNEON(const char* haystack, size_t haystack_len,
     const size_t max_start = haystack_len - needle_len;
 
     const uint8_t first = CaseSensitive
-        ? static_cast<uint8_t>(needle[0])  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - C-string indexing is intentional; needle is a valid pointer
-        : static_cast<uint8_t>(ToLowerChar(static_cast<unsigned char>(needle[0])));  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - C-string indexing is intentional
+        ? static_cast<uint8_t>(needle[0])
+        : static_cast<uint8_t>(ToLowerChar(static_cast<unsigned char>(needle[0])));
     const uint8x16_t v_first = vdupq_n_u8(first);
 
     size_t i = 0;
     for (; i + 16 <= haystack_len; i += 16) {
         // vld1q_u8 handles unaligned loads natively on arm64.
         const uint8x16_t chunk = vld1q_u8(  // NOSONAR(cpp:S3630) - Required to load 16-byte char buffer into NEON intrinsic; no safer zero-copy alternative
-            reinterpret_cast<const uint8_t*>(haystack + i));  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-pro-bounds-pointer-arithmetic) - NEON vld1q_u8 requires uint8_t*; pointer offset over char buffer is intentional
+            reinterpret_cast<const uint8_t*>(haystack + i));  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) - NEON vld1q_u8 requires uint8_t*; pointer offset over char buffer is intentional
 
         const uint8x16_t cmp = CaseSensitive
             ? vceqq_u8(chunk, v_first)
@@ -64,23 +64,23 @@ const char* InternalStrStrNEON(const char* haystack, size_t haystack_len,
         std::array<uint8_t, 16> match_lane{};
         vst1q_u8(match_lane.data(), cmp);
         for (size_t b = 0; b < 16; ++b) {
-            if (match_lane[b] == 0) {  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index) - b is in [0,15]; array size is 16; bounds are guaranteed
+            if (match_lane[b] == 0) {  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - NEON SIMD, loop-guarded; b is in [0,15], array size is 16
                 continue;
             }
             const size_t pos = i + b;
             if (pos > max_start) {
                 break;
             }
-            if (FullCompare<CaseSensitive>(haystack + pos, needle, needle_len)) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer offset into char buffer is intentional in this SIMD match path
-                return haystack + pos;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer offset into char buffer is intentional in this SIMD match path
+            if (FullCompare<CaseSensitive>(haystack + pos, needle, needle_len)) {
+                return haystack + pos;
             }
         }
     }
 
     // Scalar tail: fewer than 16 bytes remain.
     for (size_t k = i; k <= max_start; ++k) {
-        if (FullCompare<CaseSensitive>(haystack + k, needle, needle_len)) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer offset into char buffer is intentional in scalar tail
-            return haystack + k;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer offset into char buffer is intentional in scalar tail
+        if (FullCompare<CaseSensitive>(haystack + k, needle, needle_len)) {
+            return haystack + k;
         }
     }
     return nullptr;

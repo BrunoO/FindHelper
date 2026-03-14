@@ -100,7 +100,7 @@ bool DropUnnecessaryPrivileges() {
 
 std::vector<std::string> GetCurrentPrivileges() {
   std::vector<std::string> privileges;
-  
+
   ScopedHandle hToken;
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, hToken.GetAddressOf())) {
     return privileges; // Return empty on error
@@ -117,7 +117,7 @@ std::vector<std::string> GetCurrentPrivileges() {
     }
     return privileges;
   }
-  
+
   if (cb_size == 0) {
     return privileges;
   }
@@ -131,7 +131,7 @@ std::vector<std::string> GetCurrentPrivileges() {
   // 3. GetTokenInformation() will write a valid TOKEN_PRIVILEGES structure
   std::vector<BYTE> buffer(cb_size);
   auto tp = reinterpret_cast<TOKEN_PRIVILEGES*>(buffer.data());  // NOSONAR(cpp:S3630) - Windows API GetTokenInformation requires reinterpret_cast to convert BYTE buffer to TOKEN_PRIVILEGES*
-  
+
   if (!GetTokenInformation(hToken.Get(), TokenPrivileges, tp, cb_size, &cb_size)) {
     DWORD err = GetLastError();
     logging_utils::LogWindowsApiError("GetTokenInformation",

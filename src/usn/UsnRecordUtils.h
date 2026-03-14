@@ -5,25 +5,25 @@
 
 /**
  * UsnRecordUtils - Type-safe utilities for USN record operations
- * 
+ *
  * This header provides utility functions to avoid C4018 signed/unsigned
  * comparison warnings when working with USN records and Windows API types.
- * 
+ *
  * PROBLEM:
  * - sizeof() returns size_t (64-bit on 64-bit systems)
  * - Windows API uses DWORD (32-bit unsigned)
  * - USN_RECORD_V2 uses WORD (16-bit) for FileNameOffset/FileNameLength
  * - Comparing these types directly triggers C4018 warnings
- * 
+ *
  * SOLUTION:
  * - Use these utility functions to convert types consistently
  * - All comparisons use DWORD to match Windows API conventions
  * - Prevents warnings and makes code more maintainable
- * 
+ *
  * USAGE:
  *   // Instead of: offset + sizeof(USN_RECORD_V2) > bytesReturned
  *   // Use:        offset + usn_record_utils::SizeOfUsnRecordV2() > bytesReturned
- * 
+ *
  *   // Instead of: record->FileNameOffset + record->FileNameLength > record->RecordLength
  *   // Use:        usn_record_utils::AddWords(record->FileNameOffset, record->FileNameLength) > record->RecordLength
  */
@@ -34,17 +34,17 @@ namespace usn_record_utils {
   constexpr DWORD SizeOfUsnRecordV2() {
     return static_cast<DWORD>(sizeof(USN_RECORD_V2));  // NOSONAR(cpp:S1905) - Cast needed to match Windows API types and avoid C4018 warnings
   }
-  
+
   constexpr DWORD SizeOfUsn() {
     return static_cast<DWORD>(sizeof(USN));  // NOSONAR(cpp:S1905) - Cast needed to match Windows API types and avoid C4018 warnings
   }
-  
+
   // Convert WORD values to DWORD for safe arithmetic and comparisons
   // This avoids C4018 warnings when comparing WORD + WORD with DWORD
   constexpr DWORD ToDword(WORD value) {
     return static_cast<DWORD>(value);
   }
-  
+
   // Safe addition of WORD values that returns DWORD
   constexpr DWORD AddWords(WORD a, WORD b) {
     return static_cast<DWORD>(a) + static_cast<DWORD>(b);

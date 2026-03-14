@@ -1,5 +1,5 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include "doctest/doctest.h"
+#include <doctest/doctest.h>
 
 // Enable test mode for non-Windows platforms (allows use of Windows type stubs)
 // Note: CMake also defines this, so we only define if not already defined
@@ -9,9 +9,8 @@
 #endif  // USN_WINDOWS_TESTS
 #endif  // _WIN32
 
-#include <array>
-
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <future>
@@ -21,6 +20,7 @@
 #include <string_view>
 #include <thread>
 #include <vector>
+
 #include "TestHelpers.h"
 #include "core/Settings.h"
 #include "index/FileIndex.h"
@@ -42,15 +42,16 @@ namespace {
  */
 void PopulateDeepHierarchy(FileIndex& index, int depth, const std::string& base_name = "level") {
   uint64_t parent_id = 0;
-  std::string current_path = "C:\\Deep";
+  const std::string current_path = "C:\\Deep";
 
   // Create base directory
-  uint64_t current_id = 1000000;
+  const uint64_t current_id_base = 1000000;
+  uint64_t current_id = current_id_base;
   index.Insert(current_id, parent_id, current_path, true, {0, 0});
   parent_id = current_id;
 
   for (int i = 1; i <= depth; ++i) {
-    std::string name = base_name + "_" + std::to_string(i);
+    const std::string name = base_name + "_" + std::to_string(i);
     current_id++;
     index.Insert(current_id, parent_id, name, true, {0, 0});
     parent_id = current_id;
@@ -88,20 +89,13 @@ CollectSearchResults(  // NOSONAR(cpp:S107) - Test-only convenience wrapper with
   return test_helpers::CollectFutures(futures);
 }
 
-// Helper to get extension offset in path (reduces nesting in ValidateResults; S134).
-// Now using PathUtils, this helper is simplified or can be removed if direct usage is cleaner
-// Keeping it for now to match existing structure but using new helpers
-std::string_view GetExtension(std::string_view path) {
-  return path_utils::GetExtension(path);
-}
-
 // Helper to check if result extension matches any expected extension (reduces nesting in
 // ValidateResults).
 bool ExtensionMatches(std::string_view result_ext,
                       const std::vector<std::string>& expected_extensions) {
   for (const auto& ext : expected_extensions) {
     std::string ext_lower = ToLower(ext);
-    if (!ext_lower.empty() && ext_lower[0] == '.') {
+    if (!ext_lower.empty() && ext_lower[0] == '.') {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by !ext_lower.empty()
       ext_lower.erase(0, 1);
     }
     if (result_ext == ext_lower) {
@@ -121,8 +115,8 @@ void ValidateResults(const std::vector<SearchResultData>& results,
   // 1. Check all results contain the query (case-sensitive or not)
   for (const auto& result : results) {
     // Calculate filename using PathUtils
-    std::string_view path_view(result.fullPath);
-    std::string_view filename_view = path_utils::GetFilename(path_view);
+    const std::string_view path_view(result.fullPath);
+    const std::string_view filename_view = path_utils::GetFilename(path_view);
     std::string search_target(filename_view);
     std::string query = expected_query;
 
@@ -134,9 +128,10 @@ void ValidateResults(const std::vector<SearchResultData>& results,
     REQUIRE(search_target.find(query) != std::string::npos);
 
     // 2. Check extension filter if provided
-    if (expected_extensions && !expected_extensions->empty()) {
-      std::string_view extension = path_utils::GetExtension(path_view);
-      std::string result_ext = !extension.empty() ? std::string(ToLower(extension)) : std::string();
+    if (expected_extensions != nullptr && !expected_extensions->empty()) {
+      const std::string_view extension = path_utils::GetExtension(path_view);
+      const std::string result_ext =
+        !extension.empty() ? std::string(ToLower(extension)) : std::string();
       REQUIRE(ExtensionMatches(result_ext, *expected_extensions));
     }
 
@@ -162,10 +157,10 @@ TEST_SUITE("FileIndex Search Strategies") {
     // suite below
 
     TEST_CASE("Static strategy distributes work evenly") {
-      test_helpers::TestSettingsFixture settings("static");
+      const test_helpers::TestSettingsFixture settings("static");
       test_helpers::TestFileIndexFixture index_fixture(10000);
 
-      int thread_count = 4;
+      const int thread_count = 4;
       std::vector<ThreadTiming> timings;
       auto futures = index_fixture.GetIndex().SearchAsyncWithData(
         "file_", thread_count, nullptr, "", nullptr, false, false, &timings);
@@ -175,7 +170,7 @@ TEST_SUITE("FileIndex Search Strategies") {
       // Collect results and verify all items are processed
       // Note: We need to check individual thread results, so we can't use CollectAndVerifyFutures
       // which consumes futures. We'll collect manually but verify total.
-      size_t total_results =
+      const size_t total_results =
         test_helpers::search_strategy_test_helpers::CollectFuturesAndCount(futures);
 
       // Verify we got results from all threads
@@ -186,7 +181,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Static strategy works with single thread") {
-      test_helpers::TestSettingsFixture settings("static");
+      const test_helpers::TestSettingsFixture settings("static");
 
       test_helpers::TestFileIndexFixture index_fixture(100);
 
@@ -197,11 +192,11 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Static strategy works with many threads") {
-      test_helpers::TestSettingsFixture settings("static");
+      const test_helpers::TestSettingsFixture settings("static");
 
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
-      int thread_count = 16;
+      const int thread_count = 16;
       auto results = CollectSearchResults(index_fixture.GetIndex(), "file_", thread_count);
 
       REQUIRE(results.size() > 0);
@@ -210,7 +205,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Static strategy handles small datasets") {
-      test_helpers::TestSettingsFixture settings("static");
+      const test_helpers::TestSettingsFixture settings("static");
 
       test_helpers::TestFileIndexFixture index_fixture(10);
 
@@ -237,8 +232,8 @@ TEST_SUITE("FileIndex Search Strategies") {
     TEST_CASE("Hybrid strategy uses dynamic chunks") {
       // Set hybridInitialWorkPercent to 50% to ensure dynamic chunks are
       // available
-      auto settings = test_helpers::search_strategy_test_helpers::CreateHybridSettings(50);
-      test_helpers::TestSettingsFixture settings_fixture(settings);
+      const auto settings = test_helpers::search_strategy_test_helpers::CreateHybridSettings(50);
+      const test_helpers::TestSettingsFixture settings_fixture(settings);
 
       test_helpers::TestFileIndexFixture index_fixture(10000);
 
@@ -259,8 +254,9 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Hybrid strategy caps initial chunks correctly") {
-      auto settings = test_helpers::search_strategy_test_helpers::CreateHybridSettings(75);
-      size_t total_results = test_helpers::search_strategy_test_helpers::TestGetFuturesAndCollect(
+      const auto settings = test_helpers::search_strategy_test_helpers::CreateHybridSettings(75);
+      const size_t total_results =
+        test_helpers::search_strategy_test_helpers::TestGetFuturesAndCollect(
         "hybrid", 10000, "file_", 4, 1, 4);
       REQUIRE(total_results > 0);
     }
@@ -269,9 +265,10 @@ TEST_SUITE("FileIndex Search Strategies") {
       test_helpers::TestFileIndexFixture index_fixture(5000);
 
       // Test with different percentages
-      for (int percent : {50, 60, 70, 80, 90}) {
-        auto settings = test_helpers::search_strategy_test_helpers::CreateHybridSettings(percent);
-        test_helpers::TestSettingsFixture settings_fixture(settings);
+      for (const int percent : {50, 60, 70, 80, 90}) {
+        const auto settings =
+          test_helpers::search_strategy_test_helpers::CreateHybridSettings(percent);
+        const test_helpers::TestSettingsFixture settings_fixture(settings);
 
         auto results = CollectSearchResults(index_fixture.GetIndex(), "file_", 4);
         REQUIRE(results.size() > 0);
@@ -283,22 +280,22 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Hybrid strategy handles overlapping concurrent searches") {
-      test_helpers::TestSettingsFixture settings("hybrid");
+      const test_helpers::TestSettingsFixture settings("hybrid");
 
       test_helpers::TestFileIndexFixture index_fixture(10000);
 
       // Start multiple searches that will overlap in time
       // This is the crash scenario: user presses Search while previous search
       // is running
-      std::vector<std::string> queries = {"file_", "file_", "file_"};
-      auto results = test_helpers::search_strategy_test_helpers::RunConcurrentSearches(
+      const std::vector<std::string> queries = {"file_", "file_", "file_"};
+      const auto results = test_helpers::search_strategy_test_helpers::RunConcurrentSearches(
         index_fixture.GetIndex(), queries, 4, true);
 
       // All searches should complete and return results
       REQUIRE(results.size() == 3);
-      REQUIRE(results[0].total_results > 0);
-      REQUIRE(results[1].total_results > 0);
-      REQUIRE(results[2].total_results > 0);
+      REQUIRE(results[0].total_results > 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
+      REQUIRE(results[1].total_results > 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
+      REQUIRE(results[2].total_results > 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
     }
 
   }  // TEST_SUITE("Hybrid Strategy")
@@ -308,14 +305,14 @@ TEST_SUITE("FileIndex Search Strategies") {
     // suite below
 
     TEST_CASE("Dynamic strategy processes all work dynamically") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
 
       test_helpers::TestFileIndexFixture index_fixture(10000);
 
       auto futures = index_fixture.GetIndex().SearchAsyncWithData("file_", 4, nullptr, "", nullptr,
                                                                   false, false, nullptr);
 
-      size_t total_results =
+      const size_t total_results =
         test_helpers::search_strategy_test_helpers::VerifyFuturesSizeAndCollect(futures, 1, 4);
       REQUIRE(total_results > 0);
     }
@@ -324,10 +321,10 @@ TEST_SUITE("FileIndex Search Strategies") {
       test_helpers::TestFileIndexFixture index_fixture(10000);
 
       // Test with different chunk sizes
-      for (int chunk_size : {100, 500, 1000, 2000}) {
-        auto settings =
+      for (const int chunk_size : {100, 500, 1000, 2000}) {
+        const auto settings =
           test_helpers::search_strategy_test_helpers::CreateDynamicSettings(chunk_size);
-        test_helpers::TestSettingsFixture settings_fixture(settings);
+        const test_helpers::TestSettingsFixture settings_fixture(settings);
 
         auto results = CollectSearchResults(index_fixture.GetIndex(), "file_", 4);
         REQUIRE(results.size() > 0);
@@ -336,7 +333,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles no matches gracefully") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
 
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
@@ -348,7 +345,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     // Additional crash-prevention tests
 
     TEST_CASE("Dynamic strategy handles empty index") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
 
       FileIndex index;
       index.ResetThreadPool();
@@ -360,7 +357,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles single item") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(1);
 
       auto results = CollectSearchResults(index_fixture.GetIndex(), "file_", 4);
@@ -377,7 +374,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles many threads with small dataset") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(50);
 
       // Request many threads (more than items)
@@ -389,7 +386,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles large dataset with many threads") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(50000);
 
       std::vector<ThreadTiming> timings;
@@ -407,7 +404,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles concurrent searches") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(5000);
 
       // Run multiple searches concurrently to test thread safety
@@ -434,12 +431,12 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles extension filter") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
       // Test with extensions that should match some files
       // Our test data uses: .txt, .cpp, .h, .exe, .dll, .json, .md
-      std::vector<std::string> extensions = {".txt", ".cpp", ".h"};
+      const std::vector<std::string> extensions = {".txt", ".cpp", ".h"};
       auto results = CollectSearchResults(index_fixture.GetIndex(), "file_", 4, &extensions);
 
       // Should find some results (at least 3 files out of 1000 should match)
@@ -457,12 +454,12 @@ TEST_SUITE("FileIndex Search Strategies") {
       // The test uses a unique extension that won't match any files. If the
       // SearchContext is captured by reference (dangling), the extension_set
       // would contain garbage data and might incorrectly match some files.
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(500);
 
       // Use a unique extension that doesn't exist in test data
       // Test data uses: .txt, .cpp, .h, .exe, .dll, .json, .md
-      std::vector<std::string> fake_extensions = {".xyz_unique_12345"};
+      const std::vector<std::string> fake_extensions = {".xyz_unique_12345"};
       auto results = CollectSearchResults(index_fixture.GetIndex(), "file_", 4, &fake_extensions);
 
       // With correct capture-by-value, no files should match this fake extension
@@ -474,7 +471,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Search in deep hierarchy") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
 
       FileIndex index;
       index.ResetThreadPool();
@@ -483,11 +480,11 @@ TEST_SUITE("FileIndex Search Strategies") {
       auto results = CollectSearchResults(index, "file_at_level_20", 4);
 
       REQUIRE(results.size() == 1);
-      CHECK(results[0].fullPath.find("level_20") != std::string::npos);
+      CHECK(results[0].fullPath.find("level_20") != std::string::npos);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 1)
     }
 
     TEST_CASE("Search with path query") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
 
       FileIndex index;
       index.ResetThreadPool();
@@ -503,7 +500,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles folders_only filter") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
       auto results = CollectSearchResults(index_fixture.GetIndex(), "dir_", 4, nullptr, true);
@@ -517,7 +514,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     // Additional crash-prevention tests for Windows issues
 
     TEST_CASE("Dynamic strategy handles rapid successive searches") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(5000);
 
       // Run multiple searches in quick succession WITHOUT waiting for
@@ -564,33 +561,33 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles overlapping concurrent searches") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
 
       test_helpers::TestFileIndexFixture index_fixture(10000);
 
       // Start multiple searches that will overlap in time
       // This is the crash scenario: user presses Search while previous search
       // is running
-      std::vector<std::string> queries = {"file_", "file_", "file_"};
-      auto results = test_helpers::search_strategy_test_helpers::RunConcurrentSearches(
+      const std::vector<std::string> queries = {"file_", "file_", "file_"};
+      const auto results = test_helpers::search_strategy_test_helpers::RunConcurrentSearches(
         index_fixture.GetIndex(), queries, 4, false);  // Allow 0 results
 
       // All searches should complete without crashing
       // Note: Results may be 0 if arrays changed, but no exceptions should occur
       REQUIRE(results.size() == 3);
-      REQUIRE(results[0].total_results >= 0);
-      REQUIRE(results[1].total_results >= 0);
-      REQUIRE(results[2].total_results >= 0);
+      REQUIRE(results[0].total_results >= 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
+      REQUIRE(results[1].total_results >= 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
+      REQUIRE(results[2].total_results >= 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
 
       // At least one search should return results (most likely all will)
-      REQUIRE((results[0].total_results > 0 || results[1].total_results > 0 ||
-               results[2].total_results > 0));
+      REQUIRE((results[0].total_results > 0 || results[1].total_results > 0 ||  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
+               results[2].total_results > 0));  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
     }
 
     TEST_CASE("Dynamic strategy handles max iterations limit") {
-      auto settings = test_helpers::search_strategy_test_helpers::CreateDynamicSettings(
+      const auto settings = test_helpers::search_strategy_test_helpers::CreateDynamicSettings(
         100);  // Small chunks = many iterations
-      test_helpers::TestSettingsFixture settings_fixture(settings);
+      const test_helpers::TestSettingsFixture settings_fixture(settings);
 
       test_helpers::TestFileIndexFixture index_fixture(10000);
 
@@ -602,7 +599,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles array size changes gracefully") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
       // Start a search
@@ -641,12 +638,12 @@ TEST_SUITE("FileIndex Search Strategies") {
     TEST_CASE("All strategies return correct results") {
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
-      std::vector<std::string> strategies =
+      const std::vector<std::string> strategies =
         test_helpers::search_strategy_test_helpers::GetAllStrategies();
 
       for (const auto& strategy : strategies) {
         DOCTEST_SUBCASE((strategy + " strategy").c_str()) {
-          test_helpers::TestSettingsFixture settings(strategy);
+          const test_helpers::TestSettingsFixture settings(strategy);
           index_fixture.GetIndex().ResetThreadPool();
 
           auto results = CollectSearchResults(index_fixture.GetIndex(), "file_", 4);
@@ -675,8 +672,8 @@ TEST_SUITE("FileIndex Search Strategies") {
           REQUIRE(results.size() > 0);
           // All results should match the pattern
           for (const auto& result : results) {
-            std::string_view path_view(result.fullPath);
-            std::string_view filename = path_utils::GetFilename(path_view);
+            const std::string_view path_view(result.fullPath);
+            const std::string_view filename = path_utils::GetFilename(path_view);
             CHECK(filename.find("file_") == 0);
           }
         });
@@ -690,15 +687,15 @@ TEST_SUITE("FileIndex Search Strategies") {
 
           REQUIRE(results.size() > 0);
           for (const auto& result : results) {
-            std::string_view path_view(result.fullPath);
-            std::string_view filename = path_utils::GetFilename(path_view);
+            const std::string_view path_view(result.fullPath);
+            const std::string_view filename = path_utils::GetFilename(path_view);
             CHECK(filename.find("file_00") == 0);
           }
         });
     }
 
     TEST_CASE("Path patterns (pp:) - precompiled - work across all strategies") {
-      test_helpers::TestSettingsFixture settings;
+      const test_helpers::TestSettingsFixture settings;
 
       FileIndex index;
       PopulateDeepHierarchy(index, 10);
@@ -718,29 +715,29 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Extension-only mode skips pattern matchers") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
 
       test_helpers::TestFileIndexFixture index_fixture(100);
 
       // Extension-only mode: empty query, no path query, but has extensions
-      std::vector<std::string> extensions = {".txt", ".cpp"};
+      const std::vector<std::string> extensions = {".txt", ".cpp"};
       auto results = CollectSearchResults(index_fixture.GetIndex(), "", 4, &extensions);
 
       // Should return files with matching extensions only
       REQUIRE(results.size() > 0);
       for (const auto& result : results) {
-        std::string_view path_view(result.fullPath);
-        if (size_t last_dot = path_view.find_last_of('.');
+        const std::string_view path_view(result.fullPath);
+        if (const size_t last_dot = path_view.find_last_of('.');
             last_dot != std::string_view::npos && last_dot + 1 < path_view.length()) {
-          std::string_view ext = path_view.substr(last_dot + 1);
-          bool has_match = (ext == "txt" || ext == "cpp");
+          const std::string_view ext = path_view.substr(last_dot + 1);
+          const bool has_match = (ext == "txt" || ext == "cpp");
           CHECK(has_match);
         }
       }
     }
 
     TEST_CASE("Case-sensitive pattern matching") {
-      test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("dynamic");
 
       test_helpers::TestFileIndexFixture index_fixture(100);
 

@@ -64,6 +64,7 @@
 #include "ui/StatusBar.h"
 #include "ui/UIRenderer.h"
 #include "usn/UsnMonitor.h"
+#include "utils/AsyncUtils.h"
 #include "utils/ClipboardUtils.h"
 #include "utils/LoadBalancingStrategy.h"  // ValidateAndNormalizeStrategyName (strategy validation and default)
 #include "utils/Logger.h"
@@ -79,13 +80,8 @@
 // Run/ProcessFrame).
 #ifdef ENABLE_IMGUI_TEST_ENGINE
 #include "imgui_te_engine.h"
-// NOLINTNEXTLINE(readability-identifier-naming,google-objc-function-naming) - External ImGui Test
-// Engine API (imgui_te_ui.h); not included to limit scope
-void ImGuiTestEngine_ShowTestEngineWindows(ImGuiTestEngine* engine, bool* p_open);
-// NOLINTNEXTLINE(readability-identifier-naming,google-objc-function-naming) - Test registration
-// entry point
-void RegisterFindHelperTests(ImGuiTestEngine* engine,
-                             IRegressionTestHook* hook);  // Implemented in ImGuiTestEngineTests.cpp
+void ImGuiTestEngine_ShowTestEngineWindows(ImGuiTestEngine* engine, bool* p_open);  // NOLINT(readability-identifier-naming,google-objc-function-naming) - External ImGui Test Engine API
+void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook);  // NOLINT(readability-identifier-naming,google-objc-function-naming) - Test registration; implemented in ImGuiTestEngineTests.cpp
 
 namespace {
 class ApplicationRegressionTestHook : public IRegressionTestHook {
@@ -173,18 +169,10 @@ class ApplicationRegressionTestHook : public IRegressionTestHook {
  private:
   Application*
     app_;  // NOLINT(readability-identifier-naming) - Project convention: snake_case_ for members
-  // NOLINTNEXTLINE(readability-identifier-naming) - Project convention: snake_case_ for members;
-  // clang-tidy flags multi-word lower_case
-  bool selection_mark_pending_ = false;
-  // NOLINTNEXTLINE(readability-identifier-naming) - Project convention: snake_case_ for members;
-  // clang-tidy flags multi-word lower_case
-  bool copy_marked_pending_ = false;
-  // NOLINTNEXTLINE(readability-identifier-naming) - Project convention: snake_case_ for members;
-  // clang-tidy flags multi-word lower_case
-  bool copy_marked_filenames_pending_ = false;
-  // NOLINTNEXTLINE(readability-identifier-naming) - Project convention: snake_case_ for members;
-  // clang-tidy flags multi-word lower_case
-  bool copy_selected_path_pending_ = false;
+  bool selection_mark_pending_ = false;  // NOLINT(readability-identifier-naming) - Project convention snake_case_ for members
+  bool copy_marked_pending_ = false;  // NOLINT(readability-identifier-naming) - Project convention snake_case_ for members
+  bool copy_marked_filenames_pending_ = false;  // NOLINT(readability-identifier-naming) - Project convention snake_case_ for members
+  bool copy_selected_path_pending_ = false;  // NOLINT(readability-identifier-naming) - Project convention snake_case_ for members
 };
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Cohesive shortcut-test hook handling;
@@ -264,7 +252,7 @@ Application::Application(AppBootstrapResultBase& bootstrap, const CommandLineArg
   // Create ThreadPool (owned by Application) for general-purpose async operations
   // Use settings thread pool size if available, otherwise hardware concurrency
   size_t thread_count =
-    std::thread::hardware_concurrency();  // NOLINT(cppcoreguidelines-init-variables) - Initialized
+    std::thread::hardware_concurrency();
                                           // from hardware_concurrency(), conditionally reassigned
                                           // below
   if (settings_ != nullptr && settings_->searchThreadPoolSize > 0) {
@@ -321,29 +309,11 @@ Application::~Application() {
   // and dereference dangling references → use-after-free / SIGSEGV on quit.
   state_.sort_cancellation_token_.Cancel();
   for (auto& f : state_.attributeLoadingFutures) {
-    if (f.valid()) {
-      try {
-        if (f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-          f.wait();
-        }
-        f.get();
-      } catch (...) {  // NOLINT(bugprone-empty-catch) NOSONAR(cpp:S2738, cpp:S2486) - Drain on
-                       // shutdown; must not throw
-      }
-    }
+    async_utils::SafeWaitFuture(f);
   }
   state_.attributeLoadingFutures.clear();
   for (auto& f : state_.cloudFileLoadingFutures) {
-    if (f.valid()) {
-      try {
-        if (f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-          f.wait();
-        }
-        f.get();
-      } catch (...) {  // NOLINT(bugprone-empty-catch) NOSONAR(cpp:S2738, cpp:S2486) - Drain on
-                       // shutdown; must not throw
-      }
-    }
+    async_utils::SafeWaitFuture(f);
   }
   state_.cloudFileLoadingFutures.clear();
 }
@@ -473,12 +443,12 @@ bool Application::HandleUnfocusedWindow() {
 bool Application::HandleFocusedWindow(double idle_timeout_seconds, double idle_wait_timeout) {
   // Calculate time since last interaction (using previous frame's state)
   auto now = std::chrono::steady_clock::now();
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - false positive; is_idle is initialized here
+
   const bool is_idle =
     std::chrono::duration<double>(now - last_interaction_time_).count() > idle_timeout_seconds;
 
   // Choose event handling strategy
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - init-statement; check false positive
+
   if (const bool has_background_work{search_worker_.IsBusy() || IsIndexBuilding() ||
                                      !state_.attributeLoadingFutures.empty()};
       is_idle && !has_background_work) {
@@ -711,8 +681,7 @@ void Application::ProcessFrame() {
 
 void Application::UpdateIndexBuildState() {
   // Track previous state to detect completion
-  const bool was_building = state_.index_build_in_progress;  // NOLINT(cppcoreguidelines-init-variables)
-                                                             // - Initialized from state member
+  const bool was_building = state_.index_build_in_progress;
   const auto now = std::chrono::steady_clock::now();
 
   // Update GUI-facing view of index build state so UI components can display
@@ -775,7 +744,7 @@ void Application::UpdateSearchState(bool is_index_building) {
   const bool was_search_active = last_search_active_;
 
   // Store current search params if a search is active before the update.
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - init-statement; check false positive
+
   if (const bool is_search_active_before{state_.searchActive}; is_search_active_before) {
     last_search_params_ = state_.BuildCurrentSearchParams();
   }
@@ -784,8 +753,7 @@ void Application::UpdateSearchState(bool is_index_building) {
                             monitor_.get(), is_index_building, *this, *settings_,
                             last_interaction_time_);
 
-  const bool is_search_active_after{state_.searchActive};  // NOLINT(cppcoreguidelines-init-variables)
-                                                           // - brace-init; check false positive
+  const bool is_search_active_after{state_.searchActive};
 
   // Check if search just completed (was active, now not active, and has results)
   // Only record recent searches for manually triggered searches (not instant/auto-refresh)
@@ -816,7 +784,7 @@ void Application::HandleIndexDump() {
 
   // Wait a brief moment to ensure index is fully finalized.
   const size_t indexed_count{
-    monitor_->GetIndexedFileCount()};  // NOLINT(cppcoreguidelines-init-variables) - brace-init
+    monitor_->GetIndexedFileCount()};
                                        // false positive; indexed count is stable here
   if (indexed_count > 0) {
     if (DumpIndexToFile(*file_index_, cmd_args_.dump_index_to)) {

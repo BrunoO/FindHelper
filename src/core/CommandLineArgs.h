@@ -11,19 +11,19 @@ struct CommandLineArgs {
   bool show_version = false;
   bool show_metrics = false;
   bool exit_requested = false; // Set to true if help/version was shown
-  
+
   // Optional overrides for settings
   int thread_pool_size_override = -1; // -1 means no override
   std::string load_balancing_override;  // Empty means no override
   int window_width_override = -1; // -1 means no override
   int window_height_override = -1; // -1 means no override
-  
+
   // Index dump option
   std::string dump_index_to;  // Empty means don't dump
 
   // Index from file option
   std::string index_from_file;  // Empty means don't use
-  
+
   // Folder to crawl and index (when no index file is provided)
   std::string crawl_folder;  // Empty means don't crawl
 

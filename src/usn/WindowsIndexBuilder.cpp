@@ -35,10 +35,7 @@ public:
       return;
     }
 
-    state.active.store(true, std::memory_order_release);
-    state.completed.store(false, std::memory_order_release);
-    state.failed.store(false, std::memory_order_release);
-    state.cancel_requested.store(false, std::memory_order_release);
+    state.MarkStarting();
 
     shared_state_ = &state;
 
@@ -67,18 +64,24 @@ public:
         const std::chrono::milliseconds interval_increment(50);
 
         while (!state->cancel_requested.load(std::memory_order_acquire)) {
-          // Check if index population is complete
+          // Check if index population is complete or failed
           if (!monitor_->IsPopulatingIndex()) {
-            // RecomputeAllPaths was already called inside
-            // UsnMonitor::RunInitialPopulationAndPrivileges, before
-            // is_populating_index_ was set to false. By the time we reach
-            // here all paths are fully resolved and monitoring is already
-            // running against correct PathStorage state.
-            size_t final_count = monitor_->GetIndexedFileCount();
-            state->entries_processed.store(final_count, std::memory_order_release);
-            state->MarkCompleted();
-            LOG_INFO_BUILD("WindowsIndexBuilder: USN initial population completed with "
-                           << final_count << " entries");
+            if (monitor_->InitialPopulationFailed()) {
+              state->MarkFailed();
+              state->SetLastErrorMessage("USN initial index population or initialization failed");
+              LOG_ERROR_BUILD("WindowsIndexBuilder: USN initial population failed");
+            } else {
+              // RecomputeAllPaths was already called inside
+              // UsnMonitor::RunInitialPopulationAndPrivileges, before
+              // is_populating_index_ was set to false. By the time we reach
+              // here all paths are fully resolved and monitoring is already
+              // running against correct PathStorage state.
+              size_t final_count = monitor_->GetIndexedFileCount();
+              state->entries_processed.store(final_count, std::memory_order_release);
+              state->MarkCompleted();
+              LOG_INFO_BUILD("WindowsIndexBuilder: USN initial population completed with "
+                             << final_count << " entries");
+            }
             break;
           }
 

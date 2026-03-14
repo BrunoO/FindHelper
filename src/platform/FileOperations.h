@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 
+#include "utils/ClipboardUtils.h"
 #include "utils/Logger.h"
 #include "utils/PlatformTypes.h"
 
@@ -83,10 +84,10 @@ namespace file_operations {
 namespace internal {
   /**
    * @brief Validates path input for file operations
-   * 
+   *
    * Checks that the path is not empty and does not contain embedded null characters
    * (security concern). Logs warnings/errors for invalid paths.
-   * 
+   *
    * @param path Path to validate
    * @param operation Name of the operation (for logging)
    * @return true if path is valid, false otherwise
@@ -103,40 +104,49 @@ namespace internal {
     }
     return true;
   }
-  
+
+  // Convert string_view to string and validate in one step.
+  // Returns the converted string; sets valid=false and logs on failure.
+  // Use at the top of each platform function: const std::string path = ToValidatedPath(full_path, "Func", ok); if (!ok) return;
+  inline std::string ToValidatedPath(std::string_view full_path, const char* operation, bool& valid) {
+    std::string path(full_path);
+    valid = ValidatePath(path, operation);
+    return path;
+  }
+
   /**
    * @brief Security validation for paths used with ShellExecute
-   * 
+   *
    * Rejects potentially unsafe paths that could be used for privilege escalation
    * or arbitrary code execution. This is a defense-in-depth measure.
-   * 
+   *
    * Security checks:
    * - Rejects UNC paths (\\server\share) to prevent network access
    * - Rejects path traversal sequences (..) to prevent directory escape
    * - Rejects embedded nulls (already checked by ValidatePath, but double-check)
-   * 
+   *
    * Note: File paths come from the USN Journal/MFT (trusted source), but this
    * validation adds an extra layer of protection against malicious paths.
-   * 
+   *
    * @param path Path to validate
    * @return true if path is safe for ShellExecute, false otherwise
    */
   inline bool IsPathSafe(std::string_view path) {
     // Reject UNC paths (network shares) - could be used to access remote resources
-    if (path.size() >= 2 && path[0] == '\\' && path[1] == '\\') {
+    if (path.size() >= 2 && path[0] == '\\' && path[1] == '\\') {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounds checked by size() >= 2
       return false;
     }
-    
+
     // Reject path traversal sequences - could be used to escape intended directory
     if (path.find("..") != std::string_view::npos) {
       return false;
     }
-    
+
     // Reject embedded nulls (should already be caught by ValidatePath, but double-check)
     if (path.find('\0') != std::string_view::npos) {
       return false;
     }
-    
+
     return true;
   }
 } // namespace internal
@@ -152,7 +162,17 @@ namespace internal {
 
   // Copy file path to clipboard (using GLFW clipboard utilities)
   // NOTE: Must be called from the UI thread
-  void CopyPathToClipboard(struct GLFWwindow* window, std::string_view full_path);
+  inline void CopyPathToClipboard(struct GLFWwindow* window, std::string_view full_path) {
+    const std::string path(full_path);
+    if (!internal::ValidatePath(path, "CopyPathToClipboard")) {
+      return;
+    }
+    if (clipboard_utils::SetClipboardText(window, path)) {
+      LOG_INFO("Copied path to clipboard: " + path);
+    } else {
+      LOG_ERROR("Failed to copy path to clipboard: " + path);
+    }
+  }
 
   // Delete file to Recycle Bin (Windows) or Trash (macOS/Linux)
   // Returns true on success, false on failure (file not found, access denied, etc.)

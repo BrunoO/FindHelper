@@ -52,7 +52,11 @@ Checks: >-
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-macro-to-enum,
   -cppcoreguidelines-special-member-functions,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-init-variables,
+  -cppcoreguidelines-pro-type-vararg,
   -fuchsia-*,
+  -hicpp-vararg,
   -google-readability-namespace-comments,
   -hicpp-special-member-functions,
   -hicpp-uppercase-literal-suffix,
@@ -61,6 +65,7 @@ Checks: >-
   -llvm-prefer-static-over-anonymous-namespace,
   -llvmlibc-*,
   -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
   -misc-use-anonymous-namespace,
   -misc-use-internal-linkage,
   -modernize-macro-to-enum,
@@ -71,7 +76,8 @@ Checks: >-
   -readability-redundant-inline-specifier,
   -readability-redundant-preprocessor,
   -readability-uppercase-literal-suffix,
-  -readability-use-concise-preprocessor-directives
+  -readability-use-concise-preprocessor-directives,
+  -readability-simplify-boolean-expr
 
 # Note: The following checks are enabled to catch SonarQube-style issues:
 # - bugprone-*: Catches bugs similar to SonarQube reliability issues
@@ -141,6 +147,22 @@ Checks: >-
 #   -readability-redundant-preprocessor: Nested #ifdef in cross-platform code is often
 #     intentional for clarity; check flags valid patterns.
 #
+# Varargs (-cppcoreguidelines-pro-type-vararg, -hicpp-vararg):
+#   ImGui, libcurl, POSIX exec*, snprintf, and fprintf use C-style varargs. Disabling
+#   avoids hundreds of NOLINTs across UI and platform code with no benefit.
+#
+# Init variables (-cppcoreguidelines-init-variables):
+#   Produces false positives for C++17 if-init-statements and variables initialized
+#   from function return values or expressions. Disabling reduces noise across 34+ files.
+#
+# Bounds pointer arithmetic (-cppcoreguidelines-pro-bounds-pointer-arithmetic):
+#   ImGui and SoA/path code require pointer+offset patterns (e.g. text.data()+text.size()).
+#   Disabling avoids pure noise while keeping bounds safety elsewhere.
+#
+# Non-private member variables (-misc-non-private-member-variables-in-classes):
+#   POD/config structs (GuiState, SavedSearch, Settings, etc.) intentionally use
+#   public members. Disabling reflects design choice and avoids hundreds of NOLINTs.
+#
 # Local constant naming (LocalConstantCase, LocalConstexprVariableCase: aNy_CasE):
 #   Both kPascalCase and snake_case accepted for local constants. Avoids ~150 renames and
 #   NOLINT proliferation. See docs/standards/CXX17_NAMING_CONVENTIONS.md "Local Constants (Tolerance)".
@@ -188,7 +210,7 @@ Checks: >-
 HeaderFilterRegex: '^(?!external/)(?!.*/curl/).*\.(h|hpp|cpp)$'
 # Exclude diagnostics from headers under .../curl/ (system libcurl on macOS/Linux).
 # Without this, misc-header-include-cycle and other curl header warnings appear.
-ExcludeHeaderFilterRegex: '.*/curl/.*'
+# ExcludeHeaderFilterRegex: '.*/curl/.*'
 
 CheckOptions:
   # Naming conventions (readability-identifier-naming)
@@ -293,7 +315,7 @@ CheckOptions:
   # - Immediate mode paradigm (UI rebuilt every frame)
   #
   # Related checks:
-  # - cppcoreguidelines-pro-type-vararg: DISABLED (ImGui uses var args)
+  # - cppcoreguidelines-pro-type-vararg, hicpp-vararg: DISABLED (ImGui and C APIs use varargs; see Disabled Checks Rationale)
   # - readability-magic-numbers: CONFIGURED with 0.0-1.0 allowed for UI constants
   # (see IgnoredFloatingPointValues above)
   #

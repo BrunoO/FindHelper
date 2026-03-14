@@ -9,39 +9,6 @@
 
 namespace gemini_api_utils {
 
-namespace {
-  // Maximum response size limit
-  constexpr size_t kMaxResponseSize = 1024 * 1024;  // 1MB
-
-  // Helper: Escape JSON string (basic escaping for prompt text)
-  std::string EscapeJsonString(std::string_view str) {
-    std::ostringstream oss;
-    for (char c : str) {
-      switch (c) {
-      case '"':
-        oss << "\\\"";
-        break;
-      case '\\':
-        oss << "\\\\";
-        break;
-      case '\n':
-        oss << "\\n";
-        break;
-      case '\r':
-        oss << "\\r";
-        break;
-      case '\t':
-        oss << "\\t";
-        break;
-      default:
-        oss << c;
-        break;
-      }
-    }
-    return oss.str();
-  }
-} // namespace
-
 std::pair<bool, std::string> CallGeminiApiHttpPlatform(
     std::string_view prompt,
     std::string_view api_key,
@@ -49,12 +16,7 @@ std::pair<bool, std::string> CallGeminiApiHttpPlatform(
   
   @autoreleasepool {
     // Build JSON request body
-    std::string escaped_prompt = EscapeJsonString(prompt);
-    std::ostringstream json_body;
-    json_body << R"({"contents":[{"parts":[{"text":")"
-              << escaped_prompt
-              << R"("}]}]})";
-    std::string body_str = json_body.str();
+    std::string body_str = BuildGeminiRequestBody(prompt);
     
     // Convert to NSData
     NSData *body_data = [NSData dataWithBytes:body_str.c_str() length:body_str.size()];
@@ -120,7 +82,7 @@ std::pair<bool, std::string> CallGeminiApiHttpPlatform(
     }
 
     // Check HTTP status
-    if (!http_response || http_response.statusCode != 200) {
+    if (!http_response || http_response.statusCode != kHttpStatusOk) {
       std::string error_msg = "HTTP error: ";
       if (http_response) {
         error_msg += std::to_string(http_response.statusCode);

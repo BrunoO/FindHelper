@@ -139,14 +139,8 @@ void ConfigureFontsFromSettings(const AppSettings& settings) {
 }
 
 void ApplyFontSettings(const AppSettings& settings) {
-  ImGuiIO& io = ImGui::GetIO();
-
-  io.FontGlobalScale = settings.fontScale;
-
-  ConfigureFontsFromSettings(settings);
-  io.Fonts->Build();
-
-  ImGui_ImplDX11_InvalidateDeviceObjects();
+  font_utils::ApplyFontSettingsCommon<ConfigureFontsFromSettings,
+                                      ImGui_ImplDX11_InvalidateDeviceObjects>(settings);
 }
 
 #endif  // _WIN32

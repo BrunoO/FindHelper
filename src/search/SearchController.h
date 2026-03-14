@@ -21,7 +21,7 @@ class SearchController {
 public:
   SearchController();
   ~SearchController() = default;
-  
+
   // Non-copyable, non-movable (manages search state)
   SearchController(const SearchController&) = delete;
   SearchController& operator=(const SearchController&) = delete;

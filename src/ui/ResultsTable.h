@@ -23,8 +23,8 @@
 #include <string>
 #include <string_view>
 
-#include "utils/PlatformTypes.h"  // For NativeWindowHandle
 #include "search/SearchTypes.h"   // For SearchResult
+#include "utils/PlatformTypes.h"  // For NativeWindowHandle
 
 // Forward declarations
 class GuiState;

@@ -22,9 +22,9 @@
 #include "utils/StdRegexUtils.h"
 
 TEST_SUITE("StdRegexUtils") {
-  
+
   TEST_SUITE("Literal pattern matching (fast path)") {
-    
+
     TEST_CASE("Simple literal match") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"hello", "hello world", true},
@@ -33,7 +33,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Literal match case-sensitive") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"Hello", "Hello World", true, true},
@@ -42,7 +42,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Literal match case-insensitive") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"Hello", "hello world", true, false},
@@ -51,7 +51,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Literal match with escaped characters") {
       // Note: Escaped characters in patterns are handled differently:
       // - Patterns with escaped special chars may be routed to SimpleRegex or std::regex
@@ -63,7 +63,7 @@ TEST_SUITE("StdRegexUtils") {
         {"test", "test^file", true}
       };
       test_helpers::RunParameterizedRegexMatchTests(literal_cases);
-      
+
       // Test patterns that contain special characters (not escaped)
       // These will be routed to SimpleRegex or std::regex
       const std::vector<test_helpers::RegexMatchTestCase> special_cases = {
@@ -72,7 +72,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(special_cases);
     }
-    
+
     TEST_CASE("Literal match partial") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"lo", "hello", true},
@@ -81,7 +81,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Literal match empty text") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"pattern", "", false}
@@ -89,9 +89,9 @@ TEST_SUITE("StdRegexUtils") {
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
   }
-  
+
   TEST_SUITE("Simple pattern matching (SimpleRegex path)") {
-    
+
     TEST_CASE("Dot matches any character") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"h.llo", "hello", true},
@@ -101,7 +101,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Star matches zero or more") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"he*llo", "hllo", true},   // e* matches zero
@@ -111,7 +111,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Caret matches start") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"^hello", "hello world", true},
@@ -119,7 +119,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Dollar matches end") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"world$", "hello world", true},
@@ -127,7 +127,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Caret and dollar for full match") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"^hello$", "hello", true},
@@ -135,7 +135,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Simple pattern case-insensitive") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"h.llo", "Hello", true, false},
@@ -143,7 +143,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Combined simple patterns") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {".*test.*", "this is a test file", true},
@@ -152,9 +152,9 @@ TEST_SUITE("StdRegexUtils") {
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
   }
-  
+
   TEST_SUITE("Complex pattern matching (std::regex path)") {
-    
+
     TEST_CASE("Character classes") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"file[0-9]", "file1", true},
@@ -165,7 +165,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Negated character classes") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"file[^a]", "fileb", true},
@@ -173,7 +173,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Quantifiers") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"file{1,3}", "file", true},
@@ -185,7 +185,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Alternation") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"file|directory", "file", true},
@@ -194,7 +194,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Groups") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"(file|dir)", "file", true},
@@ -202,7 +202,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Complex pattern case-insensitive") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"[A-Z]+", "HELLO", true, false},
@@ -211,9 +211,9 @@ TEST_SUITE("StdRegexUtils") {
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
   }
-  
+
   TEST_SUITE("Pattern analysis") {
-    
+
     TEST_CASE("PatternAnalysis correctly classifies literal patterns") {
       const std::vector<test_helpers::PatternAnalysisTestCase> test_cases = {
         {"hello", true, true, false},
@@ -223,7 +223,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedPatternAnalysisTests(test_cases);
     }
-    
+
     TEST_CASE("PatternAnalysis correctly classifies simple patterns") {
       const std::vector<test_helpers::PatternAnalysisTestCase> test_cases = {
         {"h.llo", false, true, false},
@@ -236,7 +236,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedPatternAnalysisTests(test_cases);
     }
-    
+
     TEST_CASE("PatternAnalysis detects full match requirement") {
       const std::vector<test_helpers::PatternAnalysisTestCase> test_cases = {
         {"^hello$", false, true, true},
@@ -248,52 +248,52 @@ TEST_SUITE("StdRegexUtils") {
       test_helpers::RunParameterizedPatternAnalysisTests(test_cases);
     }
   }
-  
+
   TEST_SUITE("Regex cache") {
-    
+
     TEST_CASE("Cache stores compiled regexes") {
       std_regex_utils::ClearCache();
-      
+
       // First call compiles and caches
       CHECK(std_regex_utils::RegexMatch("[0-9]+", "123") == true);
       size_t size1 = std_regex_utils::GetCacheSize();
       CHECK(size1 > 0);
-      
+
       // Second call with same pattern uses cache
       CHECK(std_regex_utils::RegexMatch("[0-9]+", "456") == true);
       size_t size2 = std_regex_utils::GetCacheSize();
       CHECK(size2 == size1);  // Cache size should be same (reused)
     }
-    
+
     TEST_CASE("Cache handles case-sensitive and case-insensitive separately") {
       std_regex_utils::ClearCache();
-      
+
       // Case-sensitive pattern
       std_regex_utils::RegexMatch("[A-Z]+", "HELLO", true);
       size_t size1 = std_regex_utils::GetCacheSize();
-      
+
       // Case-insensitive pattern (different cache entry)
       std_regex_utils::RegexMatch("[A-Z]+", "hello", false);
       size_t size2 = std_regex_utils::GetCacheSize();
-      
+
       CHECK(size2 > size1);  // Should have two entries now
     }
-    
+
     TEST_CASE("ClearCache removes all entries") {
       std_regex_utils::RegexMatch("[0-9]+", "123");
       std_regex_utils::RegexMatch("[a-z]+", "abc");
-      
+
       size_t size_before = std_regex_utils::GetCacheSize();
       CHECK(size_before > 0);
-      
+
       std_regex_utils::ClearCache();
       size_t size_after = std_regex_utils::GetCacheSize();
       CHECK(size_after == 0);
     }
   }
-  
+
   TEST_SUITE("Error handling") {
-    
+
     TEST_CASE("Empty pattern returns false") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"", "hello", false},
@@ -301,7 +301,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Invalid regex patterns return false") {
       // These patterns are invalid and should return false without crashing
       std::vector<test_helpers::RegexMatchTestCase> test_cases = {
@@ -314,21 +314,21 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Null text pointer returns false") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"pattern", "", false}  // Empty text should return false
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
-      
+
       // Test with empty string_view explicitly
       std::string_view empty_text("", 0);
       CHECK(std_regex_utils::RegexMatch("pattern", empty_text) == false);
     }
   }
-  
+
   TEST_SUITE("PatternAnalysis") {
-    
+
     TEST_CASE("PatternAnalysis correctly classifies patterns") {
       const std::vector<test_helpers::PatternAnalysisTestCase> test_cases = {
         {"hello", true, true, false},
@@ -339,12 +339,12 @@ TEST_SUITE("StdRegexUtils") {
       test_helpers::RunParameterizedPatternAnalysisTests(test_cases);
     }
   }
-  
+
   TEST_SUITE("RegexMatchOptimized") {
-    
+
     TEST_CASE("RegexMatchOptimized uses pre-analyzed pattern") {
       std_regex_utils::PatternAnalysis analysis("hello");
-      
+
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"hello", "hello world", true},
         {"hello", "world", false}
@@ -355,10 +355,10 @@ TEST_SUITE("StdRegexUtils") {
         }
       }
     }
-    
+
     TEST_CASE("RegexMatchOptimized respects case sensitivity") {
       std_regex_utils::PatternAnalysis analysis("Hello");
-      
+
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"Hello", "Hello World", true, true},
         {"Hello", "hello world", false, true},
@@ -371,36 +371,36 @@ TEST_SUITE("StdRegexUtils") {
       }
     }
   }
-  
+
   TEST_SUITE("String overloads") {
-    
+
     TEST_CASE("String pattern and text overload") {
       std::string pattern = "hello";
       std::string text = "hello world";
       CHECK(std_regex_utils::RegexMatch(std::string_view(pattern), std::string_view(text)) == true);
     }
-    
+
     TEST_CASE("String pattern and string_view text overload") {
       std::string pattern = "test";
       std::string_view text = "this is a test";
       CHECK(std_regex_utils::RegexMatch(std::string_view(pattern), text) == true);
     }
-    
+
     TEST_CASE("String pattern and C-string text overload") {
       std::string pattern = "world";
       const char* text = "hello world";
       CHECK(std_regex_utils::RegexMatch(std::string_view(pattern), std::string_view(text)) == true);
     }
   }
-  
+
   TEST_SUITE("Edge cases") {
-    
+
     TEST_CASE("Very long patterns") {
       std::string long_pattern(1000, 'a');
       std::string long_text(2000, 'a');
       CHECK(std_regex_utils::RegexMatch(long_pattern, long_text) == true);
     }
-    
+
     TEST_CASE("Unicode characters in literal patterns") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"café", "café", true},
@@ -408,7 +408,7 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
     }
-    
+
     TEST_CASE("Special characters in text") {
       const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
         {"test", "file.test", true},

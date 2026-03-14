@@ -95,7 +95,7 @@ class UIRenderer {
   /**
    * @brief Render floating windows (Settings, Metrics, etc.)
    * @param context Rendering context with all required parameters
-   * 
+   *
    * Note: SettingsWindow currently takes Application* (will be updated in Phase 4).
    * For now, we pass actions cast to Application*.
    */

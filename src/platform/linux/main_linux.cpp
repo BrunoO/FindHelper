@@ -10,7 +10,7 @@ struct LinuxBootstrapTraits {
     return AppBootstrapLinux::Initialize(cmd_args, file_index,
                                          last_window_width, last_window_height);
   }
-  
+
   static void Cleanup(AppBootstrapResultLinux& result) {
     AppBootstrapLinux::Cleanup(result);
   }
@@ -18,15 +18,6 @@ struct LinuxBootstrapTraits {
 
 // Main entry point for Linux
 int main(int argc, char** argv) {
-  try {
-    return RunApplication<AppBootstrapResultLinux, LinuxBootstrapTraits>(argc, argv);
-  } catch (const std::exception& e) {
-    // Log error (RunApplication should have already logged, but ensure we catch anything it missed)
-    std::cerr << "Fatal error: " << e.what() << '\n';
-    return 1;
-  } catch (...) {
-    std::cerr << "Unknown fatal error occurred" << '\n';
-    return 1;
-  }
+  return RunApplicationWithCatch<AppBootstrapResultLinux, LinuxBootstrapTraits>(argc, argv);
 }
 

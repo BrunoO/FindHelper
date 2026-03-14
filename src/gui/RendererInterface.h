@@ -41,11 +41,11 @@ struct GLFWwindow;
 class RendererInterface {
 public:
   virtual ~RendererInterface() = default;
-  
+
 protected:
   // Protected default constructor (interface class)
   RendererInterface() = default;
-  
+
 public:
   // Non-copyable, non-movable (interface class)
   RendererInterface(const RendererInterface&) = delete;

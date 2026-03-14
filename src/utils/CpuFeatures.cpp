@@ -62,11 +62,11 @@ static bool CheckAVX2Support() {
     if (const int max_leaf = info[0]; max_leaf < cpuid_leaf_extended_features) {
         return false;  // CPUID doesn't support leaf 7
     }
-    
+
     // Get extended features (leaf 7, subleaf 0)
     // EBX register (info[1]) contains feature flags
     cpuid(info.data(), cpuid_leaf_extended_features);
-    
+
     // AVX2 is bit 5 of EBX register
     // Check if bit 5 is set: (EBX >> 5) & 1
     bool has_avx2 = (info[1] & (1U << cpuid_avx2_bit)) != 0;
@@ -86,7 +86,7 @@ static bool CheckAVX2Support() {
 // NOLINTNEXTLINE(readability-identifier-naming,cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays) - cpuid is standard x86 function name, info is output parameter array for CPUID instruction
 static void cpuid(unsigned int info[4], [[maybe_unused]] unsigned int function_id) {  // NOSONAR(cpp:S995) - info is an output parameter (written to via assembly)
     #if defined(__x86_64__) || defined(__i386__)
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Required for inline assembly output operands
+
         __asm__ __volatile__(
             "cpuid"
             : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3])
@@ -94,7 +94,7 @@ static void cpuid(unsigned int info[4], [[maybe_unused]] unsigned int function_i
         );
     #else
         // Not x86/x64, set all to 0
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Array indexing required for CPUID output parameter
+
         info[0] = info[1] = info[2] = info[3] = 0;
     #endif  // defined(__x86_64__) || defined(__i386__)
 }
@@ -103,7 +103,7 @@ static void cpuid(unsigned int info[4], [[maybe_unused]] unsigned int function_i
 // NOLINTNEXTLINE(readability-identifier-naming,cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays) - cpuid_count is standard x86 function name, info is output parameter array for CPUID instruction
 static void cpuid_count(unsigned int info[4], [[maybe_unused]] unsigned int function_id, [[maybe_unused]] unsigned int subleaf) {  // NOSONAR(cpp:S995) - info is an output parameter (written to via assembly)
     #if defined(__x86_64__) || defined(__i386__)
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Required for inline assembly output operands
+
         __asm__ __volatile__(
             "cpuid"
             : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3])
@@ -111,7 +111,7 @@ static void cpuid_count(unsigned int info[4], [[maybe_unused]] unsigned int func
         );
     #else
         // Not x86/x64, set all to 0
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Array indexing required for CPUID output parameter
+
         info[0] = info[1] = info[2] = info[3] = 0;
     #endif  // defined(__x86_64__) || defined(__i386__)
 }
@@ -126,7 +126,7 @@ static bool CheckAVX2Support() {  // NOSONAR(cpp:S1144) - Used in DetectAVX2Supp
 
     // Check if CPUID supports extended features (leaf 7)
     cpuid(info.data(), 0);
-    if (const unsigned int max_leaf = info[0]; max_leaf < cpuid_leaf_extended_features) {  // NOLINT(cppcoreguidelines-init-variables) - init-statement initializes max_leaf
+    if (const unsigned int max_leaf = info[0]; max_leaf < cpuid_leaf_extended_features) {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - fixed 4-element CPUID result array; index is a known constant
         return false;  // NOSONAR(cpp:S1763) - Reachable on old CPUs where CPUID max leaf < 7
     }
 
@@ -136,21 +136,21 @@ static bool CheckAVX2Support() {  // NOSONAR(cpp:S1144) - Used in DetectAVX2Supp
 
     // AVX2 is bit 5 of EBX register
     // Check if bit 5 is set: (EBX >> 5) & 1
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - initialized from CPUID info[] above
-    const bool has_avx2{(info[1] & (1U << cpuid_avx2_bit)) != 0};
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - initialized from CPUID info[] above
-    const unsigned int leaf7_ebx{info[1]};  // NOSONAR(cpp:S1481) - Used in LOG_INFO_BUILD below
+
+    const bool has_avx2{(info[1] & (1U << cpuid_avx2_bit)) != 0};  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - fixed 4-element CPUID result array; index is a known constant
+
+    const unsigned int leaf7_ebx{info[1]};  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - fixed 4-element CPUID result array; index is a known constant  // NOSONAR(cpp:S1481) - Used in LOG_INFO_BUILD below
 
     // Also check for AVX support (required for AVX2)
     // AVX is bit 28 of ECX register (leaf 1)
     cpuid(info.data(), cpuid_leaf_basic_features);
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - initialized from CPUID info[] above
-    const bool has_avx{(info[2] & (1U << cpuid_avx_bit)) != 0};
+
+    const bool has_avx{(info[2] & (1U << cpuid_avx_bit)) != 0};  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - fixed 4-element CPUID result array; index is a known constant
     // OS must enable XSAVE for AVX state; otherwise AVX/AVX2 instructions fault
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - initialized from CPUID info[] above
-    const bool has_osxsave{(info[2] & (1U << cpuid_osxsave_bit)) != 0};
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - initialized from CPUID info[] above
-    const unsigned int leaf1_ecx{info[2]};  // NOSONAR(cpp:S1481) - Used in LOG_INFO_BUILD below
+
+    const bool has_osxsave{(info[2] & (1U << cpuid_osxsave_bit)) != 0};  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - fixed 4-element CPUID result array; index is a known constant
+
+    const unsigned int leaf1_ecx{info[2]};  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - fixed 4-element CPUID result array; index is a known constant  // NOSONAR(cpp:S1481) - Used in LOG_INFO_BUILD below
 
     const bool supported = has_avx && has_avx2 && has_osxsave;
 #if STRING_SEARCH_AVX2_AVAILABLE
@@ -173,10 +173,10 @@ bool SupportsAVX2() {
     if (g_avx2_checked.load(std::memory_order_acquire)) {
         return g_avx2_supported.load(std::memory_order_acquire);
     }
-    
+
     // First call: detect and cache
     bool supported = false;
-    
+
     // Only check on x86/x64 architectures
     #if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
         supported = CheckAVX2Support();
@@ -188,7 +188,7 @@ bool SupportsAVX2() {
     // Cache the result
     g_avx2_supported.store(supported, std::memory_order_release);
     g_avx2_checked.store(true, std::memory_order_release);
-    
+
     return supported;
 }
 
@@ -197,7 +197,7 @@ bool GetAVX2Support() {
     if (!g_avx2_checked.load(std::memory_order_acquire)) {
         return SupportsAVX2();
     }
-    
+
     return g_avx2_supported.load(std::memory_order_acquire);
 }
 
@@ -219,16 +219,16 @@ static bool ProcessProcessorCore(
     const SYSTEM_LOGICAL_PROCESSOR_INFORMATION& info,
     unsigned int& physicalCores,
     unsigned int& logicalCores) {
-    
+
     if (info.Relationship != RelationProcessorCore) {
         return false;
     }
-    
+
     physicalCores++;
     // Count logical processors in this core (bits set in ProcessorMask)
     unsigned int logicalCount = CountSetBits(info.ProcessorMask);
     logicalCores += logicalCount;
-    
+
     // If Flags is set (non-zero), logical processors share functional units (HT enabled)
     // Also check if there are multiple logical processors per core
     return (info.ProcessorCore.Flags != 0 || logicalCount > 1);
@@ -249,29 +249,29 @@ static bool StoreHyperThreadingErrorState() {
 static bool CheckHyperThreadingEnabled() {
     DWORD bufferSize = 0;
     GetLogicalProcessorInformation(nullptr, &bufferSize);
-    
+
     if (bufferSize == 0) {
         // Failed to get buffer size, use fallback
         return StoreHyperThreadingErrorState();
     }
-    
+
     // Use std::vector for RAII memory management instead of malloc/free
     std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(
         bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
-    
+
     bool hyperThreadingEnabled = false;
     unsigned int physicalCores = 0;
     unsigned int logicalCores = 0;
-    
+
     if (GetLogicalProcessorInformation(buffer.data(), &bufferSize)) {
         DWORD numEntries = bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
-        
+
         for (DWORD i = 0; i < numEntries; ++i) {
             if (ProcessProcessorCore(buffer[i], physicalCores, logicalCores)) {
                 hyperThreadingEnabled = true;
             }
         }
-        
+
         // Additional check: if logical cores > physical cores, HT is likely enabled
         if (logicalCores > physicalCores) {
             hyperThreadingEnabled = true;
@@ -280,14 +280,14 @@ static bool CheckHyperThreadingEnabled() {
         // API call failed, use fallback
         return StoreHyperThreadingErrorState();
     }
-    
+
     // Cache results
     g_ht_enabled.store(hyperThreadingEnabled, std::memory_order_release);
     g_physical_cores.store(physicalCores, std::memory_order_release);
     g_logical_cores.store(logicalCores, std::memory_order_release);
     g_ht_checked.store(true, std::memory_order_release);
     g_core_counts_checked.store(true, std::memory_order_release);
-    
+
     return hyperThreadingEnabled;
 }
 #else
@@ -305,10 +305,10 @@ bool IsHyperThreadingEnabled() {
     if (g_ht_checked.load(std::memory_order_acquire)) {
         return g_ht_enabled.load(std::memory_order_acquire);
     }
-    
+
     // First call: detect and cache
     const bool enabled = CheckHyperThreadingEnabled();
-    
+
     return enabled;
 }
 
@@ -317,7 +317,7 @@ std::pair<unsigned int, unsigned int> GetCoreCounts() {
     if (!g_core_counts_checked.load(std::memory_order_acquire)) {
         IsHyperThreadingEnabled();  // This will populate core counts
     }
-    
+
     return std::make_pair(
         g_physical_cores.load(std::memory_order_acquire),
         g_logical_cores.load(std::memory_order_acquire)

@@ -149,7 +149,7 @@ FileEntry* FileIndexStorage::GetEntryMutable(uint64_t id) {
 
 // Update file size (assumes lock is already held)
 void FileIndexStorage::UpdateFileSize(uint64_t id, uint64_t size) {
-  FileEntry* entry = GetEntryMutable(id);  // NOLINT(cppcoreguidelines-init-variables,misc-const-correctness) - Initialized from GetEntryMutable() return value; entry is modified (SetValue()), pointee must be mutable
+  FileEntry* entry = GetEntryMutable(id);  // NOLINT(misc-const-correctness) - Initialized from GetEntryMutable() return value; entry is modified (SetValue()), pointee must be mutable
   if (entry != nullptr) {
     entry->fileSize.SetValue(size);
   }
@@ -157,7 +157,7 @@ void FileIndexStorage::UpdateFileSize(uint64_t id, uint64_t size) {
 
 // Update modification time (assumes lock is already held)
 void FileIndexStorage::UpdateModificationTime(uint64_t id, const FILETIME& time) {
-  FileEntry* entry = GetEntryMutable(id);  // NOLINT(cppcoreguidelines-init-variables,misc-const-correctness) - Initialized from GetEntryMutable() return value; entry is modified (SetValue()), pointee must be mutable
+  FileEntry* entry = GetEntryMutable(id);  // NOLINT(misc-const-correctness) - Initialized from GetEntryMutable() return value; entry is modified (SetValue()), pointee must be mutable
   if (entry != nullptr) {
     entry->lastModificationTime.SetValue(time);
   }

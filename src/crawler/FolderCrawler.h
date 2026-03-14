@@ -2,6 +2,7 @@
 
 #include <atomic>  // NOLINT(clang-diagnostic-error) - System header, unavoidable on macOS (header-only analysis limitation)
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -19,7 +20,7 @@ class FileIndex;
 struct FolderCrawlerConfig {
   size_t thread_count = 0;  // 0 = auto (hardware_concurrency())
   size_t batch_size = 2500;  // Paths per batch insertion
-  size_t progress_update_interval = 10000;  // Update progress every N files
+  size_t progress_update_interval_ms = 1000;  // Update progress every N milliseconds
 };
 
 /**
@@ -56,7 +57,7 @@ public:
 
   /**
    * Crawl a root directory and populate the FileIndex
-   * 
+   *
    * @param root_path Root directory to start crawling from
    * @param indexed_file_count Optional atomic counter for progress updates
    * @param cancel_flag Optional atomic flag to cancel crawling
@@ -112,11 +113,11 @@ public:
 private:
   FileIndex& file_index_;  // NOLINT(readability-identifier-naming) - project uses snake_case_ for members
   FolderCrawlerConfig config_;  // NOLINT(readability-identifier-naming)
-  
+
   // Thread pool
   std::vector<std::thread> worker_threads_;  // NOLINT(readability-identifier-naming)
   std::atomic<bool> should_stop_{false};  // NOLINT(readability-identifier-naming)
-  
+
   // Per-worker work-stealing queues.
   // Each worker owns a deque + mutex; idle workers steal from peers' deques.
   // Replaces the previous single work_queue_ + queue_mutex_ hot-path contention
@@ -134,10 +135,18 @@ private:
   // Pop work from own queue; on empty, steal from other workers' queues.
   // On success, increments active_workers_ and decrements total_queued_.
   [[nodiscard]] std::string TryGetWork(size_t worker_idx);
-  
+
+  // Atomically claim a work item: increment active_workers_ before decrementing
+  // total_queued_ to prevent a false completion signal. Hot-path; kept inline.
+  inline void AcquireWorkItem();
+
+  // Signal completion when no work remains and this was the last active worker.
+  void SignalCompletionIfLastWorker();
+
   // Statistics
   std::atomic<size_t> files_processed_{0};  // NOLINT(readability-identifier-naming)
   std::atomic<size_t> dirs_processed_{0};  // NOLINT(readability-identifier-naming)
   std::atomic<size_t> error_count_{0};  // NOLINT(readability-identifier-naming)
+  std::atomic<int64_t> last_progress_update_ms_{0};  // NOLINT(readability-identifier-naming)
 };
 

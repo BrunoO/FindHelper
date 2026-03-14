@@ -34,7 +34,7 @@ namespace ui {
  * - Size-based quick filters (Empty, Tiny, Small, Medium, Large, Huge, Massive)
  * - Saved searches dropdown and controls
  * - Active filter badges (Extensions, Filename, Path, Folders Only, Time Filter, Size Filter)
- * 
+ *
  * Note: Settings and Metrics toggles are rendered separately via RenderApplicationControls()
  */
 class FilterPanel {

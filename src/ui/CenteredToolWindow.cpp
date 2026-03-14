@@ -8,6 +8,7 @@
 #include "imgui.h"
 
 #include "ui/IconsFontAwesome.h"
+#include "ui/LayoutConstants.h"
 
 namespace ui::detail {
 
@@ -22,8 +23,7 @@ void SetupCenteredToolWindow(float width, float height) {
 
 void RenderToolWindowCloseButton(bool* p_open) {
   ImGui::Separator();
-  constexpr float kCloseButtonWidth = 120.0F;
-  if (ImGui::Button(ICON_FA_XMARK " Close", ImVec2(kCloseButtonWidth, 0))) {
+  if (ImGui::Button(ICON_FA_XMARK " Close", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
     *p_open = false;
   }
 }

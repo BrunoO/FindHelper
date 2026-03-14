@@ -10,6 +10,7 @@
 #include "filters/TimeFilter.h"
 #include "filters/TimeFilterUtils.h"
 #include "gui/GuiState.h"
+#include "gui/ImGuiUtils.h"
 #include "gui/UIActions.h"
 #include "imgui.h"
 #include "ui/IconsFontAwesome.h"
@@ -18,6 +19,7 @@
 #include "utils/StringUtils.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -26,12 +28,6 @@
 namespace ui {
 
 namespace {
-  // Helper function to add multiple vertical spacing elements
-  inline void AddVerticalSpacing(int count) {  // NOLINT(readability-static-definition-in-anonymous-namespace) - Using anonymous namespace for consistency with other helpers
-    for (int i = 0; i < count; ++i) {
-      ImGui::Spacing();
-    }
-  }
 
   // Show tooltip if item is hovered and text is non-empty (reduces nesting at call site).
   void ShowTooltipIfHovered(std::string_view text) {
@@ -39,7 +35,7 @@ namespace {
       return;
     }
     ImGui::BeginTooltip();
-    ImGui::TextUnformatted(text.data(), text.data() + text.size());  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - end pointer for ImGui API; range is valid
+    ImGui::TextUnformatted(text.data(), text.data() + text.size());
     ImGui::EndTooltip();
   }
 } // anonymous namespace
@@ -106,7 +102,7 @@ static std::string FormatExtensionsForDisplay(std::string_view extensions) {
   // Show first 2, then count
   std::string result = join_extensions(ext_list, 2);
   // ext_list.size() > 3 at this point (checked above), so this is always positive
-  const size_t remaining = (ext_list.size() >= 2) ? (ext_list.size() - 2) : 0;  // NOLINT(cppcoreguidelines-init-variables) - Initialized via ternary, ext_list.size() > 3 guaranteed above
+  const size_t remaining = (ext_list.size() >= 2) ? (ext_list.size() - 2) : 0;
   result += " (+" + std::to_string(remaining) + " more)";
 
   return result;
@@ -212,7 +208,7 @@ static std::string TruncateLabelByWidth(std::string_view label, float max_width)
   const float available_text_width = max_width - button_padding;
 
   // If we have multiple parts, try to keep the first part and truncate the rest
-  if (const size_t first_sep = label_str.find(" + "); first_sep != std::string::npos) {  // NOLINT(cppcoreguidelines-init-variables) - Variable initialized in C++17 init-statement
+  if (const size_t first_sep = label_str.find(" + "); first_sep != std::string::npos) {
     const std::string first_part = label_str.substr(0, first_sep);
     const ImVec2 first_part_size = ImGui::CalcTextSize(first_part.c_str());
 
@@ -225,7 +221,7 @@ static std::string TruncateLabelByWidth(std::string_view label, float max_width)
 
   // Binary search for the maximum length that fits
   size_t low = 0;
-  size_t high = label_str.length();  // NOLINT(cppcoreguidelines-init-variables) - Initialized from label_str.length(), modified in loop
+  size_t high = label_str.length();
   size_t best = 0;
   const std::string ellipsis = "...";
   // Note: ellipsis_size was calculated but never used; removed unused variable
@@ -293,7 +289,7 @@ static inline std::pair<std::string, float> BuildRecentSearchLabelAndWidth(const
   std::string label = BuildRecentSearchLabel(parts);
 
   // Truncate based on maximum button width
-  const float effective_max_width = (std::min)(max_button_width, available_width - button_padding);  // NOLINT(cppcoreguidelines-init-variables) - Initialized from std::min()
+  const float effective_max_width = (std::min)(max_button_width, available_width - button_padding);
   label = TruncateLabelByWidth(label, effective_max_width);
 
   // Calculate actual button width (text + padding)
@@ -429,7 +425,6 @@ static void RenderExamplesPanel(GuiState& state, UIActions* actions, float panel
       } else {
         // Don't call SameLine — ImGui already advanced to the next line after
         // the previous widget, so omitting SameLine is sufficient to wrap.
-        first_in_row = true;
         line_x = 0.0F;
       }
     }
@@ -604,50 +599,50 @@ void EmptyState::Render(GuiState& state,
     const float title_width = ImGui::CalcTextSize(getting_started_title).x;
     ImGui::SetCursorPosX((window_width - title_width) * 0.5F);
     ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::Warning);
-    ImGui::Text("%s", getting_started_title);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui::Text uses C-style varargs
+    ImGui::Text("%s", getting_started_title);
     ImGui::PopStyleColor();
-    
+
     ImGui::Spacing();
     ImGui::Spacing();
-    
+
     // Instructions for getting started (same message on all platforms)
     const char* instructions = "No files indexed yet. Go to Settings > Index Configuration\nto select a folder to index.";
-    
+
     // Split instructions into lines for proper centering
     const std::string instructions_str(instructions);
-    if (const size_t newline_pos = instructions_str.find('\n'); newline_pos != std::string::npos) {  // NOLINT(cppcoreguidelines-init-variables) - Initialized from find() in init-statement
+    if (const size_t newline_pos = instructions_str.find('\n'); newline_pos != std::string::npos) {
       const std::string line1 = instructions_str.substr(0, newline_pos);
       const std::string line2 = instructions_str.substr(newline_pos + 1);
-      
+
       const float line1_width = ImGui::CalcTextSize(line1.c_str()).x;
       ImGui::SetCursorPosX((window_width - line1_width) * 0.5F);
       ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TextDim);
-      ImGui::Text("%s", line1.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui::Text uses C-style varargs
-      
+      ImGui::Text("%s", line1.c_str());
+
       const float line2_width = ImGui::CalcTextSize(line2.c_str()).x;
       ImGui::SetCursorPosX((window_width - line2_width) * 0.5F);
-      ImGui::Text("%s", line2.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui::Text uses C-style varargs
+      ImGui::Text("%s", line2.c_str());
       ImGui::PopStyleColor();
     } else {
       const float text_width_val = ImGui::CalcTextSize(instructions).x;
       ImGui::SetCursorPosX((window_width - text_width_val) * 0.5F);
       ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TextDim);
-      ImGui::Text("%s", instructions);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui::Text uses C-style varargs
+      ImGui::Text("%s", instructions);
       ImGui::PopStyleColor();
     }
-    
+
     ImGui::Spacing();
     ImGui::Spacing();
     ImGui::Spacing();
-    
+
     // Helpful hint: Settings button opens Settings (no keyboard shortcut implemented)
     const char* hint = "Tip: Use the Settings button to open Settings";
     const float hint_width = ImGui::CalcTextSize(hint).x;
     ImGui::SetCursorPosX((window_width - hint_width) * 0.5F);
     ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TextDisabled);
-    ImGui::Text("%s", hint);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui::Text uses C-style varargs
+    ImGui::Text("%s", hint);
     ImGui::PopStyleColor();
-    
+
     return;  // Don't show example searches when index is empty
   }
 
@@ -659,11 +654,28 @@ void EmptyState::Render(GuiState& state,
   if (is_index_building) {
     // Prominent indexing-in-progress message with optional indexed file count
     main_message = "Please wait... indexing in progress";
-    if (indexed_file_count > 0U) {
-      main_message += " (";
-      main_message += FormatNumberWithSeparators(indexed_file_count);
-      main_message += " items indexed)";
+
+    // Calculate elapsed time since indexing started
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - state.index_build_start_time);
+    const double elapsed_seconds = static_cast<double>(elapsed.count()) / 1000.0;
+
+    main_message += " (";
+    // Format elapsed time (e.g., 1.2s)
+    std::array<char, 32> time_buf{};
+    if (const int snprintf_result =
+            snprintf(time_buf.data(), time_buf.size(), "%.1fs", elapsed_seconds);
+        snprintf_result > 0) {
+      main_message += time_buf.data();
     }
+
+    if (indexed_file_count > 0U) {
+      main_message += ", ";
+      main_message += FormatNumberWithSeparators(indexed_file_count);
+      main_message += " items indexed";
+    }
+    main_message += ")";
     main_color = Theme::Colors::Accent;
     use_larger_font = true;
   } else {
@@ -694,17 +706,14 @@ void EmptyState::Render(GuiState& state,
     const float button_width =
       button_size.x + (style.FramePadding.x * 2.0F);
     ImGui::SetCursorPosX((window_width - button_width) * 0.5F);
-    ImGui::PushStyleColor(ImGuiCol_Button, Theme::Colors::Accent);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::Colors::AccentHover);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::Colors::AccentActive);
-    ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TextOnAccent);
+    Theme::PushAccentButtonStyle();
     if (ImGui::Button(show_all_label)) {
       state.ApplyShowAllPreset();
       actions->TriggerManualSearch(state);
-      ImGui::PopStyleColor(4);
+      Theme::PopAccentButtonStyle();
       return;
     }
-    ImGui::PopStyleColor(4);
+    Theme::PopAccentButtonStyle();
     ImGui::Spacing();
   }
 

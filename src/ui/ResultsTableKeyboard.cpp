@@ -17,6 +17,7 @@
 #include "ui/Theme.h"
 #include "ui/UiStyleGuards.h"
 #include "utils/ClipboardUtils.h"
+#include "utils/Logger.h"
 
 namespace ui {
 
@@ -33,7 +34,7 @@ void MarkAllInFolder(GuiState& state,
       bool match = (path == folder_path);
       if (!match && path.size() > folder_path.size() &&
           path.substr(0, folder_path.size()) == folder_path) {
-        const char next_char = path[folder_path.size()];
+        const char next_char = path[folder_path.size()];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by path.size() > folder_path.size() above
         if (next_char == '/' || next_char == '\\') {
           match = true;
         }
@@ -71,109 +72,111 @@ void MoveSelectionDownIfPossible(GuiState& state,
   }
 }
 
+// Apply a mark (true) or unmark (false) to the currently selected row.
+// For directories, marks/unmarks all descendants via MarkAllInFolder.
+void ApplyMarkToCurrentRow(GuiState& state,
+                           const FileIndex& file_index,
+                           const std::vector<SearchResult>& display_results,
+                           bool mark) {
+  const auto& selected_res = display_results[static_cast<size_t>(state.selectedRow)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - callers guard with has_selection
+  if (selected_res.isDirectory) {
+    MarkAllInFolder(state, file_index, selected_res.fullPath, mark);
+  } else if (mark) {
+    state.markedFileIds.insert(selected_res.fileId);
+  } else {
+    state.markedFileIds.erase(selected_res.fileId);
+  }
+}
+
 void MarkToggleCurrentAndMove(GuiState& state,
                               const FileIndex& file_index,
                               const std::vector<SearchResult>& display_results) {
-  if (const auto& selected_res =
-        display_results[static_cast<size_t>(state.selectedRow)];
-      selected_res.isDirectory) {
-    const bool currently_marked =
-      state.markedFileIds.find(selected_res.fileId) != state.markedFileIds.end();
-    MarkAllInFolder(state, file_index, selected_res.fullPath, !currently_marked);
-  } else {
-    const auto it = state.markedFileIds.find(selected_res.fileId);
-    if (it != state.markedFileIds.end()) {
-      state.markedFileIds.erase(it);
-    } else {
-      state.markedFileIds.insert(selected_res.fileId);
-    }
-  }
+  const auto& selected_res = display_results[static_cast<size_t>(state.selectedRow)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - callers guard with has_selection
+  const bool currently_marked =
+    state.markedFileIds.find(selected_res.fileId) != state.markedFileIds.end();
+  ApplyMarkToCurrentRow(state, file_index, display_results, !currently_marked);
   MoveSelectionDownIfPossible(state, display_results);
 }
 
 void MarkCurrentAndMoveDown(GuiState& state,
                             const FileIndex& file_index,
                             const std::vector<SearchResult>& display_results) {
-  if (const auto& selected_res =
-        display_results[static_cast<size_t>(state.selectedRow)];
-      selected_res.isDirectory) {
-    MarkAllInFolder(state, file_index, selected_res.fullPath, true);
-  } else {
-    state.markedFileIds.insert(selected_res.fileId);
-  }
+  ApplyMarkToCurrentRow(state, file_index, display_results, true);
   MoveSelectionDownIfPossible(state, display_results);
 }
 
 void UnmarkCurrentAndMoveDown(GuiState& state,
                               const FileIndex& file_index,
                               const std::vector<SearchResult>& display_results) {
-  if (const auto& selected_res =
-        display_results[static_cast<size_t>(state.selectedRow)];
-      selected_res.isDirectory) {
-    MarkAllInFolder(state, file_index, selected_res.fullPath, false);
-  } else {
-    state.markedFileIds.erase(selected_res.fileId);
-  }
+  ApplyMarkToCurrentRow(state, file_index, display_results, false);
   MoveSelectionDownIfPossible(state, display_results);
+}
+
+// Debounce interval for mark/unmark key actions (absorbs macOS synthetic key repeats).
+constexpr auto kDebounceMs = std::chrono::milliseconds(50);
+
+// Wraps the repeated debounce pattern for the M / T / U mark keys.
+// Calls action() on the first key-down event; suppresses repeats until kDebounceMs after release.
+struct KeyHoldState {
+  bool handled = false;
+  std::chrono::steady_clock::time_point release_time;
+};
+
+template<typename Action>
+void HandleDebouncedMarkKey(ImGuiKey key,
+                            KeyHoldState& key_state,
+                            std::chrono::steady_clock::time_point time_now,
+                            const Action& action) {
+  if (ImGui::IsKeyDown(key) && !key_state.handled) {
+    action();
+    key_state.handled = true;
+    key_state.release_time = time_now;
+  } else if (ImGui::IsKeyDown(key)) {
+    key_state.release_time = time_now;
+  } else if (key_state.handled && time_now - key_state.release_time > kDebounceMs) {
+    key_state.handled = false;
+  }
+}
+
+// Render the shared header (separator + "Filter in results: " label + query + match count).
+// empty_query_placeholder is shown when the query string is empty.
+void RenderIncrementalSearchCommon(const IncrementalSearchState& incremental_search,
+                                   const char* empty_query_placeholder) {
+  ImGui::Spacing();
+  ImGui::Separator();
+  ImGui::Spacing();
+
+  const std::string_view query = incremental_search.Query();
+  const int match_count = incremental_search.MatchCount();
+
+  ImGui::TextUnformatted("Filter in results: ");
+  ImGui::SameLine();
+
+  if (!query.empty()) {
+    const std::string query_text{query.begin(), query.end()};
+    ImGui::TextUnformatted(query_text.c_str());
+  } else {
+    ImGui::TextUnformatted(empty_query_placeholder);
+  }
+
+  ImGui::SameLine();
+
+  if (match_count > 0) {
+    ImGui::Text("(%d matches)", match_count);
+  } else {
+    const detail::StyleColorGuard text_color_guard(ImGuiCol_Text, Theme::Colors::Warning);
+    ImGui::TextUnformatted("[no matches]");
+  }
 }
 
 }  // namespace
 
 void RenderIncrementalSearchPrompt(const IncrementalSearchState& incremental_search) {
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
-
-  const std::string_view query = incremental_search.Query();
-  const int match_count = incremental_search.MatchCount();
-
-  ImGui::TextUnformatted("Filter in results: ");
-  ImGui::SameLine();
-
-  if (!query.empty()) {
-    const std::string query_text{query.begin(), query.end()};
-    ImGui::TextUnformatted(query_text.c_str());
-  } else {
-    ImGui::TextUnformatted("_");
-  }
-
-  ImGui::SameLine();
-
-  if (match_count > 0) {
-    ImGui::Text("(%d matches)", match_count);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-  } else {
-    const detail::StyleColorGuard text_color_guard(ImGuiCol_Text, Theme::Colors::Warning);
-    ImGui::TextUnformatted("[no matches]");
-  }
+  RenderIncrementalSearchCommon(incremental_search, "_");
 }
 
 void RenderIncrementalSearchFilterStatus(const IncrementalSearchState& incremental_search) {
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
-
-  const std::string_view query = incremental_search.Query();
-  const int match_count = incremental_search.MatchCount();
-
-  ImGui::TextUnformatted("Filter in results: ");
-  ImGui::SameLine();
-
-  if (!query.empty()) {
-    const std::string query_text{query.begin(), query.end()};
-    ImGui::TextUnformatted(query_text.c_str());
-  } else {
-    ImGui::TextUnformatted("<empty>");
-  }
-
-  ImGui::SameLine();
-
-  if (match_count > 0) {
-    ImGui::Text("(%d matches)", match_count);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-  } else {
-    const detail::StyleColorGuard text_color_guard(ImGuiCol_Text, Theme::Colors::Warning);
-    ImGui::TextUnformatted("[no matches]");
-  }
-
+  RenderIncrementalSearchCommon(incremental_search, "<empty>");
   ImGui::SameLine();
 #ifdef __APPLE__
   ImGui::TextUnformatted(
@@ -213,7 +216,7 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
     bool query_changed = false;
 
     for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
-      const ImWchar ch = io.InputQueueCharacters[i];
+      const ImWchar ch = io.InputQueueCharacters[i];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounded by loop condition i < .Size
       if (ch >= kPrintableAsciiMin && ch <= kPrintableAsciiMax) {
         new_query.push_back(static_cast<char>(ch));
         query_changed = true;
@@ -266,7 +269,7 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
   bool activate_search = KeyPressedOnce(ImGuiKey_Slash);
   if (!activate_search) {
     for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
-      const ImWchar ch = io.InputQueueCharacters[i];
+      const ImWchar ch = io.InputQueueCharacters[i];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounded by loop condition i < .Size
       if (ch == '/') {
         activate_search = true;
         break;
@@ -282,15 +285,8 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
     // Do not return here; activation is not a shortcut that needs early exit.
   }
 
-  // Helper to handle debounce for row marking actions (workaround for macOS synthetic key repeats).
-  // We use a 50ms threshold after key release before we allow another action from the same physical key.
-  // This absorbs synthetic KeyUp/KeyDown pairs injected by the OS during key repeat.
-  struct KeyHoldState {
-    bool handled = false;
-    std::chrono::steady_clock::time_point release_time;
-  };
+  // time_now is used by HandleDebouncedMarkKey for the 50ms debounce (see kDebounceMs above).
   const auto time_now = std::chrono::steady_clock::now();
-  constexpr auto kDebounceMs = std::chrono::milliseconds(50);
 
   // W / Shift+W - Copy marked paths or filenames
   if (KeyPressedOnce(ImGuiKey_W)) {
@@ -310,8 +306,17 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
     state.selectedRow >= 0 &&
     state.selectedRow < static_cast<int>(display_results.size());
   const std::string_view selected_path =
-    has_selection ? display_results[static_cast<size_t>(state.selectedRow)].fullPath
+    has_selection ? display_results[static_cast<size_t>(state.selectedRow)].fullPath  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by has_selection check above
                   : std::string_view{};
+
+  // Delete - single file delete (opens confirmation popup; modal is rendered in ResultsTable)
+  if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+      KeyPressedOnce(ImGuiKey_Delete) && has_selection) {
+    state.fileToDelete.assign(
+      display_results[static_cast<size_t>(state.selectedRow)].fullPath);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by has_selection
+    state.showDeletePopup = true;
+    LOG_INFO_BUILD("Opening delete popup for: " << state.fileToDelete);
+  }
 
   // Enter / Ctrl+Enter / Ctrl+Shift+C - Open selected, reveal in Explorer, copy path (order: specific before plain Enter).
   if (has_selection && IsPrimaryShortcutModifierDown(io) && !shift &&
@@ -347,51 +352,39 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
 #endif  // _WIN32
 
   // M: Shift+M = mark all (always); m = mark current row and move down (when selection exists).
-  if (static KeyHoldState m_state{}; ImGui::IsKeyDown(ImGuiKey_M) && !m_state.handled) {
-    if (shift) {
-      for (const auto& result : display_results) {
-        state.markedFileIds.insert(result.fileId);
-      }
-    } else if (has_selection) {
-      MarkCurrentAndMoveDown(state, file_index, display_results);
-    }
-    m_state.handled = true;
-    m_state.release_time = time_now;
-  } else if (ImGui::IsKeyDown(ImGuiKey_M)) {
-    m_state.release_time = time_now;
-  } else if (m_state.handled && time_now - m_state.release_time > kDebounceMs) {
-    m_state.handled = false;
-  }
+  static KeyHoldState m_state{};
+  HandleDebouncedMarkKey(ImGuiKey_M, m_state, time_now,
+                         [&state, &file_index, &display_results, shift, has_selection] {
+                           if (shift) {
+                             for (const auto& result : display_results) {
+                               state.markedFileIds.insert(result.fileId);
+                             }
+                           } else if (has_selection) {
+                             MarkCurrentAndMoveDown(state, file_index, display_results);
+                           }
+                         });
 
   // T: Shift+T = invert all (always); t = toggle current row and move down (when selection exists).
-  if (static KeyHoldState t_state{}; ImGui::IsKeyDown(ImGuiKey_T) && !t_state.handled) {
-    if (shift) {
-      MarkInvertAll(state, display_results);
-    } else if (has_selection) {
-      MarkToggleCurrentAndMove(state, file_index, display_results);
-    }
-    t_state.handled = true;
-    t_state.release_time = time_now;
-  } else if (ImGui::IsKeyDown(ImGuiKey_T)) {
-    t_state.release_time = time_now;
-  } else if (t_state.handled && time_now - t_state.release_time > kDebounceMs) {
-    t_state.handled = false;
-  }
+  static KeyHoldState t_state{};
+  HandleDebouncedMarkKey(ImGuiKey_T, t_state, time_now,
+                         [&state, &file_index, &display_results, shift, has_selection] {
+                           if (shift) {
+                             MarkInvertAll(state, display_results);
+                           } else if (has_selection) {
+                             MarkToggleCurrentAndMove(state, file_index, display_results);
+                           }
+                         });
 
   // U: Shift+U = unmark all (always); u = unmark current row and move down (when selection exists).
-  if (static KeyHoldState u_state{}; ImGui::IsKeyDown(ImGuiKey_U) && !u_state.handled) {
-    if (shift) {
-      state.markedFileIds.clear();
-    } else if (has_selection) {
-      UnmarkCurrentAndMoveDown(state, file_index, display_results);
-    }
-    u_state.handled = true;
-    u_state.release_time = time_now;
-  } else if (ImGui::IsKeyDown(ImGuiKey_U)) {
-    u_state.release_time = time_now;
-  } else if (u_state.handled && time_now - u_state.release_time > kDebounceMs) {
-    u_state.handled = false;
-  }
+  static KeyHoldState u_state{};
+  HandleDebouncedMarkKey(ImGuiKey_U, u_state, time_now,
+                         [&state, &display_results, &file_index, shift, has_selection] {
+                           if (shift) {
+                             state.markedFileIds.clear();
+                           } else if (has_selection) {
+                             UnmarkCurrentAndMoveDown(state, file_index, display_results);
+                           }
+                         });
 
   // Arrow key / dired navigation
   // P without Ctrl is "previous row"; Ctrl+Shift+P is Pin to Quick Access (Windows), so exclude Ctrl when treating P as navigation.

@@ -27,7 +27,7 @@ namespace detail {
     } while (true);
     return false;
   }
-  
+
   // Character comparison functors for case-sensitive and case-insensitive matching
   struct CharEqual {
     [[nodiscard]] inline bool operator()(char a, char b) const {
@@ -115,7 +115,7 @@ namespace detail {
     return true;
   }
 
-  if (re.size() > 1 && re[1] == '*') {
+  if (re.size() > 1 && re[1] == '*') {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - regex engine, indexed by construction invariant
     return MatchStar(re.front(), re.substr(2), text);
   }
 
@@ -172,7 +172,7 @@ namespace detail {
     return true;
   }
 
-  if (re.size() > 1 && re[1] == '*') {
+  if (re.size() > 1 && re[1] == '*') {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - regex engine, indexed by construction invariant
     return MatchStarI(re.front(), re.substr(2), text);
   }
 

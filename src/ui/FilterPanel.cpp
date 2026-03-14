@@ -158,11 +158,7 @@ static void RenderQuickFilterButton(
   const std::function<void()>& callback) {  // NOSONAR(cpp:S1238, cpp:S5213) - std::function provides type
                                             // erasure for callbacks, template would break API
   if (is_active) {
-    // Highlight active button with Accent color
-    ImGui::PushStyleColor(ImGuiCol_Button, Theme::Colors::Accent);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::Colors::AccentHover);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::Colors::AccentActive);
-    ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TextOnAccent);  // Dark text on accent
+    Theme::PushAccentButtonStyle();
   }
 
   if (ImGui::Button(label)) {
@@ -170,7 +166,7 @@ static void RenderQuickFilterButton(
   }
 
   if (is_active) {
-    ImGui::PopStyleColor(4);
+    Theme::PopAccentButtonStyle();
   }
 }
 
@@ -216,15 +212,6 @@ static float ComputeApplicationControlsTotalWidth(
   return total;
 }
 
-static void ApplyRightAlignPosition(float total_group_width) {
-  const ImGuiStyle& style = ImGui::GetStyle();
-  const float window_right_edge = ImGui::GetWindowContentRegionMax().x;
-  const float right_margin = style.WindowPadding.x;
-  const float target_x = window_right_edge - total_group_width - right_margin;
-  if ((target_x + total_group_width) <= (window_right_edge - right_margin)) {
-    ImGui::SetCursorPosX(target_x);
-  }
-}
 
 static void RenderModeCycleButton(AppSettings& settings) {
   const char* mode_label = GetUIModeButtonLabel(settings.uiMode);
@@ -233,7 +220,6 @@ static void RenderModeCycleButton(AppSettings& settings) {
     CycleUIModeAndSave(settings);
   }
   if (ImGui::IsItemHovered()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API uses varargs
     ImGui::SetTooltip("Cycle UI Mode (Full -> Simplified -> Minimalistic)");
   }
 }
@@ -261,7 +247,6 @@ static void RenderHelpButton(GuiState& state) {
     state.showHelpWindow = !state.showHelpWindow;
   }
   if (ImGui::IsItemHovered()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API uses varargs
     ImGui::SetTooltip("Keyboard shortcuts");
   }
 }
@@ -273,7 +258,6 @@ static void RenderTestEngineButton(bool* show_test_engine_window) {
     *show_test_engine_window = true;
   }
   if (ImGui::IsItemHovered()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API uses varargs
     ImGui::SetTooltip("Show ImGui Test Engine window (run UI tests)");
   }
 }
@@ -313,7 +297,7 @@ void FilterPanel::RenderApplicationControls(GuiState& state, std::atomic<bool>& 
   const float total_group_width = ComputeApplicationControlsTotalWidth(
     settings_label, mode_label, help_width, metrics_available, show_metrics_val,
     show_test_engine_window, style);
-  ApplyRightAlignPosition(total_group_width);
+  AlignGroupRight(total_group_width);
 
   ImGui::PushStyleColor(ImGuiCol_Button, Theme::Colors::Surface);
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::Colors::SurfaceHover);
@@ -335,7 +319,7 @@ void FilterPanel::RenderApplicationControls(GuiState& state, std::atomic<bool>& 
 void FilterPanel::RenderQuickFilters(GuiState& state, [[maybe_unused]] const UsnMonitor* monitor) {
   ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kBlockPadding));
   ImGui::AlignTextToFramePadding();
-  ImGui::Text(ICON_FA_FILTER " Quick Filters:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::Text(ICON_FA_FILTER " Quick Filters:");
   ImGui::SameLine();
 
   auto mark_input_changed = [&state]() { state.MarkInputChanged(); };
@@ -417,7 +401,7 @@ void FilterPanel::RenderQuickFilters(GuiState& state, [[maybe_unused]] const Usn
 void FilterPanel::RenderTimeQuickFilters(GuiState& state) {
   ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kBlockPadding));
   ImGui::AlignTextToFramePadding();
-  ImGui::Text("Last Modified:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::Text("Last Modified:");
   ImGui::SameLine();
 
   RenderQuickFilterButton("Today", state.timeFilter == TimeFilter::Today, [&state]() {
@@ -448,9 +432,8 @@ void FilterPanel::RenderTimeQuickFilters(GuiState& state) {
 void FilterPanel::RenderSizeQuickFilters(GuiState& state) {
   ImGui::SameLine();
   ImGui::AlignTextToFramePadding();
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API uses varargs
   // intentionally
-  ImGui::Text("File Size:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::Text("File Size:");
   ImGui::SameLine();
 
   RenderQuickFilterButton("Empty", state.sizeFilter == SizeFilter::Empty,
@@ -491,15 +474,11 @@ void FilterPanel::RenderFilterBadge(
     return;
   }
 
-  ImGui::PushStyleColor(ImGuiCol_Button, Theme::Colors::Accent);
-  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::Colors::AccentHover);
-  ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::Colors::AccentActive);
-  ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TextOnAccent);
+  Theme::PushAccentButtonStyle();
 
   // Use snprintf to avoid string allocation (temporary formatting buffer, not performance-critical)
   std::string label_with_x(256, '\0');
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - snprintf for fixed buffer formatting
-  if (const int written = std::snprintf(label_with_x.data(), label_with_x.size(), "%s ×", label);  // NOLINT(cppcoreguidelines-init-variables) - initialized by snprintf return
+  if (const int written = std::snprintf(label_with_x.data(), label_with_x.size(), "%s ×", label);
       written > 0 && static_cast<size_t>(written) < label_with_x.size()) {  // NOLINT(bugprone-branch-clone) - first branch: exact length; else branch: truncation
     label_with_x.resize(static_cast<size_t>(written));
   } else if (written >= 0) {
@@ -509,7 +488,7 @@ void FilterPanel::RenderFilterBadge(
     on_clear();
   }
 
-  ImGui::PopStyleColor(4);
+  Theme::PopAccentButtonStyle();
   ImGui::SameLine();
 }
 
@@ -534,7 +513,7 @@ void FilterPanel::RenderActiveFilterIndicators(GuiState& state) {
   if (has_active_filters) {
     ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kBlockPadding));
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("Active Filters:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+    ImGui::TextDisabled("Active Filters:");
     ImGui::SameLine();
 
     // Extension filter badge
@@ -589,7 +568,7 @@ void FilterPanel::RenderSavedSearches(GuiState& state, const AppSettings& settin
                                       UIActions* actions, bool is_index_building) {
   ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kBlockPadding));
   ImGui::AlignTextToFramePadding();
-  ImGui::TextDisabled("Saved Searches:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::TextDisabled("Saved Searches:");
   ImGui::SameLine();
 
   static int selected_saved_search = -1;
@@ -693,15 +672,15 @@ void FilterPanel::RenderSavedSearchCombo(const std::vector<SavedSearch>& saved_l
                                          UIActions* actions, bool is_index_building) {
   const char* current_label =
     (selected_saved_search >= 0)
-      ? saved_list[static_cast<std::size_t>(selected_saved_search)].name.c_str()
+      ? saved_list[static_cast<std::size_t>(selected_saved_search)].name.c_str()  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounds checked by selected_saved_search >= 0 && < size()
       : "<Select or save search>";
 
   if (ImGui::BeginCombo("##SavedSearches", current_label)) {
     for (int i = 0; i < static_cast<int>(saved_list.size()); ++i) {
       const bool is_selected = (i == selected_saved_search);
-      if (ImGui::Selectable(saved_list[static_cast<std::size_t>(i)].name.c_str(), is_selected)) {
+      if (ImGui::Selectable(saved_list[static_cast<std::size_t>(i)].name.c_str(), is_selected)) {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by loop < saved_list.size()
         selected_saved_search = i;
-        HandleSavedSearchSelection(saved_list[static_cast<std::size_t>(i)], state, actions,
+        HandleSavedSearchSelection(saved_list[static_cast<std::size_t>(i)], state, actions,  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
                                    is_index_building);
       }
       if (is_selected) {

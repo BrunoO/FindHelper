@@ -93,16 +93,18 @@ namespace test_settings {
     AppSettings defaults;
     return defaults;
   }
-  
+
   void ClearInMemorySettings() {
     in_memory_settings_ = nullptr;
     in_memory_mode_ = false;
   }
-  
+
   bool IsInMemoryMode() {
     return in_memory_mode_;
   }
 }
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - nlohmann JSON operator[] on object keys; bounds are validated by j.contains() before each access
 
 // Helper: Load and validate theme ID (allowlist of seven known IDs)
 static void LoadThemeId(const json& j, AppSettings& out) {
@@ -112,7 +114,7 @@ static void LoadThemeId(const json& j, AppSettings& out) {
   const std::string value = j["themeId"].get<std::string>();
   static const std::array<std::string_view, 7> kAllowedThemeIds = {
       "default_dark", "dracula", "nord", "one_dark", "gruvbox", "everforest", "catppuccin"};
-  if (std::find(kAllowedThemeIds.begin(), kAllowedThemeIds.end(), value) !=
+  if (std::find(kAllowedThemeIds.begin(), kAllowedThemeIds.end(), value) !=  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
       kAllowedThemeIds.end()) {
     out.themeId = value;
   }
@@ -515,22 +517,24 @@ static bool LoadSettingsFromJsonStream(std::ifstream& file, AppSettings& out) {
   return true;
 }
 
+// Log a JSON-related error from a settings operation and return false (for use in catch blocks).
+static bool LogJsonSettingsError(std::string_view prefix, const char* what) {
+  LOG_ERROR(std::string(prefix) + std::string(what));
+  return false;
+}
+
 // Load from an already-opened stream with exception handling. Returns true on success.
 static bool TryLoadFromOpenFile(std::ifstream& file, AppSettings& out) {
   try {
     return LoadSettingsFromJsonStream(file, out);
   } catch (const json::parse_error& e) {
-    LOG_ERROR("JSON parse error in settings file: " + std::string(e.what()));
-    return false;
+    return LogJsonSettingsError("JSON parse error in settings file: ", e.what());
   } catch (const json::exception& e) {
-    LOG_ERROR("JSON error in settings file: " + std::string(e.what()));
-    return false;
+    return LogJsonSettingsError("JSON error in settings file: ", e.what());
   } catch (const std::ios_base::failure& e) {
-    LOG_ERROR("I/O error reading settings file: " + std::string(e.what()));
-    return false;
+    return LogJsonSettingsError("I/O error reading settings file: ", e.what());
   } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Catch-all after specific types
-    LOG_ERROR("Error parsing settings file: " + std::string(e.what()));
-    return false;
+    return LogJsonSettingsError("Error parsing settings file: ", e.what());
   }
 }
 
@@ -545,7 +549,7 @@ static bool TryLoadFromLegacyAndMigrateToPrimary(std::string_view path, AppSetti
     return false;
   }
   try {
-    const bool ok = LoadSettingsFromJsonStream(legacy_file, out);  // NOLINT(cppcoreguidelines-init-variables) - initialized by return value
+    const bool ok = LoadSettingsFromJsonStream(legacy_file, out);
     legacy_file.close();
     if (ok && CanUsePrimaryPath(true)) {
       SaveSettings(out);
@@ -553,14 +557,11 @@ static bool TryLoadFromLegacyAndMigrateToPrimary(std::string_view path, AppSetti
     }
     return ok;
   } catch (const json::parse_error& e) {
-    LOG_ERROR("JSON parse error in settings file: " + std::string(e.what()));
-    return false;
+    return LogJsonSettingsError("JSON parse error in settings file: ", e.what());
   } catch (const json::exception& e) {
-    LOG_ERROR("JSON error in settings file: " + std::string(e.what()));
-    return false;
+    return LogJsonSettingsError("JSON error in settings file: ", e.what());
   } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Catch-all after specific types
-    LOG_ERROR("Error parsing settings file: " + std::string(e.what()));
-    return false;
+    return LogJsonSettingsError("Error parsing settings file: ", e.what());
   }
 }
 
@@ -596,7 +597,7 @@ static bool WriteSettingsToPath(std::string_view path, const json& j,
   }
   file << j.dump(2) << "\n";
   file.flush();
-  const bool ok = file.good();  // NOLINT(cppcoreguidelines-init-variables) - initialized by return value
+  const bool ok = file.good();
   file.close();
   if (ok) {
     LOG_INFO_BUILD("Saved settings to '" << path << "' (window="
@@ -619,6 +620,23 @@ static bool WriteSettingsWithLegacyFallback(std::string_view path, const json& j
     }
   }
   return false;
+}
+
+// Serialize a single SavedSearch to a JSON object.
+static json SerializeSavedSearch(const SavedSearch& s) {
+  json search_obj;
+  search_obj["name"] = s.name;
+  search_obj["path"] = s.path;
+  search_obj["extensions"] = s.extensions;
+  search_obj["filename"] = s.filename;
+  search_obj["foldersOnly"] = s.foldersOnly;
+  search_obj["caseSensitive"] = s.caseSensitive;
+  search_obj["timeFilter"] = s.timeFilter;
+  search_obj["sizeFilter"] = s.sizeFilter;
+  if (!s.aiSearchDescription.empty()) {
+    search_obj["aiSearchDescription"] = s.aiSearchDescription;
+  }
+  return search_obj;
 }
 
 // Build json object from AppSettings for serialization.
@@ -647,19 +665,7 @@ static json SettingsToJson(const AppSettings& settings) {
   if (!settings.savedSearches.empty()) {
     json searches_array = json::array();
     for (const auto& s : settings.savedSearches) {
-      json search_obj;
-      search_obj["name"] = s.name;
-      search_obj["path"] = s.path;
-      search_obj["extensions"] = s.extensions;
-      search_obj["filename"] = s.filename;
-      search_obj["foldersOnly"] = s.foldersOnly;
-      search_obj["caseSensitive"] = s.caseSensitive;
-      search_obj["timeFilter"] = s.timeFilter;
-      search_obj["sizeFilter"] = s.sizeFilter;
-      if (!s.aiSearchDescription.empty()) {
-        search_obj["aiSearchDescription"] = s.aiSearchDescription;
-      }
-      searches_array.push_back(search_obj);
+      searches_array.push_back(SerializeSavedSearch(s));
     }
     j["savedSearches"] = searches_array;
   }
@@ -667,25 +673,14 @@ static json SettingsToJson(const AppSettings& settings) {
   if (!settings.recentSearches.empty()) {
     json recent_array = json::array();
     for (const auto& s : settings.recentSearches) {
-      json search_obj;
-      search_obj["name"] = s.name;
-      search_obj["path"] = s.path;
-      search_obj["extensions"] = s.extensions;
-      search_obj["filename"] = s.filename;
-      search_obj["foldersOnly"] = s.foldersOnly;
-      search_obj["caseSensitive"] = s.caseSensitive;
-      search_obj["timeFilter"] = s.timeFilter;
-      search_obj["sizeFilter"] = s.sizeFilter;
-      if (!s.aiSearchDescription.empty()) {
-        search_obj["aiSearchDescription"] = s.aiSearchDescription;
-      }
-      recent_array.push_back(search_obj);
+      recent_array.push_back(SerializeSavedSearch(s));
     }
     j["recentSearches"] = recent_array;
   }
 
   return j;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 bool SaveSettings(const AppSettings& settings) {
   if (test_settings::IsInMemoryMode()) {

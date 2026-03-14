@@ -323,41 +323,6 @@ ParallelSearchEngine::CreatePatternMatchers(const SearchContext& context) {
 // ============================================================================
 
 namespace parallel_search_detail {
-// ExtensionMatches is now in search_pattern_utils namespace
-// Use search_pattern_utils::ExtensionMatches instead
-
-/**  // NOSONAR S1103 - Doxygen block is intentional
- * Helper function to extract filename and extension from path
- *
- * filename_start_offset: offset where filename begins (e.g., after "C:\Users\")
- * extension_start_offset: offset where extension begins (e.g., after "file."),
- * or SIZE_MAX if no extension
- * 
- * Example: "C:\Users\file.txt"
- *   filename_start_offset = 9 (after "C:\Users\")
- *   extension_start_offset = 14 (after "file.", points to 't')
- *   Result: filename = "file", extension = "txt"
- */
-void ExtractFilenameAndExtension(const char* path, size_t filename_start_offset,
-                                 size_t extension_start_offset,
-                                 std::string& out_filename,
-                                 std::string& out_extension) {
-  const char* filename_start = path + filename_start_offset;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - path segment by offset
-  if (extension_start_offset != SIZE_MAX) {
-    // Has extension
-    // extension_start_offset points to the first character of the extension
-    // (after the dot) The dot is at extension_start_offset - 1
-    // Filename is from filename_start_offset to extension_start_offset - 2 (before the dot)
-    const size_t filename_len = extension_start_offset - filename_start_offset - 1;
-    out_filename.assign(filename_start, filename_len);
-    // Extension is from extension_start_offset to end of string
-    out_extension.assign(path + extension_start_offset);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - path segment by offset
-  } else {
-    // No extension - filename is from filename_start_offset to end of string
-    out_filename.assign(filename_start);
-    out_extension.clear();
-  }
-}
 
 // Helper function to check filename and path matchers (inline for hot-path inlining).
 // Returns true if all matchers pass (or are not set), false if any matcher fails.
@@ -367,13 +332,13 @@ inline bool CheckMatchers(const char* path, [[maybe_unused]] size_t path_len, si
                    const lightweight_callable::LightweightCallable<bool, const char*>& filename_matcher,
                    const lightweight_callable::LightweightCallable<bool, std::string_view>& path_matcher) {
   if (filename_matcher) {
-    const char* filename = path + filename_offset;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA path + offset
+    const char* filename = path + filename_offset;
     if (!filename_matcher(filename)) {
       return false;
     }
   }
   if (path_matcher) {
-    const std::string_view full_path(path, path_len);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - path + path_len is valid range
+    const std::string_view full_path(path, path_len);
     if (!path_matcher(full_path)) {
       return false;
     }
@@ -424,7 +389,7 @@ void ParallelSearchEngine::ProcessChunkRangeIds(  // NOSONAR(cpp:S3776, cpp:S107
   // Use pre-created matchers (no overhead from CreatePatternMatchers)
   // Implementation is a simplified version of ProcessChunkRange,
   // returning only IDs.
-  
+
   // OPTIMIZATION: Hoist cancellation flag and extension filter check outside loop
   const bool has_cancel_flag = (context.cancel_flag != nullptr);
   const bool has_extension_filter = context.HasExtensionFilter();
@@ -437,10 +402,10 @@ void ParallelSearchEngine::ProcessChunkRangeIds(  // NOSONAR(cpp:S3776, cpp:S107
       return;
     }
 
-    if (soaView.is_deleted[i] != 0) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+    if (soaView.is_deleted[i] != 0) {
       continue;
     }
-    if (context.folders_only && soaView.is_directory[i] == 0) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+    if (context.folders_only && soaView.is_directory[i] == 0) {
       continue;
     }
 
@@ -455,8 +420,8 @@ void ParallelSearchEngine::ProcessChunkRangeIds(  // NOSONAR(cpp:S3776, cpp:S107
     if (context.extension_only_mode) {
       // Extension filter already checked above, proceed to add result
     } else {
-      const char* path = soaView.path_storage + soaView.path_offsets[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA access
-      const size_t filename_offset = soaView.filename_start[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+      const char* path = soaView.path_storage + soaView.path_offsets[i];
+      const size_t filename_offset = soaView.filename_start[i];
 
       // Check filename/path matchers with early continue to reduce nesting
       if (!parallel_search_detail::CheckMatchers(path, path_len, filename_offset,
@@ -465,7 +430,7 @@ void ParallelSearchEngine::ProcessChunkRangeIds(  // NOSONAR(cpp:S3776, cpp:S107
       }
     }
 
-    local_results.push_back(soaView.path_ids[i]);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+    local_results.push_back(soaView.path_ids[i]);
   }
 }
 

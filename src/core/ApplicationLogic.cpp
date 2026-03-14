@@ -65,8 +65,8 @@ void DispatchGlobalShortcut(ShortcutAction action,
       break;
     case ShortcutAction::ExportCsv: {
       // application is always valid here; ExportToCsv guards against null file_index_ internally.
-      const auto* const results = search::SearchResultsService::GetDisplayResults(state);
-      if (results != nullptr && !results->empty()) {
+      if (const auto* const results = search::SearchResultsService::GetDisplayResults(state);
+          results != nullptr && !results->empty()) {
         application.ExportToCsv(state);
       }
       break;
@@ -131,7 +131,7 @@ void Update(GuiState &state,  // NOSONAR(cpp:S107) - Function has 9 parameters: 
 
   // Check if crawl just completed and trigger search to refresh UI
   if (application.CheckAndClearCrawlCompletion() &&
-      (!state.filenameInput.IsEmpty() || !state.pathInput.IsEmpty() || 
+      (!state.filenameInput.IsEmpty() || !state.pathInput.IsEmpty() ||
        !state.extensionInput.IsEmpty() || !state.searchResults.empty())) {
     // Crawl just completed - trigger search to refresh UI with new index
     // Only trigger if we have search parameters (user has entered something or has previous search)
@@ -165,7 +165,7 @@ void Update(GuiState &state,  // NOSONAR(cpp:S107) - Function has 9 parameters: 
     }
 #endif  // _WIN32
   }
-  
+
   // Check for periodic recrawl (only if index is ready and not building)
   CheckPeriodicRecrawl(application,
                        settings,
@@ -183,16 +183,16 @@ void CheckPeriodicRecrawl(Application &application,
   if (!recrawl_enabled) {
     return;
   }
-  
+
   if (settings.crawlFolder.empty()) {
     return;
   }
-  
+
   // Don't recrawl if crawl is already in progress
   if (application.IsIndexBuilding()) {
     return;
   }
-  
+
   // Check if recrawl interval has elapsed (configurable via settings)
   // Clamp to valid range (should already be validated in Settings.cpp)
   int interval_minutes = settings.recrawl.intervalMinutes;
@@ -207,14 +207,14 @@ void CheckPeriodicRecrawl(Application &application,
                       << settings_defaults::kMaxRecrawlIntervalMinutes << " minutes, clamped to "
                       << settings_defaults::kMaxRecrawlIntervalMinutes << " minutes");
   }
-  
+
   const std::chrono::minutes recrawl_interval(interval_minutes);
   auto now = std::chrono::steady_clock::now();
   if (auto elapsed = now - last_crawl_completion_time; elapsed < recrawl_interval) {
     // Interval not elapsed yet - silently return (log removed to avoid output pollution)
     return;  // Not enough time has passed
   }
-  
+
   // Check idle requirement (if enabled)
   if (settings.recrawl.requireIdle) {
     int threshold_minutes = settings.recrawl.idleThresholdMinutes;
@@ -231,14 +231,14 @@ void CheckPeriodicRecrawl(Application &application,
                         << " minutes, clamped to "
                         << settings_defaults::kMaxRecrawlIdleThresholdMinutes << " minutes");
     }
-    
+
     const double idle_threshold_seconds = static_cast<double>(threshold_minutes) * 60.0;
-    
+
     // Check if system and process are idle
     const bool system_idle = system_idle_detector::IsSystemIdleFor(idle_threshold_seconds);
     const bool process_idle = system_idle_detector::IsProcessIdleFor(
         last_interaction_time, idle_threshold_seconds);
-    
+
     // Log detailed idle state for debugging (only when not idle to avoid spam)
     // Silently return if idle conditions not met (removed INFO logs to reduce noise)
     // Note: system_idle_seconds < 0.0 indicates system idle detection unavailable,
@@ -246,12 +246,12 @@ void CheckPeriodicRecrawl(Application &application,
     if (!system_idle || !process_idle) {
       return;
     }
-    
+
     // All conditions met - trigger recrawl (removed INFO log to reduce noise)
   } else {
     // Idle requirement disabled - skip idle checks (removed INFO log to reduce noise)
   }
-  
+
   application.TriggerRecrawl();
 }
 

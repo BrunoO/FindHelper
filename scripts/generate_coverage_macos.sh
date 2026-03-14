@@ -150,13 +150,17 @@ if [[ "$COMPILER_ID" == "Clang" ]]; then
     # Find test executables (must match TEST_TARGETS in build_tests_macos.sh so coverage is cumulative)
     TEST_EXECUTABLES=(
         "$BUILD_DIR/string_search_tests"
+        "$BUILD_DIR/fuzzy_search_tests"
         "$BUILD_DIR/cpu_features_tests"
         "$BUILD_DIR/string_search_avx2_tests"
+        "$BUILD_DIR/string_search_neon_tests"
         "$BUILD_DIR/path_utils_tests"
         "$BUILD_DIR/path_pattern_matcher_tests"
         "$BUILD_DIR/path_pattern_integration_tests"
         "$BUILD_DIR/simple_regex_tests"
         "$BUILD_DIR/search_pattern_utils_tests"
+        "$BUILD_DIR/export_search_results_service_tests"
+        "$BUILD_DIR/regex_generator_utils_tests"
         "$BUILD_DIR/string_utils_tests"
         "$BUILD_DIR/file_system_utils_tests"
         "$BUILD_DIR/lazy_attribute_loader_tests"
@@ -175,6 +179,7 @@ if [[ "$COMPILER_ID" == "Clang" ]]; then
         "$BUILD_DIR/std_regex_utils_tests"
         "$BUILD_DIR/search_result_sort_tests"
         "$BUILD_DIR/total_size_computation_tests"
+        "$BUILD_DIR/incremental_search_state_tests"
     )
     
     # Add comprehensive coverage executable if it exists

@@ -25,7 +25,6 @@
 #import <dispatch/dispatch.h>
 
 #include "platform/FileOperations.h"  // Common interface header
-#include "utils/ClipboardUtils.h"
 #include "utils/Logger.h"
 #include "utils/PlatformTypes.h"
 
@@ -112,18 +111,6 @@ void OpenParentFolder(std::string_view full_path) {
   NSWorkspace* workspace = [NSWorkspace sharedWorkspace];
   NSArray* file_urls = @[file_url];
   [workspace activateFileViewerSelectingURLs:file_urls];
-}
-
-void CopyPathToClipboard(struct GLFWwindow* window, std::string_view full_path) {
-  const std::string path(full_path);
-  if (!internal::ValidatePath(path, "CopyPathToClipboard")) {
-    return;
-  }
-  if (clipboard_utils::SetClipboardText(window, path)) {
-    LOG_INFO("Copied path to clipboard: " + path);
-  } else {
-    LOG_ERROR("Failed to copy path to clipboard: " + path);
-  }
 }
 
 bool DeleteFileToRecycleBin(const std::string &full_path) {

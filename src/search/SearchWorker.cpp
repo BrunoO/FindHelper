@@ -22,7 +22,7 @@
 // Helper function to atomically update maximum value using compare-and-swap
 // This eliminates duplicate atomic CAS loops for updating max metrics
 template<typename T>
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables, readability-identifier-naming) - Template function, not a global variable (clang-tidy false positive), naming follows project convention
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,readability-identifier-naming) - Template function, not a global variable (clang-tidy false positive), naming follows project convention
 static void UpdateAtomicMax(std::atomic<T>& atomic_var, T new_value) {
   T current = atomic_var.load(std::memory_order_acquire);
   while (new_value > current &&
@@ -45,7 +45,7 @@ static void UpdateAtomicMax(std::atomic<T>& atomic_var, T new_value) {
 static std::string FormatBytes(size_t bytes) {
   constexpr size_t k_bytes_per_kb = 1024;
   constexpr size_t k_bytes_per_mb = 1024 * 1024;  // NOLINT(bugprone-implicit-widening-of-multiplication-result) - Intentional: 1024 * 1024 fits in int, then widened to size_t
-  
+
   if (bytes < k_bytes_per_kb) {
     return std::to_string(bytes) + " B";
   }
@@ -144,7 +144,7 @@ static void LogLoadBalanceAnalysis(
   const std::string avg_bytes_str = FormatBytes(byte_stats.avg);  // NOLINT(bugprone-unused-local-non-trivial-variable)
 
   // Count threads that used dynamic chunking (used in LOG_INFO_BUILD below; Sonar may not expand macro)
-  const size_t threads_with_dynamic = std::count_if(  // NOSONAR(cpp:S1481,cpp:S1854)  // NOLINT(cppcoreguidelines-init-variables) - only used in LOG_INFO_BUILD; may appear unused when logging is compiled out
+  const size_t threads_with_dynamic = std::count_if(  // NOSONAR(cpp:S1481,cpp:S1854) NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
       thread_timings.begin(), thread_timings.end(),
       [](const ThreadTiming& t) { return t.dynamic_chunks_processed_ > 0; });
 
@@ -306,7 +306,7 @@ std::vector<SearchResult> MergeAndConvertToSearchResults(  // NOLINT(cppcoreguid
     pool.insert(pool.end(), path_view.begin(), path_view.end());
     pool.push_back('\0');
     const size_t path_len = path_view.size();
-    const char* path_start = pool.data() + pool_offset;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - building string_view into pool
+    const char* path_start = pool.data() + pool_offset;
     pool_offset += path_len + 1;
 
     SearchResult result;
@@ -367,7 +367,7 @@ static void ProcessSearchFutures(std::vector<std::future<std::vector<SearchResul
       break;
     }
 
-    std::vector<SearchResultData> chunk_data = search_futures[future_idx].get();
+    std::vector<SearchResultData> chunk_data = search_futures[future_idx].get();  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - future_idx bounded by futures_count = search_futures.size()
 
     // Reserve additional capacity if estimate was too low
     if (all_search_data.size() + chunk_data.size() > all_search_data.capacity()) {
@@ -391,11 +391,13 @@ static void LogLoadBalanceIfNeeded(const std::vector<ThreadTiming>& thread_timin
     return;
   }
 
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - index 0 is safe: thread_timings.empty() checked above
   uint64_t min_time = thread_timings[0].elapsed_ms_;
   uint64_t max_time = thread_timings[0].elapsed_ms_;
   uint64_t total_time = 0;
   size_t min_bytes = thread_timings[0].bytes_processed_;
   size_t max_bytes = thread_timings[0].bytes_processed_;
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   size_t total_bytes = 0;
 
   LogPerThreadTiming(thread_timings, min_time, max_time, total_time,
@@ -449,6 +451,7 @@ static bool ProcessOneReadyFutureIfReady(
     size_t index,
     StreamingResultsCollector& collector,
     std::atomic<bool>& cancel_flag) {
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - index is caller-supplied from pending_indices, which only contains valid indices into search_futures
   if (search_futures[index].wait_for(std::chrono::milliseconds(0)) !=
       std::future_status::ready) {
     return false;
@@ -464,6 +467,7 @@ static bool ProcessOneReadyFutureIfReady(
         collector.SetError(msg);
         cancel_flag.store(true, std::memory_order_release);
       });
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   return true;
 }
 
@@ -491,6 +495,7 @@ static void WaitForFutureReadyOrLog(
 static void DrainRemainingSearchFutures(
     std::vector<std::future<std::vector<SearchResultData>>>& search_futures,
     const std::vector<size_t>& pending_indices) {
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - pending_indices contains only valid indices into search_futures, built from range [0, search_futures.size())
   for (const size_t idx : pending_indices) {
     if (!search_futures[idx].valid()) {
       continue;
@@ -501,6 +506,7 @@ static void DrainRemainingSearchFutures(
     }
     exception_handling::DrainFuture(fut, "SearchWorker drain");
   }
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 }
 
 void SearchWorker::ProcessStreamingSearchFutures(  // NOLINT(readability-identifier-naming) - method name follows project convention
@@ -534,7 +540,9 @@ void SearchWorker::ProcessStreamingSearchFutures(  // NOLINT(readability-identif
 
     if (!found_ready && !pending_indices.empty()) {
       constexpr auto k_poll_interval = std::chrono::milliseconds(5);
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - both accesses guarded by !pending_indices.empty(); pending_indices[0] is a valid index into search_futures
       search_futures[pending_indices[0]].wait_for(k_poll_interval);
+      // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     }
   }
 
@@ -610,12 +618,27 @@ void SearchWorker::WorkerThread() {
   SetThreadName("Search-Worker");
 
   while (true) {
-    SearchParams params;
-    if (!WaitForSearchRequest(params)) {
-      break;
+    try {
+      SearchParams params;
+      if (!WaitForSearchRequest(params)) {
+        break;
+      }
+      ExecuteSearch(params);
+    } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) NOLINT(bugprone-empty-catch) - log and continue; cannot rethrow from worker thread
+      exception_handling::LogException("SearchWorker", "background search", e);
+      {
+        const std::scoped_lock lock(mutex_);
+        is_searching_.store(false, std::memory_order_release);
+        search_complete_.store(true, std::memory_order_release);
+      }
+    } catch (...) {  // NOSONAR(cpp:S2738) NOLINT(bugprone-empty-catch) - log and continue; cannot rethrow from worker thread
+      exception_handling::LogUnknownException("SearchWorker", "background search");
+      {
+        const std::scoped_lock lock(mutex_);
+        is_searching_.store(false, std::memory_order_release);
+        search_complete_.store(true, std::memory_order_release);
+      }
     }
-
-    ExecuteSearch(params);
   }
 }
 

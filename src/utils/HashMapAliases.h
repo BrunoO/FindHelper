@@ -3,6 +3,15 @@
 #include <string>
 #include <string_view>
 
+#ifdef FAST_LIBS_BOOST
+#include <boost/unordered_map.hpp>
+#include <boost/unordered_set.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
+#else
+#include <unordered_map>
+#include <unordered_set>
+#endif  // FAST_LIBS_BOOST
+
 // Hash map/set aliases with FAST_LIBS_BOOST feature flag support
 // Supports two options:
 //   1. std::unordered_map (default, no flags) - Standard library, works everywhere
@@ -35,10 +44,6 @@ struct TransparentStringEqual {
 #ifdef FAST_LIBS_BOOST
 // Use boost::unordered_map for faster lookups (Boost 1.81+)
 // Requires Boost to be available via find_package or system installation
-#include <boost/unordered_map.hpp>
-#include <boost/unordered_set.hpp>
-#include <boost/unordered/unordered_flat_map.hpp>
-
 namespace fast_hash {
     template<typename K, typename V>
     using hash_map = boost::unordered_map<K, V>;  // NOLINT(readability-identifier-naming) - short alias used project-wide
@@ -48,9 +53,6 @@ namespace fast_hash {
 }
 #else
 // Use standard library (default)
-#include <unordered_map>
-#include <unordered_set>
-
 namespace fast_hash {
     template<typename K, typename V>
     using hash_map = std::unordered_map<K, V>;  // NOLINT(readability-identifier-naming) - short alias used project-wide

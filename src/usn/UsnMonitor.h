@@ -445,19 +445,27 @@ public:
   [[nodiscard]] bool IsPopulatingIndex() const {
     return is_populating_index_.load(std::memory_order_acquire);
   }
+  /**
+   * @brief True if initial population or post-population step (e.g. privilege drop) failed.
+   * Used by WindowsIndexBuilder to call MarkFailed() instead of MarkCompleted() when
+   * population ends due to failure rather than success.
+   */
+  [[nodiscard]] bool InitialPopulationFailed() const {
+    return initial_population_failed_.load(std::memory_order_acquire);
+  }
   [[nodiscard]] size_t GetIndexedFileCount() const {
     return indexed_file_count_.load(std::memory_order_acquire);
   }
   [[nodiscard]] size_t GetQueueSize() const;
   [[nodiscard]] size_t GetDroppedBufferCount() const;
-  
+
   /**
    * @brief Check if privilege dropping failed during initialization
-   * 
+   *
    * This is a security-critical check. If privileges cannot be dropped after
    * acquiring the volume handle, the application should exit immediately to
    * prevent privilege escalation vulnerabilities.
-   * 
+   *
    * @return true if privilege dropping failed, false otherwise
    */
   bool DidPrivilegeDropFail() const {
@@ -491,12 +499,12 @@ private:
 
   /**
    * Helper function to handle initialization failure cleanup
-   * 
+   *
    * Common pattern used in ReaderThread error handling to:
    * - Set monitoring_active_ to false
    * - Signal initialization failure via init_promise_
    * - Stop the queue to allow processor thread to exit gracefully
-   * 
+   *
    * This eliminates duplication across multiple error paths.
    */
   void HandleInitializationFailure();
@@ -531,6 +539,7 @@ private:
   std::atomic<size_t> indexed_file_count_{0};    // Indexed file count
   std::atomic<bool> is_populating_index_{false}; // Population in progress flag
   std::atomic<bool> privilege_drop_failed_{false}; // Security: privilege drop failure flag
+  std::atomic<bool> initial_population_failed_{false}; // True if population or post-population (e.g. privilege drop) failed; lets WindowsIndexBuilder show failed state
 
   // Metrics collection
   mutable UsnMonitorMetrics metrics_; // Performance and health metrics
@@ -549,26 +558,26 @@ class UsnMonitor {
 public:
   // Constructor - takes FileIndex reference (required for interface compatibility)
   explicit UsnMonitor(FileIndex &file_index) : file_index_(file_index) {}
-  
+
   // Destructor
   ~UsnMonitor() = default;
-  
+
   // Non-copyable, non-movable (contains reference member)
   UsnMonitor(const UsnMonitor &) = delete;
   UsnMonitor &operator=(const UsnMonitor &) = delete;
   UsnMonitor(UsnMonitor &&) noexcept = delete;
   UsnMonitor &operator=(UsnMonitor &&) noexcept = delete;
-  
+
   // Stub methods - always return false/0 on macOS (no monitoring)
   bool Start() { return false; }  // NOSONAR(cpp:S5817) - Signature must match non-const Windows implementation
   void Stop() {}                  // NOSONAR(cpp:S5817) - Signature must match non-const Windows implementation
-  
+
   [[nodiscard]] bool IsActive() const { return false; }
   [[nodiscard]] bool IsPopulatingIndex() const { return false; }
   [[nodiscard]] size_t GetIndexedFileCount() const { return 0; }
   [[nodiscard]] size_t GetQueueSize() const { return 0; }
   [[nodiscard]] size_t GetDroppedBufferCount() const { return 0; }
-  
+
 private:
   FileIndex &file_index_;   // NOLINT(readability-identifier-naming) NOSONAR(cpp:S1068) - Stub keeps same layout as Windows impl; reference unused in stub
 };

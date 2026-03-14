@@ -40,7 +40,7 @@ public:
 
   /**
    * @brief Destructor - automatically closes the handle
-   * 
+   *
    * The destructor is noexcept and catches any exceptions from CloseHandle()
    * to prevent std::terminate during stack unwinding.
    */

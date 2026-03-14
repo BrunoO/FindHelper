@@ -4,6 +4,20 @@
 #include "utils/Logger.h"
 #include <cstdint>
 
+namespace {
+
+// Retrieve the FileEntry and full path for an id. Returns {nullptr, ""} if not found.
+std::pair<const FileEntry*, std::string> GetEntryAndPath(
+    const FileIndexStorage& storage, const PathOperations& path_operations, uint64_t id) {
+  const FileEntry* entry = storage.GetEntry(id);
+  if (entry == nullptr) {
+    return {nullptr, {}};
+  }
+  return {entry, path_operations.GetPath(id)};
+}
+
+}  // namespace
+
 IndexOperations::IndexOperations(FileIndexStorage& storage,
                                  PathOperations& path_operations,
                                  std::atomic<size_t>& remove_not_in_index_count,
@@ -76,13 +90,12 @@ void IndexOperations::Remove(uint64_t id) {
 }
 
 bool IndexOperations::Rename(uint64_t id, std::string_view new_name) {
-  const FileEntry* entry = storage_.GetEntry(id);
+  const auto [entry, old_full_path] = GetEntryAndPath(storage_, path_operations_, id);
   if (entry == nullptr) {
     return false;
   }
 
-  // Store old full path for prefix matching (retrieve from path arrays)
-  const std::string old_full_path = path_operations_.GetPath(id);
+  // Store old full path for prefix matching (retrieved above)
 
   // Recompute full path (replace filename at end)
   std::string full_path = old_full_path;
@@ -124,12 +137,10 @@ bool IndexOperations::Rename(uint64_t id, std::string_view new_name) {
 }
 
 bool IndexOperations::Move(uint64_t id, uint64_t new_parent_id) {
-  const FileEntry* entry = storage_.GetEntry(id);
+  const auto [entry, old_full_path] = GetEntryAndPath(storage_, path_operations_, id);
   if (entry == nullptr) {
     return false;
   }
-
-  const std::string old_full_path = path_operations_.GetPath(id);
 
   // Derive current filename from PathStorage and build new full path.
   const size_t last_sep = old_full_path.find_last_of("/\\");
