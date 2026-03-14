@@ -31,15 +31,15 @@ inline constexpr int kMaxThreadPoolSize = 64;
 
 // Saved search preset (subset of GuiState fields).
 struct SavedSearch {
-  std::string name{};   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API; {} satisfies member-init
-  std::string path{};   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
-  std::string extensions{};   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
-  std::string filename{};   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
-  bool foldersOnly = false;   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - struct; camelCase for JSON API
-  bool caseSensitive = false;   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - struct; camelCase for JSON API
-  std::string timeFilter{};   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
-  std::string sizeFilter{};   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
-  std::string aiSearchDescription{};   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
+  std::string name{};   // NOLINT(readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API; {} satisfies member-init
+  std::string path{};   // NOLINT(readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
+  std::string extensions{};   // NOLINT(readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
+  std::string filename{};   // NOLINT(readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
+  bool foldersOnly = false;   // NOLINT(readability-identifier-naming) - struct; camelCase for JSON API
+  bool caseSensitive = false;   // NOLINT(readability-identifier-naming) - struct; camelCase for JSON API
+  std::string timeFilter{};   // NOLINT(readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
+  std::string sizeFilter{};   // NOLINT(readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
+  std::string aiSearchDescription{};   // NOLINT(readability-identifier-naming,readability-redundant-member-init) - struct; camelCase for JSON API
 };
 
 // Recrawl timing settings (grouped to keep AppSettings under 20 fields for S1820).

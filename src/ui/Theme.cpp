@@ -8,7 +8,7 @@ namespace ui {
 
 // --- Static Color storage (current theme; updated by Apply) ---
 // Initial values match Default Dark palette (opaque, neutral gray, visible border)
-// NOLINTBEGIN(cert-err58-cpp,readability-magic-numbers) -- theme color constants; ImVec4 init
+// NOLINTBEGIN(cert-err58-cpp,readability-magic-numbers,bugprone-throwing-static-initialization) -- theme color constants; ImVec4 init
 ImVec4 Theme::Colors::Surface = ImVec4(0.11F, 0.11F, 0.11F, 1.00F);
 ImVec4 Theme::Colors::SurfaceHover = ImVec4(0.15F, 0.15F, 0.15F, 1.00F);
 ImVec4 Theme::Colors::SurfaceActive = ImVec4(0.18F, 0.18F, 0.18F, 1.00F);
@@ -29,7 +29,7 @@ ImVec4 Theme::Colors::Success = ImVec4(0.35F, 0.65F, 0.35F, 1.00F);
 ImVec4 Theme::Colors::Warning = ImVec4(0.85F, 0.65F, 0.20F, 1.00F);
 ImVec4 Theme::Colors::Error = ImVec4(0.85F, 0.30F, 0.30F, 1.00F);
 ImVec4 Theme::Colors::WindowBg = ImVec4(0.08F, 0.08F, 0.08F, 1.00F);
-// NOLINTEND(cert-err58-cpp,readability-magic-numbers)
+// NOLINTEND(cert-err58-cpp,readability-magic-numbers,bugprone-throwing-static-initialization)
 
 namespace {
 
@@ -59,7 +59,7 @@ struct ThemePalette {
 
 // Default Dark: very dark backgrounds, clearer border, slightly stronger blue accent
 // Default Dark: Neutral Pro Dark (VS Code style), opaque backgrounds
-// NOLINTBEGIN(cert-err58-cpp,readability-magic-numbers) -- theme palette aggregate init
+// NOLINTBEGIN(cert-err58-cpp,readability-magic-numbers,bugprone-throwing-static-initialization) -- theme palette aggregate init
 const ThemePalette kDefaultDark = {
   ImVec4(0.11F, 0.11F, 0.11F, 1.00F),  // Surface (#1C1C1C)
   ImVec4(0.15F, 0.15F, 0.15F, 1.00F),  // SurfaceHover (#262626)
@@ -81,9 +81,9 @@ const ThemePalette kDefaultDark = {
   ImVec4(0.85F, 0.30F, 0.30F, 1.00F),  // Error
   ImVec4(0.08F, 0.08F, 0.08F, 1.00F),  // WindowBg (#141414)
 };
-// NOLINTEND(cert-err58-cpp,readability-magic-numbers)
+// NOLINTEND(cert-err58-cpp,readability-magic-numbers,bugprone-throwing-static-initialization)
 
-// NOLINTBEGIN(cert-err58-cpp,readability-magic-numbers)
+// NOLINTBEGIN(cert-err58-cpp,readability-magic-numbers,bugprone-throwing-static-initialization)
 // Dracula: very dark backgrounds, distinct border, accent hover with subtle pink (#ff79c6)
 const ThemePalette kDracula = {
   ImVec4(0.106F, 0.112F, 0.144F, 0.80F),  // Surface
@@ -224,7 +224,7 @@ const ThemePalette kCatppuccin = {
   ImVec4(0.953F, 0.545F, 0.659F, 1.00F),  // Error (#f38ba8)
   ImVec4(0.118F, 0.118F, 0.180F, 1.00F),  // WindowBg (#1e1e2e - Base)
 };
-// NOLINTEND(cert-err58-cpp,readability-magic-numbers)
+// NOLINTEND(cert-err58-cpp,readability-magic-numbers,bugprone-throwing-static-initialization)
 
 void CopyPaletteToColors(const ThemePalette& palette) {
   Theme::Colors::Surface = palette.surface_;
@@ -274,7 +274,7 @@ const ThemePalette* ResolveThemeId(std::string_view theme_id) {
 
 void Theme::Apply(std::string_view theme_id, bool viewports_enabled) {
   ImGui::StyleColorsDark();
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables) -- initialized by ResolveThemeId(theme_id)
+
   const ThemePalette* const palette = ResolveThemeId(theme_id);
   CopyPaletteToColors(*palette);
   SetupColors();
@@ -287,7 +287,7 @@ void Theme::Apply(bool viewports_enabled) {
 
 ImVec4 Theme::AccentTint(float alpha) {
   const ImVec4& a = Colors::Accent;
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables) -- initialized by (std::max)((std::min)(...))
+
   const float clamped = (std::max)(0.0F, (std::min)(1.0F, alpha));
   return {a.x, a.y, a.z, clamped};
 }
@@ -364,6 +364,17 @@ void Theme::SetupColors() {
 
   // Modal Dimming
   colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.00F, 0.00F, 0.00F, 0.70F);
+}
+
+void Theme::PushAccentButtonStyle() {
+  ImGui::PushStyleColor(ImGuiCol_Button, Colors::Accent);
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Colors::AccentHover);
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, Colors::AccentActive);
+  ImGui::PushStyleColor(ImGuiCol_Text, Colors::TextOnAccent);
+}
+
+void Theme::PopAccentButtonStyle() {
+  ImGui::PopStyleColor(4);
 }
 
 void Theme::SetupStyle(bool viewports_enabled) {

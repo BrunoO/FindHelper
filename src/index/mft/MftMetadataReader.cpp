@@ -24,7 +24,7 @@ constexpr ULONG kAttributeData = 0x80;
 constexpr ULONG kAttributeEnd = 0xFFFFFFFF;
 
 // FILE_RECORD structure - Windows MFT format, must match exactly
-// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init,misc-non-private-member-variables-in-classes,readability-identifier-naming)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init,readability-identifier-naming)
 struct FileRecord {
     ULONG Signature;
     USHORT UsaOffset;
@@ -52,7 +52,7 @@ struct FileRecord {
 };
 
 // ATTRIBUTE_RECORD structure - Windows MFT format, must match exactly
-// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init,misc-non-private-member-variables-in-classes,readability-identifier-naming)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init,readability-identifier-naming)
 struct AttributeRecord {
     ULONG TypeCode;
     ULONG RecordLength;
@@ -95,7 +95,7 @@ struct AttributeRecord {
             reinterpret_cast<const char*>(this) + RecordLength); // NOSONAR(cpp:S6022) - char* required for Windows MFT structure access
     }
 };
-// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init,misc-non-private-member-variables-in-classes,readability-identifier-naming)
+// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init,readability-identifier-naming)
 
 // STANDARD_INFORMATION structure (attribute 0x10)
 struct StandardInformation {
@@ -105,10 +105,10 @@ struct StandardInformation {
     FILETIME LastAccessTime;
     ULONG FileAttributes;
 };
-// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init,misc-non-private-member-variables-in-classes,readability-identifier-naming)
+// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init,readability-identifier-naming)
 
 // FILE_NAME structure (attribute 0x30) - contains file size as fallback, Windows MFT format, must match exactly
-// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init,misc-non-private-member-variables-in-classes,readability-identifier-naming)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init,readability-identifier-naming)
 struct FileName {
     ULONGLONG ParentDirectory : 48;
     ULONGLONG ParentSequence : 16;
@@ -125,16 +125,16 @@ struct FileName {
     UCHAR Flags;
     // Note: Variable-length WCHAR FileName[] follows structure in actual MFT record
 };
-// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init,misc-non-private-member-variables-in-classes,readability-identifier-naming)
+// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init,readability-identifier-naming)
 
 // NTFS_FILE_RECORD_OUTPUT_BUFFER structure (wrapper for MFT record) - Windows MFT format, must match exactly
-// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init,misc-non-private-member-variables-in-classes,readability-identifier-naming)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init,readability-identifier-naming)
 struct NtfsFileRecordOutputBuffer {
     ULONGLONG FileReferenceNumber;
     ULONG FileRecordLength;
     UCHAR FileRecordBuffer[1];  // NOLINT(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays) NOSONAR(cpp:S5945) - Windows MFT wrapper must match exact on-disk layout (flexible array)
 };
-// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init,misc-non-private-member-variables-in-classes,readability-identifier-naming)
+// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init,readability-identifier-naming)
 
 // MFT record size: Standard is 1024 bytes, but can be up to 4096 bytes for files with many attributes
 // Use 4096 bytes to handle most cases without needing dynamic resizing
@@ -242,29 +242,29 @@ bool MftMetadataReader::ReadMftRecord(uint64_t file_ref_num,
                         buffer, static_cast<DWORD>(buffer_size),  // NOSONAR(cpp:S1905) - Cast required: buffer_size is size_t, DeviceIoControl requires DWORD
                         &bytes_returned_dword, nullptr)) {
         DWORD err = GetLastError();
-        
+
         // Handle ERROR_MORE_DATA (234): Buffer too small, need larger buffer
         // According to Microsoft docs, bytes_returned_dword contains the required size
         // ERROR_MORE_DATA is defined in winerror.h (included via windows.h)
         if (err == ERROR_MORE_DATA && bytes_returned_dword > 0 && bytes_returned_dword <= 65536) {
             // Required size is reasonable (max 64KB), but we can't resize static buffer
             // Log and return false - caller should use larger buffer or skip this record
-            LOG_DEBUG_BUILD("FSCTL_GET_NTFS_FILE_RECORD requires " << bytes_returned_dword 
-                            << " bytes for file ref " << file_ref_num 
+            LOG_DEBUG_BUILD("FSCTL_GET_NTFS_FILE_RECORD requires " << bytes_returned_dword
+                            << " bytes for file ref " << file_ref_num
                             << " (buffer size: " << buffer_size << ")");
             return false;
         }
-        
+
         // Other errors: log with more detail for first few failures to diagnose issues
         // Use LOG_WARNING for first failure to ensure visibility, then LOG_DEBUG_BUILD for subsequent
         static std::atomic<size_t> error_count{0};
         constexpr size_t kMaxErrorLogCount = 5;  // Log first N errors
         if (size_t count = error_count.fetch_add(1, std::memory_order_relaxed); count < kMaxErrorLogCount) {  // Use init-statement pattern
-            const bool volume_handle_valid = (volume_handle_ != INVALID_HANDLE_VALUE && volume_handle_ != nullptr);  // NOLINT(cppcoreguidelines-init-variables) - initialized in same statement
+            const bool volume_handle_valid = (volume_handle_ != INVALID_HANDLE_VALUE && volume_handle_ != nullptr);
             {
                 std::ostringstream oss;
-                oss << "FSCTL_GET_NTFS_FILE_RECORD failed for file ref " << file_ref_num 
-                    << ", error: " << err << " (0x" << std::hex << err << std::dec 
+                oss << "FSCTL_GET_NTFS_FILE_RECORD failed for file ref " << file_ref_num
+                    << ", error: " << err << " (0x" << std::hex << err << std::dec
                     << "), volume_handle valid: " << volume_handle_valid;
                 LOG_WARNING(oss.str());
             }
@@ -281,8 +281,8 @@ bool MftMetadataReader::ReadMftRecord(uint64_t file_ref_num,
         if (size_t count = size_error_count.fetch_add(1, std::memory_order_relaxed); count < 3) {  // Use init-statement pattern
             {
                 std::ostringstream oss;
-                oss << "FSCTL_GET_NTFS_FILE_RECORD returned invalid size: " 
-                    << bytes_returned_dword << " (expected 1-" << buffer_size 
+                oss << "FSCTL_GET_NTFS_FILE_RECORD returned invalid size: "
+                    << bytes_returned_dword << " (expected 1-" << buffer_size
                     << ") for file ref " << file_ref_num;
                 LOG_WARNING(oss.str());
             }
@@ -291,14 +291,14 @@ bool MftMetadataReader::ReadMftRecord(uint64_t file_ref_num,
     }
 
     *bytes_returned = bytes_returned_dword;  // DWORD to size_t conversion (both unsigned, safe on Windows)
-    
+
     // Log first successful read for confirmation
     static std::atomic<size_t> success_count{0};
     if (size_t count = success_count.fetch_add(1, std::memory_order_relaxed); count == 0) {  // Use init-statement pattern
-        LOG_INFO_BUILD("FSCTL_GET_NTFS_FILE_RECORD first successful read: file ref " 
+        LOG_INFO_BUILD("FSCTL_GET_NTFS_FILE_RECORD first successful read: file ref "
                       << file_ref_num << ", bytes returned: " << bytes_returned_dword);
     }
-    
+
     return true;
 }
 
@@ -323,11 +323,11 @@ static void ApplyMftFixup(char* record_buffer,  // NOLINT(readability-non-const-
     }
 
     // Get fixup array (first word is the update sequence number)
-    const auto* fixup_array = reinterpret_cast<const USHORT*>(record_buffer + file_record->UsaOffset);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-pro-bounds-pointer-arithmetic) NOSONAR - Windows MFT structure access
+    const auto* fixup_array = reinterpret_cast<const USHORT*>(record_buffer + file_record->UsaOffset);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR - Windows MFT structure access
     const USHORT update_sequence_number = fixup_array[0];
 
     // Apply fixup to each sector
-    const size_t words_per_sector = bytes_per_sector / sizeof(USHORT);  // NOLINT(cppcoreguidelines-init-variables) - initialized by division; checker false positive in some versions
+    const size_t words_per_sector = bytes_per_sector / sizeof(USHORT);
     if (words_per_sector == 0) {
         return;  // Invalid sector size
     }
@@ -346,7 +346,7 @@ static void ApplyMftFixup(char* record_buffer,  // NOLINT(readability-non-const-
         }
 
         // Last word of each sector should match the update sequence number
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - MFT fixup array indexed by sector
+
         USHORT* sector_end = record_words + (i * words_per_sector) - 1;
         if (*sector_end == update_sequence_number) {
             *sector_end = fixup_array[i];
@@ -436,7 +436,7 @@ static inline bool ParseStandardInformationAttribute(const AttributeRecord* attr
         return false;
     }
 
-    if (const char* attr_end = reinterpret_cast<const char*>(attr) + attr->Form.Resident.ValueOffset + sizeof(StandardInformation);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-pro-bounds-pointer-arithmetic) NOSONAR - Windows MFT structure access
+    if (const char* attr_end = reinterpret_cast<const char*>(attr) + attr->Form.Resident.ValueOffset + sizeof(StandardInformation);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR - Windows MFT structure access
         attr_end > record_end) {
         return false;
     }
@@ -485,7 +485,7 @@ static inline bool ParseFileNameAttribute(const AttributeRecord* attr,
         return false;
     }
 
-    if (const char* attr_end = reinterpret_cast<const char*>(attr) + attr->Form.Resident.ValueOffset + sizeof(FileName);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-pro-bounds-pointer-arithmetic) NOSONAR - Windows MFT structure access
+    if (const char* attr_end = reinterpret_cast<const char*>(attr) + attr->Form.Resident.ValueOffset + sizeof(FileName);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR - Windows MFT structure access
         attr_end > record_end) {
         return false;
     }
@@ -515,14 +515,14 @@ bool MftMetadataReader::ParseMftRecord(const char* output_buffer, size_t output_
     bool found_file_size = false;
 
     // Parse attributes (extracted to helper functions to reduce complexity)
-    const auto* attr = reinterpret_cast<const AttributeRecord*>(  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-pro-bounds-pointer-arithmetic) NOSONAR - Windows MFT structure access
+    const auto* attr = reinterpret_cast<const AttributeRecord*>(  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR - Windows MFT structure access
         record.buffer + record.file_record->FirstAttributeOffset);
     const char* record_end = record.buffer + record.size;
 
     while (reinterpret_cast<const char*>(attr) < record_end &&  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR - Windows MFT structure access
            attr->TypeCode != kAttributeEnd) {
         // Validate attribute is within buffer
-        if (reinterpret_cast<const char*>(attr) + sizeof(AttributeRecord) > record_end) {  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-pro-bounds-pointer-arithmetic) NOSONAR - Windows MFT structure access
+        if (reinterpret_cast<const char*>(attr) + sizeof(AttributeRecord) > record_end) {  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR - Windows MFT structure access
             break;  // Attribute header extends beyond buffer
         }
 
@@ -531,7 +531,7 @@ bool MftMetadataReader::ParseMftRecord(const char* output_buffer, size_t output_
         }
 
         // Validate attribute fits within buffer
-        if (reinterpret_cast<const char*>(attr) + attr->RecordLength > record_end) {  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-pro-bounds-pointer-arithmetic) NOSONAR - Windows MFT structure access
+        if (reinterpret_cast<const char*>(attr) + attr->RecordLength > record_end) {  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR - Windows MFT structure access
             break;  // Attribute extends beyond buffer
         }
 

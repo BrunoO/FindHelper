@@ -2,44 +2,9 @@
 
 #include <cstddef>
 
+#include "utils/StringSearch.h"
+
 namespace ui {
-
-namespace {
-
-[[nodiscard]] char ToLowerAscii(char c) {
-  if (c >= 'A' && c <= 'Z') {
-    return static_cast<char>(c - 'A' + 'a');
-  }
-  return c;
-}
-
-[[nodiscard]] bool ContainsCaseInsensitive(std::string_view haystack, std::string_view needle) {
-  if (needle.empty()) {
-    return true;
-  }
-
-  if (needle.size() > haystack.size()) {
-    return false;
-  }
-
-  const std::size_t limit = haystack.size() - needle.size();
-  for (std::size_t i = 0; i <= limit; ++i) {
-    bool match = true;
-    for (std::size_t j = 0; j < needle.size(); ++j) {
-      if (ToLowerAscii(haystack[i + j]) != ToLowerAscii(needle[j])) {
-        match = false;
-        break;
-      }
-    }
-    if (match) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-}  // namespace
 
 bool IncrementalSearchMatches(std::string_view query, const SearchResult& result) {
   if (query.empty()) {
@@ -53,11 +18,11 @@ bool IncrementalSearchMatches(std::string_view query, const SearchResult& result
   const std::string_view directory =
     (last_separator == std::string_view::npos) ? std::string_view{} : full_path.substr(0U, last_separator);
 
-  if (ContainsCaseInsensitive(filename, query)) {
+  if (string_search::ContainsSubstringI(filename, query)) {
     return true;
   }
 
-  if (ContainsCaseInsensitive(directory, query)) {
+  if (string_search::ContainsSubstringI(directory, query)) {
     return true;
   }
 
@@ -86,6 +51,13 @@ bool IncrementalSearchState::ConsumeScrollRestorePending(float& out_y) {
   return true;
 }
 
+void IncrementalSearchState::ClearFilterState() {
+  filter_active_ = false;
+  query_.clear();
+  filtered_results_.clear();
+  current_match_index_ = -1;
+}
+
 void IncrementalSearchState::Begin(const std::vector<SearchResult>& base_results,
                                    int current_selection,
                                    float current_scroll_y,
@@ -93,10 +65,7 @@ void IncrementalSearchState::Begin(const std::vector<SearchResult>& base_results
   (void)base_results;
 
   prompt_visible_ = true;
-  filter_active_ = false;
-  query_.clear();
-  filtered_results_.clear();
-  current_match_index_ = -1;
+  ClearFilterState();
 
   original_selection_index_ = current_selection;
   original_scroll_y_ = current_scroll_y;
@@ -180,10 +149,7 @@ void IncrementalSearchState::Accept() {
 
 void IncrementalSearchState::Cancel(int& selected_row, bool& scroll_to_selected) {
   prompt_visible_ = false;
-  filter_active_ = false;
-  query_.clear();
-  filtered_results_.clear();
-  current_match_index_ = -1;
+  ClearFilterState();
 
   restore_scroll_pending_ = true;
   selected_row = original_selection_index_;
@@ -211,10 +177,7 @@ void IncrementalSearchState::RebuildFilter(const std::vector<SearchResult>& base
 
 void IncrementalSearchState::Reset(int& selected_row) {
   prompt_visible_ = false;
-  filter_active_ = false;
-  query_.clear();
-  filtered_results_.clear();
-  current_match_index_ = -1;
+  ClearFilterState();
 
   selected_row = -1;
   restore_scroll_pending_ = false;

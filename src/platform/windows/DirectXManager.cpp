@@ -112,8 +112,8 @@ void DirectXManager::HandleResize(int width, int height) {
 
   CleanupRenderTarget();
   if (p_swap_chain_) {
-    HRESULT hr = p_swap_chain_->ResizeBuffers(0, static_cast<UINT>(width), 
-                                               static_cast<UINT>(height), 
+    HRESULT hr = p_swap_chain_->ResizeBuffers(0, static_cast<UINT>(width),
+                                               static_cast<UINT>(height),
                                                DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr)) {
       LOG_ERROR_BUILD("Failed to resize swap chain buffers: HRESULT=0x" << std::hex << hr);

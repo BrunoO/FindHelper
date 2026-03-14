@@ -1,6 +1,7 @@
 #include "path/PathBuilder.h"
 #include "utils/Logger.h"
 #include <array>
+#include <cassert>
 #include <cctype>
 #include <sstream>
 
@@ -28,18 +29,26 @@ int PathBuilder::CollectPathComponents(uint64_t parent_id,
     }
     const auto it = name_cache.find(current_id);
     if (it == name_cache.end()) {
-      break;  // Name not in cache (entry inserted after ReleaseNameCache — shouldn't happen) NOSONAR(cpp:S924) - second break avoids name_cache.find when entry is null
+      // Name not in cache (entry inserted after ReleaseNameCache — shouldn't happen)
+      // Return early instead of using a second break to satisfy Sonar's limit on
+      // nested break statements (S924) while preserving existing behaviour.
+      assert(component_count >= 1 && "Path must have at least the leaf name component");
+      return component_count;
     }
     components.at(static_cast<size_t>(component_count)) = &it->second;
     ++component_count;
 
     // Check for root directory (parent_id == current_id)
     if (current_id == entry->parentID) {
+      // Postcondition: the leaf name was stored before entering the loop.
+      assert(component_count >= 1 && "Path must have at least the leaf name component");
       return component_count;  // Root directory reached
     }
     current_id = entry->parentID;
   }
 
+  // Postcondition: the leaf name was always stored at the top of this function.
+  assert(component_count >= 1 && "Path must have at least the leaf name component");
   return component_count;
 }
 
@@ -49,7 +58,8 @@ std::string PathBuilder::BuildPathFromComponents(
     int component_count) {
 #ifdef _WIN32
   // Calculate total size for single allocation
-  std::string volume_root = path_utils::GetDefaultVolumeRootPath();
+  std::string drive_root_buffer;
+  std::string_view volume_root = path_utils::GetDefaultVolumeRootPathView();
   int effective_component_count = component_count;
 
   // On Windows, treat a top-level "X:" component as the drive root instead of
@@ -61,16 +71,17 @@ std::string PathBuilder::BuildPathFromComponents(
     const std::string& top_name = *top_component;
     if (top_name.size() == 2 && top_name[1] == ':' &&
         std::isalpha(static_cast<unsigned char>(top_name[0])) != 0) {
-      volume_root.clear();
-      volume_root.push_back(top_name[0]);
-      volume_root.push_back(':');
-      volume_root.push_back(path_utils::kPathSeparator);
+      drive_root_buffer.clear();
+      drive_root_buffer.push_back(top_name[0]);
+      drive_root_buffer.push_back(':');
+      drive_root_buffer.push_back(path_utils::kPathSeparator);
+      volume_root = drive_root_buffer;
       --effective_component_count;
     }
   }
 #else   // _WIN32
   // Non-Windows: volume root is always the default; component count is unchanged.
-  const std::string volume_root = path_utils::GetDefaultVolumeRootPath();
+  const std::string_view volume_root = path_utils::GetDefaultVolumeRootPathView();
   const int effective_component_count = component_count;
 #endif  // _WIN32
 
@@ -106,9 +117,9 @@ std::string PathBuilder::BuildFullPathWithLogging(uint64_t file_id,
                                                   std::string_view name,
                                                   const FileIndexStorage& storage,
                                                   const hash_map_t<uint64_t, std::string>& name_cache) {
-  std::array<const std::string*, kMaxPathDepth> components{};  // NOLINT(cppcoreguidelines-pro-type-member-init) - zero-initialized by {}
+  std::array<const std::string*, kMaxPathDepth> components{};  // NOLINT(cppcoreguidelines-pro-type-member-init) - value-initialized
 
-  const int component_count = CollectPathComponents(  // NOLINT(cppcoreguidelines-init-variables) - Initialized from CollectPathComponents()
+  const int component_count = CollectPathComponents(
       parent_id, name, storage, name_cache, components);
 
   if (component_count >= kMaxPathDepth) {
@@ -119,6 +130,10 @@ std::string PathBuilder::BuildFullPathWithLogging(uint64_t file_id,
     LOG_WARNING(oss.str());
   }
 
-  return BuildPathFromComponents(components, component_count);
+  std::string result = BuildPathFromComponents(components, component_count);
+  // Postcondition: the volume root alone is already non-empty, so the result
+  // must never be empty regardless of component_count.
+  assert(!result.empty() && "Built path must not be empty");
+  return result;
 }
 

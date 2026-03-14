@@ -46,16 +46,6 @@ class SearchThreadPool;
 
 // LoadBalancingStrategyType is defined in SearchTypes.h (included above)
 
-// Forward declarations for helper functions used in inline methods
-namespace file_index_detail {
-// ExtensionMatches is now in search_pattern_utils namespace
-// Use search_pattern_utils::ExtensionMatches instead
-
-void ExtractFilenameAndExtension(const char *path, size_t filename_start_offset,
-                                 size_t extension_start_offset,
-                                 std::string &out_filename,
-                                 std::string &out_extension);
-} // namespace file_index_detail
 
 class FileIndex : public ISearchableIndex {  // NOSONAR(cpp:S1448) - Facade pattern: high method count acceptable; single entry point delegates to components (IndexOperations, PathRecomputer, SearchThreadPoolManager, FileIndexMaintenance, etc.)
 public:
@@ -63,10 +53,10 @@ public:
 
   /**
    * @brief Construct FileIndex with optional thread pool injection
-   * 
+   *
    * @param thread_pool Optional shared pointer to SearchThreadPool. If nullptr,
    *                    a thread pool will be created lazily on first use.
-   * 
+   *
    * Note: Implementation is in FileIndex.cpp to avoid circular dependency issues
    * with ParallelSearchEngine and SearchThreadPool.
    */
@@ -200,8 +190,8 @@ public:
     std::string path;
     {
       const std::shared_lock read_lock(index_mutex_);
-      const FileEntry* const entry = storage_.GetEntry(id);  // NOLINT(cppcoreguidelines-init-variables)
-      if (entry == nullptr || entry->isDirectory) {
+      if (const FileEntry* const entry = storage_.GetEntry(id);
+          entry == nullptr || entry->isDirectory) {
         return false;
       }
       path = GetPathLocked(id);
@@ -223,8 +213,8 @@ public:
   // directories
   void UpdateModificationTime(uint64_t id, const FILETIME &time) {
     const std::unique_lock lock(index_mutex_);
-    const FileEntry* entry = storage_.GetEntry(id);  // NOLINT(cppcoreguidelines-init-variables) - Initialized from GetEntry() return value
-    if (entry != nullptr && !entry->isDirectory) {
+    if (const FileEntry* const entry = storage_.GetEntry(id);
+        entry != nullptr && !entry->isDirectory) {
       storage_.UpdateModificationTime(id, time);
     }
   }
@@ -234,8 +224,8 @@ public:
   // This method can remain even if MFT reading is removed (harmless utility)
   void UpdateFileSizeById(uint64_t id, uint64_t size) {
     const std::unique_lock lock(index_mutex_);
-    const FileEntry* entry = storage_.GetEntry(id);  // NOLINT(cppcoreguidelines-init-variables) - Initialized from GetEntry() return value
-    if (entry != nullptr && !entry->isDirectory) {
+    if (const FileEntry* const entry = storage_.GetEntry(id);
+        entry != nullptr && !entry->isDirectory) {
       storage_.UpdateFileSize(id, size);
     }
   }
@@ -336,7 +326,7 @@ public:
   [[nodiscard]] const FileEntry* GetEntry(uint64_t id) const override {
     return storage_.GetEntry(id);
   }
-  
+
   [[nodiscard]] size_t GetTotalItems() const override {
     return path_storage_.GetSize();
   }

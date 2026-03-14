@@ -47,7 +47,7 @@ ThreadPool::ThreadPool(size_t threads)  // NOLINT(cppcoreguidelines-pro-type-mem
                 // Set thread name for profiling/debugging
                 const std::string thread_name = "ThreadPool-" + std::to_string(i);
                 SetThreadName(thread_name.c_str());
-                
+
                 for(;;)
                 {
                     std::function<void()> task;

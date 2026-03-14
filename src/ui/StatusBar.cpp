@@ -148,10 +148,10 @@ void StatusBar::Render(GuiState &state,
   // Right group: Status, memory (aligned to right)
   // Calculate actual widths dynamically to prevent truncation
   ImGui::SameLine();
-  
+
   // Get the status text that will be displayed
   const std::string status_text = GetStatusText(state, search_worker);
-  
+
   // Get the memory text that will be displayed
   // Cache memory text formatting since memory_bytes_ only updates every 10 seconds
   static uint64_t last_memory_bytes = 0;
@@ -173,7 +173,7 @@ void StatusBar::Render(GuiState &state,
       last_memory_bytes = 0;
     }
   }
-  
+
   // Calculate actual text widths using ImGui
   const ImVec2 status_size = ImGui::CalcTextSize(status_text.c_str());
   const ImVec2 memory_size = ImGui::CalcTextSize(memory_text.c_str());
@@ -181,23 +181,23 @@ void StatusBar::Render(GuiState &state,
   static const float kSeparatorWidth = []() {
     return ImGui::CalcTextSize("|").x;
   }();
-  
+
   // Get spacing between items (ImGui's ItemInnerSpacing)
   const float item_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
-  
+
   // Calculate total width: status + separator + memory + spacing between elements
   // Format: [status] [spacing] [|] [spacing] [memory]
-  const float right_group_width = status_size.x + item_spacing + kSeparatorWidth + 
+  const float right_group_width = status_size.x + item_spacing + kSeparatorWidth +
                                   item_spacing + memory_size.x;
   const float window_width = ImGui::GetWindowWidth();
   // Add extra margin after memory information to prevent it from being too close to window border
   constexpr float kMemoryRightMargin = 10.0F;
   const float right_margin = ImGui::GetStyle().WindowPadding.x + kMemoryRightMargin;
-  
+
   // Position the right group, ensuring it doesn't go off-screen
   const float right_group_x = window_width - right_group_width - right_margin;
   const float current_x = ImGui::GetCursorPosX();  // NOSONAR(cpp:S6004) - Variable used after if block (line 99)
-  
+
   // Only position if we have enough space and it's to the right of current position
   // Add a small buffer to ensure we don't overlap
   constexpr float kRightGroupBuffer = 5.0F;
@@ -209,7 +209,7 @@ void StatusBar::Render(GuiState &state,
     ImGui::SameLine();
     ImGui::Spacing();
   }
-  
+
   RenderRightGroup(state, search_worker, status_text, memory_text);
 }
 
@@ -217,28 +217,28 @@ void StatusBar::Render(GuiState &state,
 static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const FileIndex &file_index,
                            std::string_view monitored_volume) {
   // Version and build type
-  ImGui::TextDisabled("v-%s", APP_VERSION);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::TextDisabled("v-%s", APP_VERSION);
   ImGui::SameLine();
 #ifdef NDEBUG
 #ifdef FAST_LIBS_BOOST
-  ImGui::TextDisabled("(Release, Boost)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::TextDisabled("(Release, Boost)");
 #else
-  ImGui::TextDisabled("(Release)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::TextDisabled("(Release)");
 #endif  // FAST_LIBS_BOOST
 #else
 #ifdef FAST_LIBS_BOOST
-  ImGui::TextDisabled("(Debug, Boost)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::TextDisabled("(Debug, Boost)");
 #else
-  ImGui::TextDisabled("(Debug)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::TextDisabled("(Debug)");
 #endif  // FAST_LIBS_BOOST
 #endif  // NDEBUG
-  
+
   // PGO indicator (G for GENPROFILE, U for USEPROFILE)
   // Note: PGO only works in Release builds. If you see D9002 warnings or no [G]/[U] label,
   // ensure you're building with: cmake --build build --config Release
   if (const char pgo_mode = GetPgoMode(); pgo_mode != '\0') {
     ImGui::SameLine();
-    ImGui::TextDisabled("[%c]", pgo_mode);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextDisabled("[%c]", pgo_mode);
     // Tooltip explaining PGO mode
     if (ImGui::IsItemHovered()) {
       ImGui::BeginTooltip();
@@ -252,9 +252,9 @@ static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const Fi
       ImGui::EndTooltip();
     }
   }
-  
+
   ImGui::SameLine();
-  ImGui::Text("|");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::Text("|");
   ImGui::SameLine();
 
   // Monitoring status with colored dot icon (Phase 2)
@@ -287,7 +287,7 @@ static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const Fi
 
     // Render colored dot using FontAwesome circle icon
     ImGui::PushStyleColor(ImGuiCol_Text, dot_color);
-    ImGui::Text(ICON_FA_CIRCLE);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::Text(ICON_FA_CIRCLE);
     ImGui::PopStyleColor();
 
     // Show tooltip on hover with full status
@@ -295,28 +295,28 @@ static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const Fi
       ImGui::BeginTooltip();
       ImGui::TextUnformatted(tooltip_text);
       if (!monitored_volume.empty()) {
-        ImGui::Text("Volume: %.*s", static_cast<int>(monitored_volume.size()), monitored_volume.data());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+        ImGui::Text("Volume: %.*s", static_cast<int>(monitored_volume.size()), monitored_volume.data());
       }
       ImGui::EndTooltip();
     }
 #ifdef _WIN32
     if (!monitored_volume.empty()) {
       ImGui::SameLine();
-      ImGui::TextDisabled("(%.*s)", static_cast<int>(monitored_volume.size()), monitored_volume.data());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+      ImGui::TextDisabled("(%.*s)", static_cast<int>(monitored_volume.size()), monitored_volume.data());
     }
 #endif  // _WIN32
   } else {
     // No USN monitor: show platform-appropriate label (Windows without elevation uses folder crawl)
 #ifdef _WIN32
-    ImGui::TextColored(Theme::Colors::TextDim, "Windows (No Monitoring)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextColored(Theme::Colors::TextDim, "Windows (No Monitoring)");
     if (!monitored_volume.empty()) {
       ImGui::SameLine();
-      ImGui::TextDisabled("(%.*s)", static_cast<int>(monitored_volume.size()), monitored_volume.data());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+      ImGui::TextDisabled("(%.*s)", static_cast<int>(monitored_volume.size()), monitored_volume.data());
     }
 #elif defined(__APPLE__)
-    ImGui::TextColored(Theme::Colors::TextDim, "macOS (No Monitoring)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextColored(Theme::Colors::TextDim, "macOS (No Monitoring)");
 #else
-    ImGui::TextColored(Theme::Colors::TextDim, "Linux (No Monitoring)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextColored(Theme::Colors::TextDim, "Linux (No Monitoring)");
 #endif  // _WIN32 / __APPLE__
   }
 }
@@ -325,13 +325,13 @@ static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const Fi
 static void RenderDisplayedCountAndSize(GuiState& state, const FileIndex& file_index) {
   if (const bool streaming = !state.resultsComplete && state.showingPartialResults; streaming) {
     const size_t count = state.partialResults.size();
-    ImGui::TextColored(Theme::Colors::Warning, "Displayed: %zu", count);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextColored(Theme::Colors::Warning, "Displayed: %zu", count);
     ImGui::SameLine();
-    ImGui::TextDisabled("(no filters, no sort yet)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextDisabled("(no filters, no sort yet)");
     return;
   }
   if (state.searchResults.empty()) {
-    ImGui::TextDisabled("(no results)");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextDisabled("(no results)");
     return;
   }
   // Ensure total size is computed when we have complete results (may not run if ResultsTable
@@ -345,19 +345,19 @@ static void RenderDisplayedCountAndSize(GuiState& state, const FileIndex& file_i
     UpdateTimeFilterCacheIfNeeded(state, file_index);
     UpdateSizeFilterCacheIfNeeded(state, file_index);
     const size_t displayed_count = has_size_filter ? state.sizeFilteredCount : state.filteredCount;
-    ImGui::Text("Displayed: %zu", displayed_count);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::Text("Displayed: %zu", displayed_count);
     if (state.displayedTotalSizeValid) {
       ImGui::SameLine();
-      ImGui::TextDisabled("(file size: %s)", FormatMemory(state.displayedTotalSizeBytes).c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+      ImGui::TextDisabled("(file size: %s)", FormatMemory(state.displayedTotalSizeBytes).c_str());
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("(filtered from %zu)", state.searchResults.size());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextDisabled("(filtered from %zu)", state.searchResults.size());
     return;
   }
-  ImGui::Text("Displayed: %zu", state.searchResults.size());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::Text("Displayed: %zu", state.searchResults.size());
   if (state.displayedTotalSizeValid) {
     ImGui::SameLine();
-    ImGui::TextDisabled("(file size: %s)", FormatMemory(state.displayedTotalSizeBytes).c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextDisabled("(file size: %s)", FormatMemory(state.displayedTotalSizeBytes).c_str());
   }
 }
 
@@ -373,14 +373,14 @@ static void RenderQueueAndSearchTime(const UsnMonitor* monitor, const SearchWork
     return;
   }
   ImGui::SameLine();
-  ImGui::Text("|");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::Text("|");
   ImGui::SameLine();
   if (has_queue_info) {
     const size_t queue_size = monitor->GetQueueSize();
-    ImGui::Text("Queue: %zu", queue_size);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::Text("Queue: %zu", queue_size);
     if (has_search_time) {
       ImGui::SameLine();
-      ImGui::Text("|");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+      ImGui::Text("|");
       ImGui::SameLine();
     }
   }
@@ -390,10 +390,10 @@ static void RenderQueueAndSearchTime(const UsnMonitor* monitor, const SearchWork
                                      search_metrics.last_postprocess_time_ms_;
     constexpr uint64_t kMillisecondsPerSecond = 1000;
     if (last_total_time < kMillisecondsPerSecond) {
-      ImGui::Text("Search: %llums", static_cast<unsigned long long>(last_total_time));  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg, NOSONAR(cpp:S1905) - Cast required for printf format specifier %llu
+      ImGui::Text("Search: %llums", static_cast<unsigned long long>(last_total_time));
     } else {
       constexpr double kSecondsPerMillisecond = 0.001;
-      ImGui::Text("Search: %.2fs", static_cast<double>(last_total_time) * kSecondsPerMillisecond);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+      ImGui::Text("Search: %.2fs", static_cast<double>(last_total_time) * kSecondsPerMillisecond);
     }
   }
 }
@@ -419,10 +419,10 @@ static void RenderIndexBuildTiming(const GuiState& state) {
 
   constexpr uint64_t kMillisecondsPerSecond = 1000;
   if (elapsed_ms < kMillisecondsPerSecond) {
-    ImGui::Text("Index: %llums", static_cast<unsigned long long>(elapsed_ms));  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg, NOSONAR(cpp:S1905) - Cast required for printf format specifier %llu
+    ImGui::Text("Index: %llums", static_cast<unsigned long long>(elapsed_ms));
   } else {
     constexpr double kSecondsPerMillisecond = 0.001;
-    ImGui::Text("Index: %.2fs", static_cast<double>(elapsed_ms) * kSecondsPerMillisecond);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::Text("Index: %.2fs", static_cast<double>(elapsed_ms) * kSecondsPerMillisecond);
   }
 }
 
@@ -432,9 +432,9 @@ static void RenderCenterGroup(GuiState& state,
                               const FileIndex& file_index,
                               const SearchWorker& search_worker) {
   const size_t total_items = (monitor != nullptr) ? monitor->GetIndexedFileCount() : file_index.Size();
-  ImGui::Text("Total: %zu", total_items);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::Text("Total: %zu", total_items);
   ImGui::SameLine();
-  ImGui::Text("|");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::Text("|");
   ImGui::SameLine();
 
   RenderDisplayedCountAndSize(state, file_index);
@@ -443,7 +443,7 @@ static void RenderCenterGroup(GuiState& state,
   if (state.index_build_has_timing &&
       (state.index_build_in_progress || state.index_build_last_duration_ms > 0U)) {
     ImGui::SameLine();
-    ImGui::Text("|");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::Text("|");
     ImGui::SameLine();
     RenderIndexBuildTiming(state);
   }
@@ -473,19 +473,19 @@ static void RenderRightGroup(const GuiState &state, const SearchWorker &search_w
     }
   }
   if (status_color != nullptr) {
-    ImGui::TextColored(*status_color, "%s", status_text.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextColored(*status_color, "%s", status_text.c_str());
   } else {
-    ImGui::Text("%s", status_text.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::Text("%s", status_text.c_str());
   }
   ImGui::SameLine();
-  ImGui::Text("|");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+  ImGui::Text("|");
   ImGui::SameLine();
 
   // Use pre-built memory text (passed from Render to avoid duplicate formatting)
   if (state.memory_bytes_ > 0) {
-    ImGui::Text("%s", memory_text.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::Text("%s", memory_text.c_str());
   } else {
-    ImGui::TextDisabled("Memory: N/A");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API requires vararg
+    ImGui::TextDisabled("Memory: N/A");
   }
 }
 

@@ -6,25 +6,11 @@
 #include <shellapi.h>
 #include <windows.h>  // NOSONAR(cpp:S3806) - Windows-only include; path case matches filesystem
 
+#include "platform/FileOperations.h"
 #include "utils/Logger.h"
 #include "utils/StringUtils.h"
 
 namespace drag_drop {
-
-namespace {
-
-// Helper to validate input path and log issues.
-bool ValidatePath(std::string_view path, const char* operation) {
-  if (path.empty()) {
-    LOG_WARNING(std::string(operation) + " called with empty path");
-    return false;
-  }
-  if (path.find('\0') != std::string::npos) {
-    LOG_ERROR(std::string(operation) + " called with path containing null character");
-    return false;
-  }
-  return true;
-}
 
 // Helper to duplicate an HGLOBAL so IDataObject can hand ownership to callers.
 HGLOBAL DuplicateGlobal(HGLOBAL h_global) {
@@ -68,11 +54,11 @@ class ComBase : public IUnknown {
  public:
   virtual ~ComBase() = default;
 
-  IFACEMETHODIMP_(ULONG) AddRef() override {  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM macro expands to return type
+  IFACEMETHODIMP_(ULONG) AddRef() override {  // NOLINT(readability-identifier-naming) - COM macro expands to return type
     return static_cast<ULONG>(InterlockedIncrement(&ref_count_));
   }
 
-  IFACEMETHODIMP_(ULONG) Release() override {  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM macro expands to return type
+  IFACEMETHODIMP_(ULONG) Release() override {  // NOLINT(readability-identifier-naming) - COM macro expands to return type
     LONG count = InterlockedDecrement(&ref_count_);
     if (count == 0) {
       // Use RAII to self-destruct when the reference count reaches zero.
@@ -107,15 +93,15 @@ class SingleFormatEtcEnum final : public IEnumFORMATETC, public ComBase {
     return E_NOINTERFACE;
   }
 
-  IFACEMETHODIMP_(ULONG) AddRef() override {  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM macro
+  IFACEMETHODIMP_(ULONG) AddRef() override {  // NOLINT(readability-identifier-naming) - COM macro
     return ComBase::AddRef();
   }
-  IFACEMETHODIMP_(ULONG) Release() override {  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM macro
+  IFACEMETHODIMP_(ULONG) Release() override {  // NOLINT(readability-identifier-naming) - COM macro
     return ComBase::Release();
   }
 
   // IEnumFORMATETC
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM signature with ULONG params
+  // NOLINTNEXTLINE(readability-identifier-naming) - COM signature with ULONG params
   IFACEMETHODIMP Next(ULONG celt, FORMATETC* rgelt, ULONG* pceltFetched) override {
     if (rgelt == nullptr) {
       return E_INVALIDARG;
@@ -164,8 +150,8 @@ class SingleFormatEtcEnum final : public IEnumFORMATETC, public ComBase {
   }
 
  private:
-  ULONG current_index_{0};   // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM impl; ULONG is Windows type
-  FORMATETC format_;         // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM impl; init from ctor
+  ULONG current_index_{0};   // NOLINT(readability-identifier-naming) - COM impl; ULONG is Windows type
+  FORMATETC format_;         // NOLINT(readability-identifier-naming) - COM impl; init from ctor
 
   friend class ComBase;
 };
@@ -202,10 +188,10 @@ class FileDropDataObject final : public IDataObject, public ComBase {
     return E_NOINTERFACE;
   }
 
-  IFACEMETHODIMP_(ULONG) AddRef() override {  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM macro
+  IFACEMETHODIMP_(ULONG) AddRef() override {  // NOLINT(readability-identifier-naming) - COM macro
     return ComBase::AddRef();
   }
-  IFACEMETHODIMP_(ULONG) Release() override {  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM macro
+  IFACEMETHODIMP_(ULONG) Release() override {  // NOLINT(readability-identifier-naming) - COM macro
     return ComBase::Release();
   }
 
@@ -290,7 +276,7 @@ class FileDropDataObject final : public IDataObject, public ComBase {
   }
 
  private:
-  HGLOBAL h_drop_;  // NOLINT(misc-non-private-member-variables-in-classes) - COM impl; private member
+  HGLOBAL h_drop_;
 };
 
 // Minimal IDropSource implementation for basic drag behavior.
@@ -313,10 +299,10 @@ class BasicDropSource final : public IDropSource, public ComBase {  // NOLINT(cp
     return E_NOINTERFACE;
   }
 
-  IFACEMETHODIMP_(ULONG) AddRef() override {  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM macro
+  IFACEMETHODIMP_(ULONG) AddRef() override {  // NOLINT(readability-identifier-naming) - COM macro
     return ComBase::AddRef();
   }
-  IFACEMETHODIMP_(ULONG) Release() override {  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - COM macro
+  IFACEMETHODIMP_(ULONG) Release() override {  // NOLINT(readability-identifier-naming) - COM macro
     return ComBase::Release();
   }
 
@@ -376,7 +362,7 @@ HGLOBAL CreateHDropForPath(const std::wstring& path) {
 
 bool StartFileDragDrop(std::string_view full_path_utf8) {
   const std::string path(full_path_utf8);
-  if (!ValidatePath(path, "StartFileDragDrop")) {
+  if (!file_operations::internal::ValidatePath(path, "StartFileDragDrop")) {
     return false;
   }
   const std::wstring wide_path = Utf8ToWide(path);

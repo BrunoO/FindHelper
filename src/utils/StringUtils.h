@@ -37,7 +37,7 @@ inline void strcpy_safe(char* dest, size_t dest_size, const char* src) {  // NOL
   const size_t src_len = strlen(src);  // NOSONAR(cpp:S1081) - Safe: utility function assumes null-terminated C string input (standard contract)
   const size_t copy_len = (src_len < dest_size - 1) ? src_len : dest_size - 1;
   memcpy(dest, src, copy_len);
-  dest[copy_len] = '\0';  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - required for null-termination
+  dest[copy_len] = '\0';
 }
 
 /**
@@ -61,8 +61,8 @@ inline void strcat_safe(char* dest, size_t dest_size, const char* src) {  // NOL
   const size_t src_len = strlen(src);  // NOSONAR(cpp:S1081) - Safe: utility function assumes null-terminated C string input (standard contract)
   const size_t available = dest_size - dest_len - 1;
   const size_t copy_len = (src_len < available) ? src_len : available;
-  memcpy(dest + dest_len, src, copy_len);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - append position
-  dest[dest_len + copy_len] = '\0';  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - null-termination
+  memcpy(dest + dest_len, src, copy_len);
+  dest[dest_len + copy_len] = '\0';
 }
 #endif  // _WIN32
 
@@ -80,7 +80,7 @@ std::wstring Utf8ToWide(std::string_view str);
 inline std::string ToLower(std::string_view str) {
   std::string result;
   result.reserve(str.size());
-  std::transform(str.begin(), str.end(), std::back_inserter(result),
+  std::transform(str.begin(), str.end(), std::back_inserter(result),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
                  [](unsigned char c) { return std::tolower(c); });
   return result;
 }
@@ -138,7 +138,7 @@ inline std::vector<std::string> ParseExtensions(std::string_view input, char del
     // Trim whitespace
     if (std::string token = Trim(token_view); !token.empty()) {
       // Remove leading dot if present
-      if (token[0] == '.') {
+      if (token[0] == '.') {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by !token.empty() check above
         token.erase(0, 1);
       }
       extensions.push_back(ToLower(token));
@@ -168,7 +168,7 @@ inline std::string FormatNumberWithSeparators(size_t count) {
     if (comma_count > 0 && comma_count % 3 == 0) {
       result += ',';
     }
-    result += num_str[static_cast<size_t>(i)];
+    result += num_str[static_cast<size_t>(i)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - loop-guarded: i iterates over valid indices of num_str
     ++comma_count;
   }
   std::reverse(result.begin(), result.end());
@@ -198,15 +198,15 @@ inline std::string FormatMemory(size_t bytes) {
 
   if (bytes >= kGB) {
     // Round to nearest integer: add half the divisor before dividing
-    const size_t gb = (bytes + kGB / 2) / kGB;
+    const size_t gb = (bytes + (kGB / 2)) / kGB;
     oss << gb << " GB";
   } else if (bytes >= kMB) {
     // Round to nearest integer: add half the divisor before dividing
-    const size_t mb = (bytes + kMB / 2) / kMB;
+    const size_t mb = (bytes + (kMB / 2)) / kMB;
     oss << mb << " MB";
   } else if (bytes >= kKB) {
     // Round to nearest integer: add half the divisor before dividing
-    const size_t kb = (bytes + kKB / 2) / kKB;
+    const size_t kb = (bytes + (kKB / 2)) / kKB;
     oss << kb << " KB";
   } else {
     oss << bytes << " B";

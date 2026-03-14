@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <cstring>
 #include <future>
@@ -10,6 +11,7 @@
 #include "index/FileIndexStorage.h"
 #include "index/ISearchableIndex.h"
 #include "path/PathStorage.h"
+#include "path/PathUtils.h"
 #include "search/ISearchExecutor.h"
 #include "search/SearchContext.h"
 #include "search/SearchPatternUtils.h"  // For search_pattern_utils::ExtensionMatches (extension filter)
@@ -54,14 +56,14 @@ static_assert((kCancellationCheckInterval & kCancellationCheckMask) == 0U,
 
 /**
  * Parallel search engine that coordinates search operations
- * 
+ *
  * This class handles the orchestration of parallel search operations,
  * including:
  * - Creating pattern matchers from search queries
  * - Coordinating with load balancing strategies
  * - Processing search chunks in parallel
  * - Aggregating results from multiple threads
- * 
+ *
  * Implements ISearchExecutor to decouple load balancing strategies from
  * this concrete implementation, enabling better testability and maintainability.
  */
@@ -69,23 +71,23 @@ class ParallelSearchEngine : public ISearchExecutor {
 public:
   /**
    * Constructor
-   * 
+   *
    * @param threadPool Shared pointer to SearchThreadPool for executing tasks
    */
   explicit ParallelSearchEngine(std::shared_ptr<SearchThreadPool> threadPool);  // NOLINT(readability-identifier-naming) - threadPool matches API/caller convention
 
   /**
    * Perform parallel search and return futures with file IDs
-   * 
+   *
    * This method coordinates a parallel search across multiple threads,
    * returning futures that will yield vectors of matching file IDs.
-   * 
+   *
    * @param index Reference to searchable index (implements ISearchableIndex)
    * @param query Filename query (searches in filename part of path)
    * @param thread_count Number of threads to use (-1 = auto)
    * @param context SearchContext containing all search parameters
    * @param stats Optional output parameter for search statistics
-   * 
+   *
    * @return Vector of futures that will yield vectors of matching file IDs
    */
   std::vector<std::future<std::vector<uint64_t>>>
@@ -97,18 +99,18 @@ public:
 
   /**
    * Perform parallel search and return futures with extracted data
-   * 
+   *
    * This method coordinates a parallel search across multiple threads,
    * returning futures that will yield vectors of SearchResultData.
    * This eliminates the need for FileEntry lookups in post-processing.
-   * 
+   *
    * @param index Reference to searchable index (implements ISearchableIndex)
    * @param query Filename query (searches in filename part of path)
    * @param thread_count Number of threads to use (-1 = auto)
    * @param context SearchContext containing all search parameters
    * @param thread_timings Optional output parameter for per-thread timing
    * @param cancel_flag Optional cancellation flag
-   * 
+   *
    * @return Vector of futures that will yield vectors of SearchResultData
    */
   std::vector<std::future<std::vector<SearchResultData>>>
@@ -121,18 +123,18 @@ public:
 
   /**
    * Process a chunk range for search
-   * 
+   *
    * This method processes a range of items in the SoA arrays, searching
    * for matches and adding them to the results container. It's used by
    * load balancing strategies to process chunks in parallel.
-   * 
+   *
    * Template method that works with any container type that supports:
    * - push_back() method
    * - size() method
-   * 
+   *
    * Accepts pre-created pattern matchers. Callers must create matchers once per thread
    * using CreatePatternMatchers() and reuse them across multiple chunks.
-   * 
+   *
    * @param soaView Read-only view of SoA arrays
    * @param chunk_start Start index of chunk (inclusive)
    * @param chunk_end End index of chunk (exclusive)
@@ -141,7 +143,7 @@ public:
    * @param storage_size Total size of path storage in bytes (for extension length calculation)
    * @param filename_matcher Pre-created filename matcher
    * @param path_matcher Pre-created path matcher
-   * 
+   *
    * @note Template implementation is in ParallelSearchEngine.h (inline)
    */
   template<typename ResultsContainer>
@@ -157,13 +159,13 @@ public:
 
   /**
    * Process a chunk range for search (IDs only version)
-   * 
+   *
    * Simplified version that only returns file IDs, not full SearchResultData.
    * Used by SearchAsync (not SearchAsyncWithData).
-   * 
+   *
    * Accepts pre-created pattern matchers. Callers must create matchers once per thread
    * using CreatePatternMatchers() and reuse them across multiple chunks.
-   * 
+   *
    * @param soaView Read-only view of SoA arrays
    * @param chunk_start Start index of chunk (inclusive)
    * @param chunk_end End index of chunk (exclusive)
@@ -185,9 +187,9 @@ public:
 
   /**
    * Get the thread pool used by this engine
-   * 
+   *
    * @return Reference to the SearchThreadPool
-   * 
+   *
    * @note Implements ISearchExecutor interface
    */
   [[nodiscard]] SearchThreadPool& GetThreadPool() const override;
@@ -252,13 +254,13 @@ public:
 
   /**
    * Determine optimal thread count
-   * 
+   *
    * Determines the optimal number of threads to use based on:
    * - Explicit thread_count parameter
    * - search_thread_pool_size_from_context (from SearchContext, 0 = auto)
    * - Hardware concurrency
    * - Data size (bytes per thread)
-   * 
+   *
    * @param thread_count Requested thread count (-1 = auto)
    * @param total_bytes Total bytes in path storage
    * @param search_thread_pool_size_from_context Thread pool size from context (0 = auto)
@@ -279,10 +281,10 @@ public:
 
   /**
    * Create pattern matchers from search context
-   * 
+   *
    * Creates lightweight callable pattern matchers for filename and path
    * queries based on the search context (regex, glob, case sensitivity, etc.)
-   * 
+   *
    * @param context SearchContext containing query strings and options
    * @return PatternMatchers struct with initialized matchers
    */
@@ -299,13 +301,6 @@ private:
 // Forward declaration for helper functions
 namespace parallel_search_detail {
 
-// ExtensionMatches is now in search_pattern_utils namespace
-// Use search_pattern_utils::ExtensionMatches instead
-void ExtractFilenameAndExtension(const char* path, size_t filename_start_offset,
-                                 size_t extension_start_offset,
-                                 std::string& out_filename,
-                                 std::string& out_extension);
-
 /**
  * Compute full path length from SoA offsets without strlen()
  *
@@ -317,14 +312,16 @@ void ExtractFilenameAndExtension(const char* path, size_t filename_start_offset,
 inline size_t GetPathLength(const PathStorage::SoAView& soaView,  // NOLINT(readability-identifier-naming) - soaView matches SoA convention
                             size_t index,
                             size_t storage_size) {
+  // Precondition: index must be within the SoA bounds.
+  assert(index < soaView.size && "Path index must be within SoA bounds");
   if (index + 1 < soaView.size) {
     // Not last entry: path length = (next offset - current offset - 1)
     // The -1 accounts for the null terminator
-    return soaView.path_offsets[index + 1] - soaView.path_offsets[index] - 1;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+    return soaView.path_offsets[index + 1] - soaView.path_offsets[index] - 1;
   }
 
   // Last entry: path length = (storage end - current offset - 1)
-  return storage_size - soaView.path_offsets[index] - 1;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+  return storage_size - soaView.path_offsets[index] - 1;
 }
 
 /**
@@ -342,13 +339,15 @@ inline std::string_view GetExtensionView(
     const PathStorage::SoAView& soaView,  // NOLINT(readability-identifier-naming) - soaView matches SoA convention
     size_t index,
     size_t path_len) {
-  if (soaView.extension_start[index] == SIZE_MAX) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+  if (soaView.extension_start[index] == SIZE_MAX) {
     return {};
   }
 
-  const char* path = soaView.path_storage + soaView.path_offsets[index];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA access
-  const size_t ext_off = soaView.extension_start[index];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
-  const char* ext_start = path + ext_off;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - path segment by offset
+  const char* path = soaView.path_storage + soaView.path_offsets[index];
+  const size_t ext_off = soaView.extension_start[index];
+  // Postcondition: extension must start within the path (otherwise ext_len underflows).
+  assert(ext_off <= path_len && "Extension offset must be within path bounds");
+  const char* ext_start = path + ext_off;
 
   // Extension length = path length - extension start offset
   const size_t ext_len = path_len - ext_off;
@@ -358,7 +357,7 @@ inline std::string_view GetExtensionView(
 
 /**
  * Validate chunk range parameters and SoA view
- * 
+ *
  * @param soaView Read-only view of SoA arrays
  * @param chunk_start Start index of chunk (inclusive)
  * @param chunk_end End index of chunk (exclusive) - may be modified
@@ -404,7 +403,7 @@ inline bool ValidateChunkRange(const PathStorage::SoAView& soaView,  // NOLINT(r
 
 /**
  * Check if item at index should be skipped (deleted, folders_only filter)
- * 
+ *
  * @param soaView Read-only view of SoA arrays
  * @param index Item index
  * @param folders_only If true, only return directories
@@ -413,11 +412,11 @@ inline bool ValidateChunkRange(const PathStorage::SoAView& soaView,  // NOLINT(r
 inline bool ShouldSkipItem(const PathStorage::SoAView& soaView,  // NOLINT(readability-identifier-naming) - soaView matches SoA convention
                            size_t index,
                            bool folders_only) {
-  if (soaView.is_deleted[index] != 0) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+  if (soaView.is_deleted[index] != 0) {
     return true;
   }
 
-  if (folders_only && soaView.is_directory[index] == 0) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+  if (folders_only && soaView.is_directory[index] == 0) {
     return true;
   }
 
@@ -466,15 +465,15 @@ inline bool MatchesPatterns(const PathStorage::SoAView& soaView,  // NOLINT(read
                             [[maybe_unused]] const SearchContext& context,
                             const lightweight_callable::LightweightCallable<bool, const char*>& filename_matcher,
                             const lightweight_callable::LightweightCallable<bool, std::string_view>& path_matcher) {
-  const char* path = soaView.path_storage + soaView.path_offsets[index];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA access
-  const size_t filename_offset = soaView.filename_start[index];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+  const char* path = soaView.path_storage + soaView.path_offsets[index];
+  const size_t filename_offset = soaView.filename_start[index];
 
-  if (const char* filename = path + filename_offset;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - path segment by offset
-      filename_matcher && !filename_matcher(filename)) {  // NOLINT(cppcoreguidelines-init-variables) - LightweightCallable uses explicit operator bool() to check if valid
+  if (const char* filename = path + filename_offset;
+      filename_matcher && !filename_matcher(filename)) {
     return false;
   }
 
-  if (path_matcher && !path_matcher(std::string_view(path, path_len))) {  // NOLINT(cppcoreguidelines-init-variables) - LightweightCallable uses explicit operator bool() to check if valid
+  if (path_matcher && !path_matcher(std::string_view(path, path_len))) {
     return false;
   }
 
@@ -494,10 +493,10 @@ inline typename ResultsContainer::value_type CreateResultData(
     const PathStorage::SoAView& soaView,  // NOLINT(readability-identifier-naming) - soaView matches SoA convention
     size_t index,
     size_t path_len) {
-  const char* path = soaView.path_storage + soaView.path_offsets[index];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA access
+  const char* path = soaView.path_storage + soaView.path_offsets[index];
   typename ResultsContainer::value_type data;
-  data.id = soaView.path_ids[index];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
-  data.isDirectory = (soaView.is_directory[index] == 1);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+  data.id = soaView.path_ids[index];
+  data.isDirectory = (soaView.is_directory[index] == 1);
   data.fullPath = std::string_view(path, path_len);
   return data;
 }
@@ -545,23 +544,18 @@ inline void ParallelSearchEngine::ProcessChunkRange(  // NOSONAR(cpp:S3776) NOLI
 
     items_checked++;
 
-    // Defensive check: validate array size hasn't changed (debug-only, validated_chunk_end already ensures bounds)
-#ifndef NDEBUG
-    if (i >= array_size) {
-      LOG_WARNING_BUILD("ProcessChunkRange: Index "
-                        << i << " >= array_size " << array_size << ", stopping");
-      return;
-    }
-#endif  // NDEBUG
+    // Defensive check: the SoA array must not shrink during iteration.
+    // validated_chunk_end guarantees this at chunk-start time; assert enforces it at each step.
+    assert(i < array_size && "SoA array size must not shrink during search iteration");
 
     // Load is_deleted once per iteration; skip deleted items immediately
     // Quick early-exit for deleted items (most common case) before any other processing
-    if (const uint8_t is_deleted_value = soaView.is_deleted[i]; is_deleted_value != 0) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+    if (const uint8_t is_deleted_value = soaView.is_deleted[i]; is_deleted_value != 0) {
       continue;  // Skip deleted items immediately, no further processing
     }
 
     // folders_only filter (only check after confirming not deleted)
-    if (folders_only && soaView.is_directory[i] == 0) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoA index access
+    if (folders_only && soaView.is_directory[i] == 0) {
       continue;
     }
 

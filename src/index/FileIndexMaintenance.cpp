@@ -91,7 +91,7 @@ void FileIndexMaintenance::RebuildPathBuffer() {
   path_storage_.RebuildPathBuffer();
 
   const auto end = std::chrono::high_resolution_clock::now();
-  const double elapsed_ms{std::chrono::duration<double, std::milli>(end - start).count()};  // NOLINT(cppcoreguidelines-init-variables) NOSONAR(cpp:S1481,cpp:S1854) - Read in LOG_INFO_BUILD macro below
+  const double elapsed_ms{std::chrono::duration<double, std::milli>(end - start).count()};
   LOG_INFO_BUILD("FileIndexMaintenance::RebuildPathBuffer completed in " << elapsed_ms << " ms");
 }
 

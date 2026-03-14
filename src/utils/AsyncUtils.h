@@ -32,4 +32,25 @@ void ExecuteWithLogCatch(Func&& func, const char* error_prefix = "Error") {
   }
 }
 
+/**
+ * Waits for a future to become ready (if not already) and calls .get() to
+ * release associated resources. All exceptions are swallowed — this is
+ * intentional for shutdown / drain paths where we must not propagate.
+ *
+ * @param f Future to drain; no-op when !f.valid()
+ */
+template <typename T>
+inline void SafeWaitFuture(std::future<T>& f) {
+  if (!f.valid()) {
+    return;
+  }
+  try {
+    if (f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+      f.wait();
+    }
+    f.get();
+  } catch (...) {  // NOLINT(bugprone-empty-catch) NOSONAR(cpp:S2738, cpp:S2486) - Drain on shutdown; must not propagate
+  }
+}
+
 }  // namespace async_utils

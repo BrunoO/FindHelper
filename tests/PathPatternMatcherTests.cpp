@@ -92,7 +92,7 @@ TEST_SUITE("PathPatternMatcher") {
     CHECK(PathPatternMatches("**/USN_windows**", "USN_windows/subfolder/file.cpp"));
     CHECK(PathPatternMatches("**/USN_windows**", "some/path/USN_windows/file.cpp"));
     CHECK(PathPatternMatches("**/USN_windows**", "some/path/USN_windows/subfolder/file.cpp"));
-    
+
     // Test: **/folder/** (with trailing **/) should also match (for backward compatibility)  // NOSONAR(cpp:S1103) - Pattern example intentionally contains \"*/\" sequence
     // After normalization, **/folder/** becomes **folder/**  // NOSONAR(cpp:S1103) - Pattern example intentionally contains \"*/\" sequence
     CHECK(PathPatternMatches("**/USN_windows/**", "USN_windows/file.cpp"));

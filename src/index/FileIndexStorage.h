@@ -49,9 +49,10 @@ private:
   // Shared implementation: fast path skips ToLower alloc when str is already
   // lowercase (the common case for file extensions such as .txt, .exe, .dll).
   const std::string* InternImpl(std::string_view str) {
-    const bool already_lower = std::all_of(str.begin(), str.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
-        [](unsigned char c) { return c < 'A' || c > 'Z'; });
-    if (already_lower) {
+    if (const bool already_lower = std::all_of(  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+            str.begin(), str.end(),
+            [](unsigned char c) { return c < 'A' || c > 'Z'; });
+        already_lower) {
       std::string key(str);
       if (auto it = interned_strings_.find(key); it != interned_strings_.end()) {
         return &(*it);  // pool hit — no ToLower alloc needed
@@ -59,7 +60,7 @@ private:
       return &(*interned_strings_.insert(std::move(key)).first);
     }
     // Slow path: normalize to lowercase before inserting.
-    return &(*interned_strings_.insert(ToLower(std::string(str))).first);
+    return &(*interned_strings_.insert(ToLower(str)).first);
   }
 
   std::mutex pool_mutex_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention
@@ -109,7 +110,7 @@ public:
   [[nodiscard]] const FileEntry* GetEntry(uint64_t id) const;
   FileEntry* GetEntryMutable(uint64_t id); // For modifications (assumes lock is held, fields are mutable)
   [[nodiscard]] size_t Size() const { return entry_count_.load(std::memory_order_relaxed); }
-  
+
   // Update operations (assume lock is already held, methods are const because FileEntry fields are mutable)
   void UpdateFileSize(uint64_t id, uint64_t size);
   void UpdateModificationTime(uint64_t id, const FILETIME& time);

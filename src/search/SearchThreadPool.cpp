@@ -123,10 +123,10 @@ SearchThreadPool::~SearchThreadPool() {
     const std::scoped_lock lock(mutex_);
     shutdown_ = true;
   }
-  
+
   // Notify all threads to wake up and check shutdown flag
   cv_.notify_all();
-  
+
   // Wait for all threads to finish
   for (auto &thread : threads_) {
     if (thread.joinable()) {

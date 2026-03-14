@@ -33,6 +33,7 @@
 #include "api/GeminiApiUtils.h"
 #include "filters/SizeFilter.h"
 #include "filters/TimeFilter.h"
+#include "utils/AsyncUtils.h"
 
 void GuiState::MarkInputChanged() {
   inputChanged = true;
@@ -45,7 +46,7 @@ void GuiState::ClearInputs() {
   extensionInput.Clear();
   foldersOnly = false;
   caseSensitive = false; // Default to case-insensitive
-  
+
   // Cancel any pending sort attribute loading operations.
   // This signals to any running futures that they should stop early.
   sort_cancellation_token_.Cancel();
@@ -54,35 +55,19 @@ void GuiState::ClearInputs() {
   // (futures reference SearchResult objects which will be destroyed)
   // CRITICAL: Must call .get() on each future to properly clean up resources and prevent memory leaks
   for (auto& f : attributeLoadingFutures) {
-      if (f.valid()) {
-          try {
-              if (f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-                  f.wait();
-              }
-              f.get();
-          } catch (...) {  // NOLINT(bugprone-empty-catch) NOSONAR(cpp:S2738, cpp:S2486) - Ignore exceptions, just ensure cleanup happens. Future cleanup must not throw - prevents exceptions from propagating
-          }
-      }
+    async_utils::SafeWaitFuture(f);
   }
   attributeLoadingFutures.clear();
   loadingAttributes = false;
-  
+
   // Clean up cloud file loading futures
   // CRITICAL: Must call .get() on each future to properly clean up resources and prevent memory leaks
   for (auto& f : cloudFileLoadingFutures) {
-    if (f.valid()) {
-      try {
-        if (f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-          f.wait();
-        }
-        f.get();
-      } catch (...) {  // NOLINT(bugprone-empty-catch) NOSONAR(cpp:S2738, cpp:S2486) - Ignore exceptions, just ensure cleanup happens. Future cleanup must not throw - prevents exceptions from propagating
-      }
-    }
+    async_utils::SafeWaitFuture(f);
   }
   cloudFileLoadingFutures.clear();
   deferredCloudFiles.clear();
-  
+
   // Clean up Gemini API future if it exists
   // Wait for it to complete if still running, then reset it
   if (gemini_api_future_.valid()) {
@@ -97,11 +82,11 @@ void GuiState::ClearInputs() {
   }
   gemini_api_call_in_progress_ = false;
   gemini_error_message_ = "";
-  gemini_description_input_[0] = '\0';
+  gemini_description_input_[0] = '\0';  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - fixed-size array, index 0 always valid
 
   exportNotification = "";
   exportErrorMessage = "";
-  
+
   searchResultPathPool.clear();
   searchResults.clear();
   partialResults.clear();
@@ -148,7 +133,7 @@ static std::string BuildExtensionString(const std::vector<std::string>& extensio
     if (i > 0) {
       ext_stream << ";";
     }
-    ext_stream << extensions[i];
+    ext_stream << extensions[i];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounds checked by loop condition i < extensions.size()
   }
   return ext_stream.str();
 }
@@ -158,21 +143,21 @@ void GuiState::ApplySearchConfig(const gemini_api_utils::SearchConfig &config) {
   if (!config.filename.empty()) {
     filenameInput.SetValue(config.filename);
   }
-  
+
   // Apply extensions (if provided) - convert array to semicolon-separated string
   if (!config.extensions.empty()) {
     extensionInput.SetValue(BuildExtensionString(config.extensions));
   }
-  
+
   // Apply path input (if provided)
   if (!config.path.empty()) {
     pathInput.SetValue(config.path);
   }
-  
+
   // Apply boolean options (always set, defaults are false)
   foldersOnly = config.folders_only;
   caseSensitive = config.case_sensitive;
-  
+
   // Apply time filter (convert string to enum)
   if (!config.time_filter.empty()) {
     if (config.time_filter == "Today") {
@@ -192,7 +177,7 @@ void GuiState::ApplySearchConfig(const gemini_api_utils::SearchConfig &config) {
   } else {
     timeFilter = TimeFilter::None;
   }
-  
+
   // Apply size filter (convert string to enum)
   if (!config.size_filter.empty()) {
     if (config.size_filter == "Empty") {
@@ -216,7 +201,7 @@ void GuiState::ApplySearchConfig(const gemini_api_utils::SearchConfig &config) {
   } else {
     sizeFilter = SizeFilter::None;
   }
-  
+
   // Mark input as changed to trigger search
   MarkInputChanged();
 }

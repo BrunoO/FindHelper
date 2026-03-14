@@ -85,12 +85,14 @@ inline bool CheckPrefix(const std::string_view& text,
   if (text.length() < pattern.length()) {
     return false;
   }
-  
+
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - pointer arithmetic bounds established by caller; text+size pattern
   for (size_t i = 0; i < pattern.length(); ++i) {
     if (!ComparePolicy::Equal(text[i], pattern[i])) {
       return false;
     }
   }
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   return true;
 }
 
@@ -100,11 +102,13 @@ inline bool ReverseCompare(const std::string_view& text,
                            const std::string_view& pattern,
                            size_t start_pos) {
   const size_t pattern_len = pattern.length();
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - pointer arithmetic bounds established by caller; text+size pattern
   for (size_t j = pattern_len; j > 0; --j) {
     if (!ComparePolicy::Equal(text[start_pos + j - 1], pattern[j - 1])) {
       return false;
     }
   }
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   return true;
 }
 
@@ -115,6 +119,7 @@ inline bool ShortPatternSearch(const std::string_view& text,
   if (text.length() < pattern.length()) {
     return false;
   }
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - pointer arithmetic bounds established by caller; text+size pattern
   for (size_t i = 0; i <= text.length() - pattern.length(); ++i) {
     bool is_match = true;
     for (size_t j = 0; j < pattern.length(); ++j) {
@@ -127,6 +132,7 @@ inline bool ShortPatternSearch(const std::string_view& text,
       return true;
     }
   }
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   return false;  // NOSONAR(cpp:S935) - All paths return (false positive from template analysis)
 }
 
@@ -146,7 +152,7 @@ inline bool TryAVX2Path([[maybe_unused]] const std::string_view& text,    // Use
         break;
       }
     }
-    
+
     if (is_ascii) {
       return avx2_func();  // Call AVX2 function
     }
@@ -194,12 +200,14 @@ inline bool TryNEONPath([[maybe_unused]] const std::string_view& text,  // NOLIN
     // Quick ASCII check (first 64 bytes) — NEON fast path is ASCII-only
     bool is_ascii = true;
     const size_t check_len = (std::min)(text.length(), kAsciiCheckLen);
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - pointer arithmetic bounds established by caller; text+size pattern
     for (size_t i = 0; i < check_len; ++i) {
       if (static_cast<unsigned char>(text[i]) > kMaxAscii) {
         is_ascii = false;
         break;
       }
     }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     if (is_ascii) {
       return neon_func();
     }
@@ -221,7 +229,7 @@ inline const char* TryNEONPathStrStr([[maybe_unused]] const char* haystack,  // 
     bool is_ascii = true;
     const size_t check_len = (std::min)(haystack_len, kAsciiCheckLen);
     for (size_t i = 0; i < check_len; ++i) {
-      if (static_cast<unsigned char>(haystack[i]) > kMaxAscii) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer offset into char buffer is intentional for ASCII check
+      if (static_cast<unsigned char>(haystack[i]) > kMaxAscii) {
         is_ascii = false;
         break;
       }
@@ -232,6 +240,29 @@ inline const char* TryNEONPathStrStr([[maybe_unused]] const char* haystack,  // 
   }
   #endif  // STRING_SEARCH_NEON_AVAILABLE
   return nullptr;
+}
+
+// Template function for fuzzy matching
+template<typename ComparePolicy>
+inline bool FuzzyMatchInternal(std::string_view text, std::string_view pattern) {
+  if (pattern.empty()) {
+    return true;
+  }
+  if (text.empty()) {
+    return false;
+  }
+
+  const auto* it_text = text.begin();
+  for (const char p : pattern) {
+    it_text = std::find_if(it_text, text.end(), [p](char t) {
+      return ComparePolicy::Equal(t, p);
+    });
+    if (it_text == text.end()) {
+      return false;
+    }
+    ++it_text;
+  }
+  return true;
 }
 
 } // namespace string_search_detail
@@ -309,7 +340,7 @@ inline const char* StrStrCaseInsensitive(const char* haystack, const char* needl
   if (haystack == nullptr) {
     return nullptr;
   }
-  
+
   // AVX2 / NEON optimization: Use for longer strings
   #if STRING_SEARCH_AVX2_AVAILABLE
   size_t haystack_len = strlen(haystack);  // NOSONAR(cpp:S1081) - Safe: function parameter expected to be null-terminated C string (standard contract)
@@ -332,14 +363,14 @@ inline const char* StrStrCaseInsensitive(const char* haystack, const char* needl
   #endif  // STRING_SEARCH_AVX2_AVAILABLE / STRING_SEARCH_NEON_AVAILABLE
 
   // Scalar fallback (existing implementation)
-  for (const char* haystack_it = haystack; *haystack_it != '\0'; ++haystack_it) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer iteration over C-string is intentional and performance-critical here
+  for (const char* haystack_it = haystack; *haystack_it != '\0'; ++haystack_it) {
     const char* needle_it = needle;
     const char* haystack_probe = haystack_it;
     while (*needle_it != '\0' && *haystack_probe != '\0' &&
            ToLowerChar(static_cast<unsigned char>(*needle_it)) ==
                ToLowerChar(static_cast<unsigned char>(*haystack_probe))) {
-      ++needle_it;      // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer increment over C-string is intentional here
-      ++haystack_probe; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Pointer increment over C-string is intentional here
+      ++needle_it;
+      ++haystack_probe;
     }
     if (*needle_it == '\0') {
       return haystack_it;  // Found match
@@ -402,6 +433,34 @@ inline bool ContainsSubstringI(const std::string_view &text,
   }
   // For short patterns, use case-insensitive search
   return string_search_detail::ShortPatternSearch<string_search_detail::CaseInsensitive>(text, pattern);
+}
+
+/**
+ * @brief Fuzzy matching (subsequence matching)
+ *
+ * Returns true if all characters in 'pattern' appear in 'text' in the same order.
+ * Example: "fbr" matches "foobar", "fiber", "foo/bar"
+ *
+ * @param text The string to search in
+ * @param pattern The sequence of characters to look for
+ * @return true if pattern is a subsequence of text
+ */
+inline bool FuzzyMatch(std::string_view text, std::string_view pattern) {
+  return string_search_detail::FuzzyMatchInternal<string_search_detail::CaseSensitive>(text, pattern);
+}
+
+/**
+ * @brief Case-insensitive fuzzy matching (subsequence matching)
+ *
+ * Returns true if all characters in 'pattern' appear in 'text' in the same order,
+ * ignoring case.
+ *
+ * @param text The string to search in
+ * @param pattern The sequence of characters to look for
+ * @return true if pattern is a case-insensitive subsequence of text
+ */
+inline bool FuzzyMatchI(std::string_view text, std::string_view pattern) {
+  return string_search_detail::FuzzyMatchInternal<string_search_detail::CaseInsensitive>(text, pattern);
 }
 
 

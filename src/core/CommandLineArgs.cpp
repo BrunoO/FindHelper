@@ -85,7 +85,7 @@ inline bool ParseStringArg(const char* arg, int& i, int argc,
   // Check for --arg value format (arg_name includes "=", so we need to remove it)
   if (const std::string arg_name_only(arg_name, name_len_with_equals - 1);
       arg_sv == arg_name_only && i + 1 < argc) {
-    target = argv[i + 1];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Standard C main() argv
+    target = argv[i + 1];
     ++i;
     return true;
   }
@@ -121,8 +121,8 @@ inline bool ParseIntArg(const char* arg, int& i, int argc,
   // Check for --arg value format
   if (const std::string arg_name_only(arg_name, name_len_with_equals - 1);
       arg_sv == arg_name_only && i + 1 < argc) {
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables) - init-statement initializes value
-    if (const int value{std::atoi(argv[i + 1])}; value >= config.min_val && value <= config.max_val) {  // NOLINT(cert-err34-c,bugprone-unchecked-string-to-number-conversion,cppcoreguidelines-pro-bounds-pointer-arithmetic) - atoi/argv standard C CLI
+
+    if (const int value{std::atoi(argv[i + 1])}; value >= config.min_val && value <= config.max_val) {  // NOLINT(cert-err34-c,bugprone-unchecked-string-to-number-conversion) - atoi/argv standard C CLI
       *config.target = value;
       ++i;
     } else {
@@ -200,7 +200,7 @@ CommandLineArgs ParseCommandLineArgs(int argc, char** argv) {
   CommandLineArgs args;
 
   for (int i = 1; i < argc; ++i) {  // NOSONAR(cpp:S886) - Standard argc/argv loop pattern, index needed for argv access
-    const char* arg = argv[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Standard C main() argc/argv interface
+    const char* arg = argv[i];
 
     if (ProcessExitAndToggleFlags(arg, args)) {
       continue;
@@ -262,14 +262,14 @@ void ShowVersion() {
 // Dump all indexed paths to a file
 [[nodiscard]] bool DumpIndexToFile(const FileIndex& file_index, std::string_view file_path) {
   LOG_INFO_BUILD("Dumping index to file: " << file_path);
-  
+
   try {
     std::ofstream out_file(std::string(file_path), std::ios::out | std::ios::trunc | std::ios::binary);
     if (!out_file.is_open()) {
       LOG_ERROR_BUILD("Failed to open file for writing: " << file_path);
       return false;
     }
-    
+
     // Iterate over all entries and write paths to file (callback-based, memory efficient)
     // Uses ForEachEntryWithPath to avoid nested lock acquisition
     size_t entry_count = 0;
@@ -279,16 +279,16 @@ void ShowVersion() {
       ++entry_count;
       return true; // Continue iteration
     });
-    
+
     LOG_INFO_BUILD("Writing " << entry_count << " paths to file...");
-    
+
     out_file.flush();
     if (!out_file.good()) {
       LOG_ERROR_BUILD("Error writing to file: " << file_path);
       out_file.close();
       return false;
     }
-    
+
     out_file.close();
     LOG_INFO_BUILD("Successfully dumped " << entry_count << " paths to: " << file_path);
     return true;

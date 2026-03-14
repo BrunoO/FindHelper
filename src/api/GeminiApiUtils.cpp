@@ -46,7 +46,7 @@ static void ProcessAndAddToken(std::string_view token_view, std::vector<std::str
     return;
   }
   // Remove leading dot if present
-  if (token[0] == '.') {
+  if (token[0] == '.') {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by token.empty() check above
     token.erase(0, 1);
   }
   extensions.push_back(token);
@@ -99,7 +99,7 @@ std::string GetGeminiApiKeyFromEnv() {
     }
   };
   using EnvKeyPtr = std::unique_ptr<char, EnvKeyDeleter>;
-  
+
   char *env_key = nullptr;
   size_t len = 0;
   if (errno_t err = _dupenv_s(&env_key, &len, "GEMINI_API_KEY"); err != 0 || env_key == nullptr || len == 0) {
@@ -114,7 +114,7 @@ std::string GetGeminiApiKeyFromEnv() {
   std::string result(env_key);
   return result;
 #else
-  if (const char *env_key = std::getenv("GEMINI_API_KEY"); env_key != nullptr) {  // NOLINT(cppcoreguidelines-init-variables,concurrency-mt-unsafe) - C++17 init-statement; getenv result copied immediately, config-style read
+  if (const char *env_key = std::getenv("GEMINI_API_KEY"); env_key != nullptr) {  // NOLINT(concurrency-mt-unsafe) - C++17 init-statement; getenv result copied immediately, config-style read
     return {env_key};
   }
   return {};
@@ -139,17 +139,17 @@ bool ValidatePathPatternFormat(std::string_view pattern) {
 
 /**
  * @brief Parse extensions from JSON value (supports both array and comma-separated string formats)
- * 
+ *
  * Handles two formats:
  * - Array format: ["cpp", "hpp", "cxx"]
  * - String format: "cpp, hpp, cxx" (comma-separated)
- * 
+ *
  * @param extensions_value JSON value containing extensions (array or string)
  * @return Vector of extension strings (without leading dots, trimmed)
  */
 std::vector<std::string> ParseExtensionsFromJson(const json& extensions_value) {
   std::vector<std::string> extensions;
-  
+
   // OPTIMIZATION: Pre-allocate vector to avoid reallocations during parsing
   // Typical API responses have 5-20 extensions, estimate conservatively
   if (extensions_value.is_array()) {
@@ -167,7 +167,7 @@ std::vector<std::string> ParseExtensionsFromJson(const json& extensions_value) {
     constexpr size_t k_estimated_chars_per_extension = 10;  // NOLINT(readability-magic-numbers) - Estimate: 3-5 char ext + comma/space
     constexpr size_t k_safety_margin = 5;  // NOLINT(readability-magic-numbers) - Safety margin for reserve estimate
     extensions.reserve((ext_str.size() / k_estimated_chars_per_extension) + k_safety_margin);  // NOLINT(readability-math-missing-parentheses) - Parentheses already added
-    
+
     // Parse comma-separated values
     size_t start = 0;
     while (start < ext_str.size()) {
@@ -176,16 +176,16 @@ std::vector<std::string> ParseExtensionsFromJson(const json& extensions_value) {
       if (end == std::string::npos) {
         end = ext_str.size();
       }
-      
+
       // Extract token and process it
       const std::string_view token_view = std::string_view(ext_str).substr(start, end - start);
       ProcessAndAddToken(token_view, extensions);
-      
+
       // Move to next token (skip comma)
       start = end + 1;
     }
   }
-  
+
   return extensions;
 }
 
@@ -420,14 +420,14 @@ void FixPathPatternIfNeeded(SearchConfig& search_config) {
   }
 
   std::string& path = search_config.path;
-  
+
   // Check if path starts with "pp:" (path pattern)
   if (path.size() < 3 || path.substr(0, 3) != "pp:") {
     return; // Not a path pattern, no fix needed
   }
 
   std::string path_content = path.substr(3);
-  const bool needs_fix = RemoveExtensionPatterns(path_content, search_config.extensions);  // NOLINT(cppcoreguidelines-init-variables) - Initialized from RemoveExtensionPatterns() return value
+  const bool needs_fix = RemoveExtensionPatterns(path_content, search_config.extensions);
   EnsureFolderPatternFormat(path_content);
 
   if (needs_fix || !path_content.empty()) {
@@ -445,8 +445,8 @@ void FixPathPatternIfNeeded(SearchConfig& search_config) {
  */
 std::string ParseErrorResponse(const json& response_json) {
   std::string error_message = "API error: ";
-  if (response_json["error"].contains("message")) {
-    error_message += response_json["error"]["message"].get<std::string>();
+  if (response_json.at("error").contains("message")) {
+    error_message += response_json.at("error").at("message").get<std::string>();
   } else {
     error_message += "Unknown error";
   }
@@ -462,38 +462,38 @@ std::string ParseErrorResponse(const json& response_json) {
  * @return Extracted text, or empty string if not found
  */
 std::string ExtractTextFromCandidates(const json& response_json) {
-  if (!response_json.contains("candidates") || 
-      !response_json["candidates"].is_array() || 
-      response_json["candidates"].empty()) {
+  if (!response_json.contains("candidates") ||
+      !response_json.at("candidates").is_array() ||
+      response_json.at("candidates").empty()) {
     return "";
   }
 
   try {
     // Use .at() for safer access on Windows (throws if index is invalid)
     // Check array size before accessing to avoid potential Windows-specific issues
-    const auto& candidates_array = response_json["candidates"];
+    const auto& candidates_array = response_json.at("candidates");
     if (candidates_array.empty()) {
       return "";
     }
-    
+
     const auto& candidate = candidates_array.at(0);
     if (!candidate.contains("content")) {
       return "";
     }
-    
-    const auto& content = candidate["content"];
-    if (!content.contains("parts") || !content["parts"].is_array() || content["parts"].empty()) {
+
+    const auto& content = candidate.at("content");
+    if (!content.contains("parts") || !content.at("parts").is_array() || content.at("parts").empty()) {
       return "";
     }
 
-    const auto& parts_array = content["parts"];
+    const auto& parts_array = content.at("parts");
     if (parts_array.empty()) {
       return "";
     }
-    
+
     const auto& part = parts_array.at(0);
-    if (part.contains("text") && part["text"].is_string()) {
-      return part["text"].get<std::string>();
+    if (part.contains("text") && part.at("text").is_string()) {
+      return part.at("text").get<std::string>();
     }
   } catch (const json::exception& e) {
     // JSON access failed (e.g., invalid index access on Windows), return empty string
@@ -513,18 +513,18 @@ std::string ExtractTextFromCandidates(const json& response_json) {
   // Helper function to clean clipboard text (remove markdown code blocks, trim, handle BOM)
   std::string CleanClipboardText(std::string_view text) {
     std::string cleaned(text);
-    
+
     // Remove UTF-8 BOM if present (common on Windows)
-    if (cleaned.size() >= kUtf8BomSize && 
-        static_cast<unsigned char>(cleaned[0]) == kUtf8BomByte1 &&
-        static_cast<unsigned char>(cleaned[1]) == kUtf8BomByte2 &&
-        static_cast<unsigned char>(cleaned[2]) == kUtf8BomByte3) {
+    if (cleaned.size() >= kUtf8BomSize &&
+        static_cast<unsigned char>(cleaned[0]) == kUtf8BomByte1 &&  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by cleaned.size() >= kUtf8BomSize
+        static_cast<unsigned char>(cleaned[1]) == kUtf8BomByte2 &&  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by cleaned.size() >= kUtf8BomSize (kUtf8BomSize == 3)
+        static_cast<unsigned char>(cleaned[2]) == kUtf8BomByte3) {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by cleaned.size() >= kUtf8BomSize (kUtf8BomSize == 3)
       cleaned.erase(0, kUtf8BomSize);
     }
-    
+
     // Trim whitespace
     cleaned = Trim(cleaned);
-    
+
     // Remove markdown code blocks (```json ... ``` or ``` ... ```)
     if (cleaned.size() >= kMarkdownCodeBlockMinSize && cleaned.substr(0, 3) == "```") {
       // Check for opening ```json or ```
@@ -534,10 +534,10 @@ std::string ExtractTextFromCandidates(const json& response_json) {
         start_pos = kMarkdownJsonPrefixSize;
       }
       // Skip whitespace after ```
-      while (start_pos < cleaned.size() && (cleaned[start_pos] == ' ' || cleaned[start_pos] == '\n' || cleaned[start_pos] == '\r')) {
+      while (start_pos < cleaned.size() && (cleaned[start_pos] == ' ' || cleaned[start_pos] == '\n' || cleaned[start_pos] == '\r')) {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by start_pos < cleaned.size() loop condition
         start_pos++;
       }
-      
+
       // Find closing ```
       const size_t end_pos = cleaned.rfind("```");
       if (end_pos != std::string::npos && end_pos > start_pos) {
@@ -547,14 +547,14 @@ std::string ExtractTextFromCandidates(const json& response_json) {
         cleaned = Trim(cleaned);
       }
     }  // NOSONAR(cpp:S1103) - Documentation comment above, not misleading
-    
+
     return cleaned;
   }
-  
+
   // Helper function to parse string field from JSON
   bool ParseStringField(const json& search_config, const char* field_name, std::string& output, bool& has_any_fields) {
-    if (search_config.contains(field_name) && search_config[field_name].is_string()) {
-      output = search_config[field_name].get<std::string>();
+    if (search_config.contains(field_name) && search_config.at(field_name).is_string()) {
+      output = search_config.at(field_name).get<std::string>();
       if (!output.empty()) {
         has_any_fields = true;
         return true;
@@ -565,8 +565,8 @@ std::string ExtractTextFromCandidates(const json& response_json) {
 
   // Helper function to parse boolean field from JSON
   bool ParseBooleanField(const json& search_config, const char* field_name, bool& output, bool& has_any_fields) {
-    if (search_config.contains(field_name) && search_config[field_name].is_boolean()) {
-      output = search_config[field_name].get<bool>();
+    if (search_config.contains(field_name) && search_config.at(field_name).is_boolean()) {
+      output = search_config.at(field_name).get<bool>();
       if (output) {
         has_any_fields = true;
         return true;
@@ -577,8 +577,8 @@ std::string ExtractTextFromCandidates(const json& response_json) {
 
   // Helper function to parse filter field from JSON (string that must not be "None")
   bool ParseFilterField(const json& search_config, const char* field_name, std::string& output, bool& has_any_fields) {
-    if (search_config.contains(field_name) && search_config[field_name].is_string()) {
-      output = search_config[field_name].get<std::string>();
+    if (search_config.contains(field_name) && search_config.at(field_name).is_string()) {
+      output = search_config.at(field_name).get<std::string>();
       if (!output.empty() && output != "None") {
         has_any_fields = true;
         return true;
@@ -590,15 +590,15 @@ std::string ExtractTextFromCandidates(const json& response_json) {
   // Helper function to parse all fields from search_config JSON
   void ParseAllFields(const json& search_config, SearchConfig& result_config, bool& has_any_fields) {
     ParseStringField(search_config, "filename", result_config.filename, has_any_fields);
-    
+
     // Parse extensions - handle both array and comma-separated string formats
     if (search_config.contains("extensions")) {
-      result_config.extensions = ParseExtensionsFromJson(search_config["extensions"]);
+      result_config.extensions = ParseExtensionsFromJson(search_config.at("extensions"));
       if (!result_config.extensions.empty()) {
         has_any_fields = true;
       }
     }
-    
+
     ParseStringField(search_config, "path", result_config.path, has_any_fields);
     ParseBooleanField(search_config, "folders_only", result_config.folders_only, has_any_fields);
     ParseBooleanField(search_config, "case_sensitive", result_config.case_sensitive, has_any_fields);
@@ -613,10 +613,10 @@ std::string ExtractTextFromCandidates(const json& response_json) {
       result.error_message = "Invalid JSON structure: missing 'version' or 'search_config'";
       return false;
     }
-    
-    const auto &search_config = config_json["search_config"];
+
+    const auto &search_config = config_json.at("search_config");
     bool has_any_fields = false;
-    
+
     // Parse all fields
     ParseAllFields(search_config, result.search_config, has_any_fields);
 
@@ -629,14 +629,14 @@ std::string ExtractTextFromCandidates(const json& response_json) {
     if (!has_any_fields && search_config.is_object() && search_config.empty()) {
       result.search_config.path = "pp:";
     }
-    
+
     return true;
   }
 } // namespace
 
 GeminiApiResult ParseSearchConfigJson(std::string_view json_response) {
   GeminiApiResult result;
-  
+
   if (json_response.empty()) {
     result.error_message = "Empty JSON response";
     return result;
@@ -649,7 +649,7 @@ GeminiApiResult ParseSearchConfigJson(std::string_view json_response) {
     // First, try to parse as direct search config JSON (from clipboard)
     // Check if it's a direct JSON with version and search_config at root
     const json direct_json = json::parse(cleaned_json);
-    
+
     if (direct_json.contains("version") && direct_json.contains("search_config") &&
         ParseSearchConfigFromJson(direct_json, result)) {
       // This is direct JSON format (from clipboard)
@@ -659,10 +659,10 @@ GeminiApiResult ParseSearchConfigJson(std::string_view json_response) {
       return result;
     }
     // If parsing failed, fall through to try Gemini API format
-    
+
     // If not direct format, try Gemini API response structure
     const json& response_json = direct_json; // Reuse already parsed JSON
-    
+
     // Handle error response first  // NOSONAR(cpp:S1103) - Documentation comment, not misleading
     if (response_json.contains("error")) {
       result.error_message = ParseErrorResponse(response_json);
@@ -675,43 +675,43 @@ GeminiApiResult ParseSearchConfigJson(std::string_view json_response) {
       result.error_message = "Invalid JSON structure: missing 'candidates' or 'text' field";  // NOSONAR(cpp:S1103) - String literal, not comment delimiter
       return result;
     }
-    
+
     // Log raw Gemini response in debug builds  // NOSONAR(cpp:S1103) - Documentation comment, not misleading
     LOG_DEBUG_BUILD("[Gemini] Raw response: " << text);
-    
+
     // Clean the text (might have markdown code blocks)
     text = CleanClipboardText(text);
-    
+
     // Check if text is empty after cleaning
     if (text.empty()) {
       result.error_message = "Invalid JSON structure: empty text field after cleaning";
       return result;
     }
-    
+
     // Parse the search config JSON from the text
     // Use helper function to parse search config
     if (const json config_json = json::parse(text); !ParseSearchConfigFromJson(config_json, result)) {
       return result; // Error message already set
     }
-    
+
     // Log parsed search config before post-processing in debug builds
-    LOG_DEBUG_BUILD("[Gemini] Parsed config - extensions: [" 
-                    << (result.search_config.extensions.empty() ? "" : 
+    LOG_DEBUG_BUILD("[Gemini] Parsed config - extensions: ["
+                    << (result.search_config.extensions.empty() ? "" :
                         [&result]() {  // NOSONAR(cpp:S3608) - Explicit capture: result by reference
                           std::ostringstream oss;
                           for (size_t i = 0; i < result.search_config.extensions.size(); ++i) {
                             if (i > 0) oss << ", ";
-                            oss << result.search_config.extensions[i];
+                            oss << result.search_config.extensions[i];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by i < result.search_config.extensions.size() loop condition
                           }
                           return oss.str();
                         }())
                     << "], path: \"" << result.search_config.path << "\"");
-    
+
     // Post-process: Fix path pattern if it incorrectly includes extension when extensions are set
     // NOTE: With the improved prompt, this should rarely be needed, but kept as a safety net
     // Rule: If extensions are set, path pattern must NOT end with an extension
     FixPathPatternIfNeeded(result.search_config);
-    
+
     result.success = true;
     return result;
   } catch (const json::parse_error &e) {
@@ -736,7 +736,7 @@ GeminiApiResult GenerateSearchConfigFromDescription(
     std::string_view user_description,
     std::string_view api_key,
     int timeout_seconds) {
-  
+
   if (user_description.empty()) {
     LOG_ERROR_BUILD("GenerateSearchConfigFromDescription failed: user description is empty");
     GeminiApiResult result;
@@ -766,16 +766,16 @@ GeminiApiResult GenerateSearchConfigFromDescription(
   }
 
   const std::string prompt = BuildSearchConfigPrompt(user_description);
-  
+
   // Get raw JSON response (we'll parse it ourselves)
   auto [success, raw_json] = CallGeminiApiRaw(prompt, actual_api_key, timeout_seconds);
-  
+
   if (!success) {
     GeminiApiResult result;
     result.error_message = raw_json; // raw_json contains error message on failure
     return result;
   }
-  
+
   // Parse the search config JSON from the raw response
   return ParseSearchConfigJson(raw_json);
 }
@@ -787,7 +787,7 @@ std::future<GeminiApiResult> GenerateSearchConfigAsync(
   // Capture parameters by value for async execution
   const std::string desc_str(user_description);
   const std::string key_str(api_key);
-  
+
   // Launch async task
   return std::async(std::launch::async, [desc_str, key_str, timeout_seconds]() {  // NOLINT(bugprone-exception-escape) - exceptions propagate to std::future
     return GenerateSearchConfigFromDescription(desc_str, key_str, timeout_seconds);

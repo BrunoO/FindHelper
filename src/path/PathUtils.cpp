@@ -77,6 +77,14 @@ std::string GetDefaultVolumeRootPath() {
 #endif  // _WIN32
 }
 
+std::string_view GetDefaultVolumeRootPathView() {
+#ifdef _WIN32
+  return g_defaultVolumeRootPath;
+#else
+  return "/";
+#endif  // _WIN32
+}
+
 std::string GetDefaultUserRootPath() {
 #ifdef _WIN32
   return JoinPath(GetDefaultVolumeRootPath(), "Users") + kPathSeparatorStr;
@@ -104,7 +112,7 @@ std::string GetUserHomePath() {
 #else
   // macOS/Linux: Use HOME environment variable
   // NOLINTNEXTLINE(concurrency-mt-unsafe) - getenv one-time init
-  if (const char* home = std::getenv("HOME"); home != nullptr) {  // NOLINT(cppcoreguidelines-init-variables) - init-statement; getenv initializes
+  if (const char* home = std::getenv("HOME"); home != nullptr) {
     return {home};
   }
   return GetDefaultUserRootPath();
@@ -268,7 +276,7 @@ bool IsPathAbsolute(std::string_view path) {
   }
   return false;
 #else
-  return !path.empty() && path[0] == '/';
+  return !path.empty() && path[0] == '/';  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by !path.empty()
 #endif  // _WIN32
 }
 
@@ -305,12 +313,12 @@ std::string JoinPath(const std::vector<std::string>& components) {
     return "";
   }
   if (components.size() == 1) {
-    return components[0];
+    return components[0];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by size() == 1
   }
 
-  std::string result = components[0];
+  std::string result = components[0];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by size() >= 2
   for (size_t i = 1; i < components.size(); ++i) {
-    result = JoinPath(result, components[i]);
+    result = JoinPath(result, components[i]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i < components.size()
   }
   return result;
 }
@@ -390,7 +398,7 @@ static std::pair<std::string_view, size_t> DetectUncPathRoot(std::string_view pa
  */
 #ifndef _WIN32
 static std::pair<std::string_view, size_t> DetectUnixRoot(std::string_view path) {
-  if (path.empty() || path[0] != '/') {
+  if (path.empty() || path[0] != '/') {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by path.empty()
     return {std::string_view{}, 0};
   }
 

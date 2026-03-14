@@ -45,9 +45,9 @@ struct SearchStats {
 /** Lightweight result data extracted during search (avoids FileEntry lookup).
  * fullPath is a view into PathStorage SoA; must not outlive the search/merge phase. */
 struct SearchResultData {  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - members default-constructed
-  uint64_t id = 0;  // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  std::string_view fullPath;  // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes) - view into SoA path_storage
-  bool isDirectory = false;  // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  uint64_t id = 0;  // NOLINT(readability-identifier-naming)
+  std::string_view fullPath;  // NOLINT(readability-identifier-naming) - view into SoA path_storage
+  bool isDirectory = false;  // NOLINT(readability-identifier-naming)
 };
 
 /** Column indices for the results table. */
@@ -76,7 +76,7 @@ struct ThreadTiming {
 };
 
 struct SearchResult {  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - mutable string members default-constructed; fullPath is view into GuiState::searchResultPathPool
-  std::string_view fullPath;  // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes) - points into searchResultPathPool; pool must outlive this
+  std::string_view fullPath;  // NOLINT(readability-identifier-naming) - points into searchResultPathPool; pool must outlive this
 
   /**
    * @brief Get the filename part of the full path
@@ -106,45 +106,45 @@ struct SearchResult {  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-me
     return {};
   }
 
-  size_t filename_offset = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t extension_offset = std::string_view::npos; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  size_t filename_offset = 0; // NOLINT(readability-identifier-naming)
+  size_t extension_offset = std::string_view::npos; // NOLINT(readability-identifier-naming)
 
-  mutable uint64_t fileSize = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  mutable std::string fileSizeDisplay; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes, cppcoreguidelines-pro-type-member-init, hicpp-member-init) - default-constructed empty
-  mutable FILETIME lastModificationTime = {0, 0}; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes, cppcoreguidelines-pro-type-member-init, hicpp-member-init)
-  mutable std::string lastModificationDisplay; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes, cppcoreguidelines-pro-type-member-init, hicpp-member-init) - default-constructed empty
+  mutable uint64_t fileSize = 0; // NOLINT(readability-identifier-naming)
+  mutable std::string fileSizeDisplay; // NOLINT(readability-identifier-naming, cppcoreguidelines-pro-type-member-init, hicpp-member-init) - default-constructed empty
+  mutable FILETIME lastModificationTime = {0, 0}; // NOLINT(readability-identifier-naming,cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+  mutable std::string lastModificationDisplay; // NOLINT(readability-identifier-naming, cppcoreguidelines-pro-type-member-init, hicpp-member-init) - default-constructed empty
   // Cached truncated path for UI display (avoids expensive CalcTextSize every frame)
-  mutable std::string truncatedPathDisplay; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes, cppcoreguidelines-pro-type-member-init, hicpp-member-init) - default-constructed empty
-  mutable float truncatedPathColumnWidth = -1.0F; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  uint64_t fileId = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  bool isDirectory = false; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  mutable std::string truncatedPathDisplay; // NOLINT(readability-identifier-naming,cppcoreguidelines-pro-type-member-init,hicpp-member-init) - default-constructed empty
+  mutable float truncatedPathColumnWidth = -1.0F; // NOLINT(readability-identifier-naming)
+  uint64_t fileId = 0; // NOLINT(readability-identifier-naming)
+  bool isDirectory = false; // NOLINT(readability-identifier-naming)
 };
 
 struct SearchParams {  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - std::string members default-constructed
-  std::string filenameInput; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes, cppcoreguidelines-pro-type-member-init, hicpp-member-init) - default-constructed empty
-  std::string extensionInput; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes, cppcoreguidelines-pro-type-member-init, hicpp-member-init) - default-constructed empty
-  std::string pathInput; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes, cppcoreguidelines-pro-type-member-init, hicpp-member-init) - default-constructed empty
-  bool foldersOnly = false; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  bool caseSensitive = false; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  std::string filenameInput; // NOLINT(readability-identifier-naming,cppcoreguidelines-pro-type-member-init,hicpp-member-init) - default-constructed empty
+  std::string extensionInput; // NOLINT(readability-identifier-naming,cppcoreguidelines-pro-type-member-init,hicpp-member-init) - default-constructed empty
+  std::string pathInput; // NOLINT(readability-identifier-naming,cppcoreguidelines-pro-type-member-init,hicpp-member-init) - default-constructed empty
+  bool foldersOnly = false; // NOLINT(readability-identifier-naming)
+  bool caseSensitive = false; // NOLINT(readability-identifier-naming)
 };
 
 // Search metrics for performance tracking (lightweight, no overhead)
 struct SearchMetrics {
   // Counters
-  std::atomic<size_t> total_searches_{0};       // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes) - public atomic counter (SearchMetrics)
-  std::atomic<size_t> total_results_found_{0};  // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes)
+  std::atomic<size_t> total_searches_{0};       // NOLINT(readability-identifier-naming) - public atomic counter (SearchMetrics)
+  std::atomic<size_t> total_results_found_{0};  // NOLINT(readability-identifier-naming)
 
   // Timing (in milliseconds)
-  std::atomic<uint64_t> total_search_time_ms_{0};      // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes)
-  std::atomic<uint64_t> total_postprocess_time_ms_{0}; // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes)
-  std::atomic<uint64_t> max_search_time_ms_{0};        // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes)
-  std::atomic<uint64_t> max_postprocess_time_ms_{0};   // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes)
+  std::atomic<uint64_t> total_search_time_ms_{0};      // NOLINT(readability-identifier-naming)
+  std::atomic<uint64_t> total_postprocess_time_ms_{0}; // NOLINT(readability-identifier-naming)
+  std::atomic<uint64_t> max_search_time_ms_{0};        // NOLINT(readability-identifier-naming)
+  std::atomic<uint64_t> max_postprocess_time_ms_{0};   // NOLINT(readability-identifier-naming)
 
   // Last search stats (for quick reference)
-  std::atomic<uint64_t> last_search_time_ms_{0};      // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes) - Last search duration
-  std::atomic<uint64_t> last_postprocess_time_ms_{0}; // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes) - Last post-processing duration
-  std::atomic<size_t> last_results_count_{0};         // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes) - Last search results count
-  std::atomic<size_t> max_results_count_{0};          // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes) - Maximum results in single search
+  std::atomic<uint64_t> last_search_time_ms_{0};      // NOLINT(readability-identifier-naming) - Last search duration
+  std::atomic<uint64_t> last_postprocess_time_ms_{0}; // NOLINT(readability-identifier-naming) - Last post-processing duration
+  std::atomic<size_t> last_results_count_{0};         // NOLINT(readability-identifier-naming) - Last search results count
+  std::atomic<size_t> max_results_count_{0};          // NOLINT(readability-identifier-naming) - Maximum results in single search
 
   // Reset all metrics
   void Reset() {

@@ -7,19 +7,13 @@
 
 #include "imgui.h"
 
+#include "gui/ImGuiUtils.h"
 #include "ui/Theme.h"
 
 namespace ui {
 
 namespace {
   constexpr int kStoppingVerticalSpacingCount = 5;
-
-  // Helper function to add multiple vertical spacing elements
-  inline void AddVerticalSpacing(int count) {
-    for (int i = 0; i < count; ++i) {
-      ImGui::Spacing();
-    }
-  }
 }  // anonymous namespace
 
 void StoppingState::Render() {
@@ -35,7 +29,7 @@ void StoppingState::Render() {
   ImGui::SetCursorPosX((window_width - text_width) * 0.5F);
 
   ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::Text);
-  ImGui::Text("%s", stopping_text);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::Text("%s", stopping_text);
   ImGui::PopStyleColor();
 
   AddVerticalSpacing(kStoppingVerticalSpacingCount);

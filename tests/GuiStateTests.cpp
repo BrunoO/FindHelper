@@ -35,7 +35,7 @@ TEST_SUITE("GuiState Input Fields") {
 
   TEST_CASE("Default construction - all inputs empty") {
     GuiState state;
-    
+
     REQUIRE(IsInputFieldEmpty(state.extensionInput));
     REQUIRE(IsInputFieldEmpty(state.filenameInput));
     REQUIRE(IsInputFieldEmpty(state.pathInput));
@@ -46,22 +46,22 @@ TEST_SUITE("GuiState Input Fields") {
 
   TEST_CASE("ClearInputs - clears all input fields") {
     GuiState state;
-    
+
     // Set some values
     SetInputField(state.extensionInput, "txt;cpp");
     SetInputField(state.filenameInput, "test");
     SetInputField(state.pathInput, "/path/to/file");
     state.foldersOnly = true;
     state.caseSensitive = true;
-    
+
     // Verify they're set
     REQUIRE(!IsInputFieldEmpty(state.extensionInput));
     REQUIRE(!IsInputFieldEmpty(state.filenameInput));
     REQUIRE(!IsInputFieldEmpty(state.pathInput));
-    
+
     // Clear
     state.ClearInputs();
-    
+
     // Verify they're cleared
     REQUIRE(IsInputFieldEmpty(state.extensionInput));
     REQUIRE(IsInputFieldEmpty(state.filenameInput));
@@ -72,11 +72,11 @@ TEST_SUITE("GuiState Input Fields") {
 
   TEST_CASE("Input field assignment - normal strings") {
     GuiState state;
-    
+
     SetInputField(state.extensionInput, "txt");
     SetInputField(state.filenameInput, "test");
     SetInputField(state.pathInput, "/path");
-    
+
     REQUIRE(state.extensionInput.AsString() == "txt");
     REQUIRE(state.filenameInput.AsString() == "test");
     REQUIRE(state.pathInput.AsString() == "/path");
@@ -115,20 +115,20 @@ TEST_SUITE("GuiState Input Fields") {
 
   TEST_CASE("Input field assignment - empty string") {
     GuiState state;
-    
+
     SetInputField(state.filenameInput, "test");
     REQUIRE(!IsInputFieldEmpty(state.filenameInput));
-    
+
     SetInputField(state.filenameInput, "");
     REQUIRE(IsInputFieldEmpty(state.filenameInput));
   }
 
   TEST_CASE("Input field direct assignment (clear with Clear())") {
     GuiState state;
-    
+
     SetInputField(state.filenameInput, "test");
     REQUIRE(!IsInputFieldEmpty(state.filenameInput));
-    
+
     // Use Clear() method
     state.filenameInput.Clear();
     REQUIRE(IsInputFieldEmpty(state.filenameInput));
@@ -136,18 +136,18 @@ TEST_SUITE("GuiState Input Fields") {
 
   TEST_CASE("Input field - special characters") {
     GuiState state;
-    
+
     std::string special = "test/file\\path:name*?";
     SetInputField(state.pathInput, special);
-    
+
     REQUIRE(state.pathInput.AsString() == special);
   }
 
   TEST_CASE("Input field - conversion to std::string") {
     GuiState state;
-    
+
     SetInputField(state.filenameInput, "test");
-    
+
     // Implicit conversion (as used in BuildSearchParams)
     std::string str = state.filenameInput;
     REQUIRE(str == "test");
@@ -164,9 +164,9 @@ TEST_SUITE("GuiState::BuildCurrentSearchParams") {
     state.pathInput.SetValue("/path");
     state.foldersOnly = true;
     state.caseSensitive = true;
-    
+
     SearchParams params = state.BuildCurrentSearchParams();
-    
+
     REQUIRE(params.filenameInput == "test");
     REQUIRE(params.extensionInput == "txt");
     REQUIRE(params.pathInput == "/path");
@@ -227,9 +227,9 @@ TEST_SUITE("GuiState::BuildCurrentSearchParams") {
     GuiState state;
     std::string long_filename(255, 'a');
     state.filenameInput.SetValue(long_filename);
-    
+
     SearchParams params = state.BuildCurrentSearchParams();
-    
+
     REQUIRE(params.filenameInput.length() == 255);
     REQUIRE(params.filenameInput == long_filename);
   }
@@ -238,9 +238,9 @@ TEST_SUITE("GuiState::BuildCurrentSearchParams") {
     GuiState state;
     std::string special = "test/file\\path:name*?";
     state.filenameInput.SetValue(special);
-    
+
     SearchParams params = state.BuildCurrentSearchParams();
-    
+
     REQUIRE(params.filenameInput == special);
   }
 
@@ -265,9 +265,9 @@ TEST_SUITE("GuiState Input Field Operations") {
 
   TEST_CASE("Input field - IsEmpty check") {
     GuiState state;
-    
+
     REQUIRE(state.filenameInput.IsEmpty());
-    
+
     SetInputField(state.filenameInput, "test");
     REQUIRE(!state.filenameInput.IsEmpty());
     REQUIRE(state.filenameInput.AsString().length() == 4);
@@ -276,10 +276,10 @@ TEST_SUITE("GuiState Input Field Operations") {
   TEST_CASE("Input field - comparison with default extensions") {
     GuiState state;
     const char* kDefaultExtensions = "txt;cpp;h;hpp;c;cc;cxx";
-    
+
     // Empty should not match
     REQUIRE(state.extensionInput.AsString() != kDefaultExtensions);
-    
+
     // Set to default
     SetInputField(state.extensionInput, kDefaultExtensions);
     REQUIRE(state.extensionInput.AsString() == kDefaultExtensions);
@@ -287,7 +287,7 @@ TEST_SUITE("GuiState Input Field Operations") {
 
   TEST_CASE("Input field - buffer size verification") {
     GuiState state;
-    
+
     // Verify max length is 256
     REQUIRE(SearchInputField::MaxLength() == 256);
     REQUIRE(state.extensionInput.MaxLength() == 256);

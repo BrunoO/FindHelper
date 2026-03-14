@@ -17,8 +17,23 @@ if [[ ! -f "CMakeLists.txt" ]]; then
 fi
 
 # Check if master-orchestrator.md exists
-if [[ ! -f "docs/prompts/master-orchestrator.md" ]]; then
-    echo "Warning: docs/prompts/master-orchestrator.md not found. Review may fail." >&2
+if [[ ! -f "internal-docs/prompts/master-orchestrator.md" ]]; then
+    echo "Warning: internal-docs/prompts/master-orchestrator.md not found. Review may fail." >&2
+fi
+
+# Determine GitHub repo slug (owner/name) from origin remote for Jules
+origin_url=$(git remote get-url origin 2>/dev/null || true)
+repo_slug=""
+if [[ -n "$origin_url" ]]; then
+    # Support both HTTPS and SSH GitHub URLs
+    if [[ "$origin_url" =~ github\.com[:/]+([^/]+/[^/.]+)(\.git)?$ ]]; then
+        repo_slug="${BASH_REMATCH[1]}"
+    fi
+fi
+
+if [[ -z "$repo_slug" ]]; then
+    echo "Error: Unable to determine GitHub repo slug from 'origin' remote. Please ensure it points to GitHub (e.g. https://github.com/OWNER/REPO.git)." >&2
+    exit 1
 fi
 
 # Determine today's date for the review directory
@@ -63,7 +78,7 @@ mkdir -p "$REVIEW_DIR"
 echo "Starting Jules session for Linux build verification and comprehensive review..."
 echo "Review documents will be stored in: $REVIEW_DIR"
 
-jules remote new --repo . --session "${TODAY}-v${NEXT_VERSION} - Linux Build Verification and Comprehensive Review
+jules remote new --repo "$repo_slug" --session "${TODAY}-v${NEXT_VERSION} - Linux Build Verification and Comprehensive Review
 
 ## Context
 This is a cross-platform project (Windows primary, macOS/Linux secondary targets). You are working on Linux build verification and comprehensive code review.
@@ -92,7 +107,7 @@ This is a cross-platform project (Windows primary, macOS/Linux secondary targets
 
 ## Task 2: Comprehensive Code Review (Priority: HIGH)
 
-1. **Follow the master orchestrator**: Execute the comprehensive review following instructions in \`docs/prompts/master-orchestrator.md\`
+1. **Follow the master orchestrator**: Execute the comprehensive review following instructions in \`internal-docs/prompts/master-orchestrator.md\`
 2. **Generate all review reports** as specified in the orchestrator
 3. **Store all documents** in: \`$REVIEW_DIR\`
 4. **Include a summary** linking to all generated reports

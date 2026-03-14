@@ -9,6 +9,7 @@
  * Platform code provides path resolution and backend invalidation.
  */
 
+#include "core/Settings.h"
 #include "imgui.h"
 
 namespace font_utils {
@@ -20,6 +21,20 @@ constexpr float kFreeTypeRasterizerDensity = 1.0F;
 
 /** Set default FreeType-optimized ImFontConfig (pixel snap, oversample, density, glyph range). */
 void SetupDefaultFontConfig(ImFontConfig& config);
+
+/**
+ * Apply common font settings: set FontGlobalScale, call ConfigureFontsFromSettings, build atlas.
+ * Template parameters are compile-time function pointers so the callbacks are inlined and
+ * the function-pointer type is fully erased (resolves cpp:S5205).
+ */
+template<void (*ConfigureFonts)(const AppSettings&), void (*InvalidateBackend)()>
+inline void ApplyFontSettingsCommon(const AppSettings& settings) {
+  ImGuiIO& io = ImGui::GetIO();
+  io.FontGlobalScale = settings.fontScale;
+  ConfigureFonts(settings);
+  io.Fonts->Build();
+  InvalidateBackend();
+}
 
 /** Merge FontAwesome icon font into the current font atlas (merge mode). */
 void MergeFontAwesomeIcons(ImGuiIO& io, float font_size);

@@ -58,16 +58,16 @@ struct FileSizeCheckResult {
   bool need_time = false;
   bool has_cached_size = false;  // size already loaded; return cached_size
   uint64_t cached_size = 0;
-  std::string path;              // populated only when needs_loading == true
+  std::string path;              // populated only when needs_loading is true
 };
 
 struct ModTimeCheckResult {
   bool needs_loading = false;
   bool need_size = false;
   bool has_cached_time = false;  // time already loaded; return cached_time
-  bool is_directory = false;     // directory entry; return {0,0}
+  bool is_directory = false;     // true if directory (caller returns zero FILETIME)
   FILETIME cached_time{};        // NOLINT(readability-redundant-member-init) - FILETIME is a C struct; {} required to guarantee zero-init
-  std::string path;              // populated only when needs_loading == true
+  std::string path;              // populated only when needs_loading is true
 };
 
 // Check if file size needs loading.
@@ -240,6 +240,12 @@ uint64_t UpdateFileSizeCache(uint64_t id, uint64_t size, FILETIME mod_time, bool
 FILETIME UpdateModificationTimeCache(uint64_t id, uint64_t size, FILETIME mod_time, bool success,
                                      bool need_size, FileIndexStorage& storage,
                                      std::shared_mutex& mutex) {
+#ifndef NDEBUG
+  // Regression: when success is true, mod_time must not be a sentinel (we must not cache sentinels).
+  // Parallel to the identical check in UpdateFileSizeCache.
+  (void)id;
+  assert(!success || (!IsSentinelTime(mod_time) && !IsFailedTime(mod_time)));
+#endif  // NDEBUG
   const std::unique_lock lock(mutex);
   if (const FileEntry* entry = storage.GetEntry(id); entry != nullptr) {
     // Double-check: Did another thread load it while we were doing I/O?
@@ -349,59 +355,80 @@ FILETIME LazyAttributeLoader::GetModificationTime(
 }
 
 // Manual loading methods
-// These are called explicitly (e.g., by UI for visible rows)
-// They hold the lock during I/O (acceptable for manual loading)
-// Returns true if attribute was loaded, false if already loaded or failed
+// Called explicitly (e.g., by UI for visible rows).
+// Use same 3-phase pattern as GetFileSize/GetModificationTime: shared lock for path read,
+// I/O without lock, unique lock only for write. Reduces index_mutex_ contention during load.
+// Returns true if attribute was loaded, false if already loaded or failed.
 
 bool LazyAttributeLoader::LoadFileSize(uint64_t id) {
-  const std::unique_lock lock(index_mutex_ref_);
-  const FileEntry* entry = storage_.GetEntry(id);
-  if (entry == nullptr || entry->isDirectory) {
-    return false;
-  }
-
-  // Already loaded?
-  if (!entry->fileSize.IsNotLoaded()) {
-    return false;
-  }
-
-  // Load from disk (lock already held)
-  const std::string path = path_storage_.GetPath(id);
-  if (const FileAttributes attrs = LazyAttributeLoader::LoadAttributes(path); attrs.success) {
-    storage_.UpdateFileSize(id, attrs.fileSize);
-  } else {
-    FileEntry* const mutable_entry = storage_.GetEntryMutable(id);
-    if (mutable_entry != nullptr) {
-      mutable_entry->fileSize.MarkFailed();
+  // Phase 1: Read path under shared lock (no I/O).
+  std::string path;
+  {
+    const std::shared_lock lock(index_mutex_ref_);
+    if (const FileEntry* const entry = storage_.GetEntry(id);
+        entry == nullptr || entry->isDirectory || !entry->fileSize.IsNotLoaded()) {
+      return false;
     }
+    path = path_storage_.GetPath(id);
   }
-  return true;
+  if (!ValidatePathAndMarkFileSizeFailed(id, path, storage_, index_mutex_ref_)) {
+    return false;
+  }
+
+  // Phase 2: I/O without holding any lock.
+  const FileAttributes attrs = LazyAttributeLoader::LoadAttributes(path);
+
+  // Phase 3: Write result under unique lock with double-check.
+  const std::unique_lock lock(index_mutex_ref_);
+  if (const FileEntry* const entry = storage_.GetEntry(id);
+      entry == nullptr || entry->isDirectory || !entry->fileSize.IsNotLoaded()) {
+    return false;  // Another thread loaded it when !IsNotLoaded().
+  }
+  if (attrs.success) {
+    storage_.UpdateFileSize(id, attrs.fileSize);
+    return true;
+  }
+  if (FileEntry* const mutable_entry = storage_.GetEntryMutable(id); mutable_entry != nullptr) {
+    mutable_entry->fileSize.MarkFailed();
+  }
+  return false;
 }
 
 bool LazyAttributeLoader::LoadModificationTime(uint64_t id) {
-  const std::unique_lock lock(index_mutex_ref_);
-  const FileEntry* entry = storage_.GetEntry(id);
-  if (entry == nullptr || entry->isDirectory) {
-    return false;
-  }
-
-  // Already loaded?
-  if (!entry->lastModificationTime.IsNotLoaded()) {
-    return false;
-  }
-
-  // Load from disk (lock already held)
-  const std::string path = path_storage_.GetPath(id);
-  if (const FileAttributes attrs = LazyAttributeLoader::LoadAttributes(path); attrs.success) {
-    storage_.UpdateModificationTime(id, attrs.lastModificationTime);
-  } else {
-    FileEntry* const mutable_entry = storage_.GetEntryMutable(id);
-    if (mutable_entry != nullptr) {
-      mutable_entry->lastModificationTime.MarkFailed();
+  // Phase 1: Read path under shared lock (no I/O).
+  std::string path;
+  {
+    const std::shared_lock lock(index_mutex_ref_);
+    if (const FileEntry* const entry = storage_.GetEntry(id);
+        entry == nullptr || entry->isDirectory || !entry->lastModificationTime.IsNotLoaded()) {
+      return false;
     }
+    path = path_storage_.GetPath(id);
   }
-  const FileEntry* updated_entry = storage_.GetEntry(id);
-  return updated_entry != nullptr && !updated_entry->lastModificationTime.IsFailed();
+  if (!ValidatePathAndMarkModificationTimeFailed(id, path, storage_, index_mutex_ref_)) {
+    return false;
+  }
+
+  // Phase 2: I/O without holding any lock.
+  const FileAttributes attrs = LazyAttributeLoader::LoadAttributes(path);
+  const bool success = attrs.success;
+  const FILETIME mod_time = success ? attrs.lastModificationTime : kFileTimeFailed;
+
+  // Phase 3: Write result under unique lock with double-check.
+  const std::unique_lock lock(index_mutex_ref_);
+  if (const FileEntry* const entry = storage_.GetEntry(id);
+      entry == nullptr || entry->isDirectory || !entry->lastModificationTime.IsNotLoaded()) {
+    return (entry != nullptr && !entry->isDirectory) ? !entry->lastModificationTime.IsFailed() : false;
+    // Another thread loaded (or failed): true if loaded, false if failed; null/directory -> false.
+  }
+  if (success) {
+    storage_.UpdateModificationTime(id, mod_time);
+    return true;
+  }
+  if (FileEntry* const mutable_entry = storage_.GetEntryMutable(id); mutable_entry != nullptr) {
+    mutable_entry->lastModificationTime.MarkFailed();
+  }
+  return false;
 }
 
 namespace {

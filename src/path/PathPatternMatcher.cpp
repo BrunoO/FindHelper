@@ -51,18 +51,18 @@ namespace path_pattern {
 
 // Helper types for Pattern implementation (moved from anonymous namespace to avoid ambiguity)
 struct CharClass {
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool negate = false;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool has_any = false;  // when true, class matches any character
   // Simple ASCII bitmap for 256 possible characters.
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::array<bool, 256> bitmap =
     {};  // Fixed-size bitmap for performance-critical pattern matching (hot path)
 
   [[nodiscard]] bool Matches(char c, bool /*case_insensitive*/) const {
     const auto uc = static_cast<unsigned char>(c);
-    const bool in_class = has_any ? true : bitmap.at(uc);  // NOLINT(cppcoreguidelines-init-variables) - Initialized from ternary expression
+    const bool in_class = has_any ? true : bitmap.at(uc);
     return negate ? !in_class : in_class;
   }
 };
@@ -79,21 +79,21 @@ enum class AtomKind {
 };
 
 struct Atom {
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   AtomKind kind = AtomKind::kLiteral;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   char literal = '\0';
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   CharClass char_class{};
   // Quantifier bounds for this atom: min <= count <= max.
   // max == max_uint32 means "unbounded".
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   unsigned min_count = 1;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   unsigned max_count = 1;
 
   [[nodiscard]] bool IsUnbounded() const {
-    return max_count == (std::numeric_limits<unsigned>::max)();
+    return max_count == std::numeric_limits<unsigned>::max();
   }
 };
 
@@ -202,7 +202,7 @@ inline StateMask ComputeNfaTransitions(const SimpleToken* tokens, size_t token_c
       continue;
     }
 
-    const SimpleToken& tok = tokens[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - hot path; tokens is contiguous array
+    const SimpleToken& tok = tokens[i];
     bool matches = false;
 
     switch (tok.kind) {
@@ -257,6 +257,7 @@ inline StateMask ComputeNfaTransitions(const SimpleToken* tokens, size_t token_c
  * @return DFA state index, or CompiledPathPattern::kInvalidDfaState if state explosion
  */
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,readability-identifier-naming) - This is a function, not a global variable (false positive)
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 inline std::uint16_t FindOrCreateDfaState(std::vector<StateMask>& nfa_state_sets,
                                           std::vector<std::uint16_t>& dfa_state_map,
                                           StateMask next_nfa, StateMask accept_nfa_mask,
@@ -294,10 +295,12 @@ inline std::uint16_t FindOrCreateDfaState(std::vector<StateMask>& nfa_state_sets
 
   return next_dfa_state;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Build simple tokens from a normalized pattern string. Assumes the pattern
 // does not use advanced features (no [], {}, \d, \w, anchors).
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,readability-identifier-naming) - This is a function, not a global variable (false positive)
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 bool BuildSimpleTokens(std::string_view pattern, std::vector<SimpleToken>& tokens) {
   tokens.clear();
   tokens.reserve(pattern.size());
@@ -337,13 +340,14 @@ bool BuildSimpleTokens(std::string_view pattern, std::vector<SimpleToken>& token
   // single 64-bit mask.
   return tokens.size() + 1 <= 64;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Epsilon-mask computation: for each '*' or '**' at position i,
 // it indicates that being at position i also allows being at position i+1.
 StateMask ComputeEpsilonMask(const SimpleToken* tokens, size_t count) {
   StateMask mask = 0;
   for (size_t i = 0; i < count; ++i) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) - hot path; tokens is contiguous array
+
     if (tokens[i].kind == SimpleTokKind::kStarNonSep || tokens[i].kind == SimpleTokKind::kStarAny) {
       mask |= Bit(i);
     }
@@ -377,7 +381,7 @@ StateMask StepSimpleNfaOptimized(const SimpleToken* tokens, size_t n, StateMask 
       continue;
     }
 
-    const SimpleToken& tok = tokens[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - hot path; tokens is contiguous array
+    const SimpleToken& tok = tokens[i];
     switch (tok.kind) {
       case SimpleTokKind::kLiteral:
         if (CharsEqual(c, tok.literal, case_insensitive)) {
@@ -424,6 +428,7 @@ struct BuildDfaOutput {
 
 // DFA conversion: Convert NFA to DFA using subset construction.
 // Returns unique_ptr to DFA table if successfully built, nullptr otherwise (falls back to NFA).
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 std::unique_ptr<std::uint16_t[]> BuildDfa(  // NOLINT(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays) - dynamic DFA table, size known at runtime
     const SimpleToken* tokens, size_t token_count,
                                           StateMask epsilon_mask, bool case_insensitive,
@@ -509,8 +514,10 @@ std::unique_ptr<std::uint16_t[]> BuildDfa(  // NOLINT(cppcoreguidelines-avoid-c-
 
   return dfa_table;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Match using DFA (faster than NFA simulation)
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 bool MatchDfa(const CompiledPathPattern& compiled, std::string_view path) {
   if (!compiled.dfa_table_ || compiled.dfa_state_count_ == 0) {
     return false;
@@ -537,8 +544,11 @@ bool MatchDfa(const CompiledPathPattern& compiled, std::string_view path) {
 
   return (current_state == compiled.dfa_accept_state_);
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 bool UsesAdvancedFeatures(std::string_view pattern) {
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+  // i < pattern.size() established by loop condition; i+1 guarded by explicit bounds check above
   for (size_t i = 0; i < pattern.size(); ++i) {
     const char c = pattern[i];
     if (c == '[' || c == ']' || c == '{' || c == '}' || c == '^' || c == '$') {
@@ -552,12 +562,13 @@ bool UsesAdvancedFeatures(std::string_view pattern) {
     }
   }
   return false;
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 }
 
 // Check if pattern is pure literal (no wildcards: *, ?, **)
 // Literal-only patterns can use direct string comparison instead of DFA/NFA
 bool IsLiteralOnly(std::string_view pattern) {
-  return std::all_of(pattern.begin(), pattern.end(),
+  return std::all_of(pattern.begin(), pattern.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
                      [](char c) { return c != '*' && c != '?'; });
 }
 
@@ -574,6 +585,7 @@ void AddCharToClass(CharClass& cc, unsigned char c, bool case_insensitive) {
 
 // Parse a character class starting at pattern[pos] == '['.
 // On success, returns true and updates pos to the character after ']'.
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 bool ParseCharClass(std::string_view pattern, unsigned& pos, bool case_insensitive,
                     CharClass& out_class) {
   if (pos >= pattern.size() || pattern[pos] != '[') {
@@ -641,8 +653,10 @@ bool ParseCharClass(std::string_view pattern, unsigned& pos, bool case_insensiti
 
   return false;  // unterminated class
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Parse an unsigned integer from pattern starting at pos.
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 bool ParseUnsigned(std::string_view pattern, unsigned& pos, unsigned& value_out) {
   if (pos >= pattern.size() || !IsDigit(pattern[pos])) {
     return false;
@@ -651,9 +665,9 @@ bool ParseUnsigned(std::string_view pattern, unsigned& pos, unsigned& value_out)
   while (pos < pattern.size() && IsDigit(pattern[pos])) {
     constexpr unsigned kDecimalBase = 10u;
     if (auto digit = static_cast<unsigned>(pattern[pos] - '0');
-        value > ((std::numeric_limits<unsigned>::max)() - digit) / kDecimalBase) {
+        value > (std::numeric_limits<unsigned>::max() - digit) / kDecimalBase) {
       // Overflow, clamp to max.
-      value = (std::numeric_limits<unsigned>::max)();
+      value = std::numeric_limits<unsigned>::max();
     } else {
       value = (value * kDecimalBase) + digit;  // NOLINT(readability-math-missing-parentheses) - Parentheses added for clarity
     }
@@ -662,8 +676,10 @@ bool ParseUnsigned(std::string_view pattern, unsigned& pos, unsigned& value_out)
   value_out = value;
   return true;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Parse quantifier following an atom: ?, *, +, {m}, {m,}, {m,n}
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 void ParseQuantifier(std::string_view pattern, unsigned& pos, unsigned& min_count,
                      unsigned& max_count) {
   if (pos >= pattern.size()) {
@@ -679,13 +695,13 @@ void ParseQuantifier(std::string_view pattern, unsigned& pos, unsigned& min_coun
   }
   if (c == '*') {
     min_count = 0;
-    max_count = (std::numeric_limits<unsigned>::max)();
+    max_count = std::numeric_limits<unsigned>::max();
     ++pos;
     return;
   }
   if (c == '+') {
     min_count = 1;
-    max_count = (std::numeric_limits<unsigned>::max)();
+    max_count = std::numeric_limits<unsigned>::max();
     ++pos;
     return;
   }
@@ -693,7 +709,7 @@ void ParseQuantifier(std::string_view pattern, unsigned& pos, unsigned& min_coun
     ++pos;  // consume '{'
     unsigned m = 0;  // NOLINT(misc-const-correctness) - m is modified by ParseUnsigned (passed by non-const reference), cannot be const
     unsigned n = 0;  // NOLINT(misc-const-correctness) - n is modified by ParseUnsigned (passed by non-const reference), cannot be const; n is conventional for next/max value
-    if (const bool has_m = ParseUnsigned(pattern, pos, m); !has_m) {  // NOLINT(cppcoreguidelines-init-variables) - Variable initialized in C++17 init-statement
+    if (const bool has_m = ParseUnsigned(pattern, pos, m); !has_m) {
       return;
     }
     if (pos < pattern.size() && pattern[pos] == '}') {
@@ -710,10 +726,10 @@ void ParseQuantifier(std::string_view pattern, unsigned& pos, unsigned& min_coun
         ++pos;
         const unsigned min_val = m;  // NOLINTNEXTLINE(misc-const-correctness) - m is modified by ParseUnsigned, but min_val is const
         min_count = min_val;
-        max_count = (std::numeric_limits<unsigned>::max)();
+        max_count = std::numeric_limits<unsigned>::max();
         return;
       }
-      if (const bool has_n = ParseUnsigned(pattern, pos, n); !has_n) {  // NOLINT(cppcoreguidelines-init-variables) - Variable initialized in C++17 init-statement
+      if (const bool has_n = ParseUnsigned(pattern, pos, n); !has_n) {
         return;
       }
       if (pos < pattern.size() && pattern[pos] == '}') {
@@ -727,9 +743,11 @@ void ParseQuantifier(std::string_view pattern, unsigned& pos, unsigned& min_coun
     }
   }
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Helper function to parse escape sequences (\d, \w, or literal \)
 // Returns true if atom was set, false if parsing failed
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 bool ParseEscapeSequence(std::string_view pattern, unsigned& pos, Atom& atom) {
   if (pos + 1 >= pattern.size()) {
     atom.kind = AtomKind::kLiteral;
@@ -737,7 +755,7 @@ bool ParseEscapeSequence(std::string_view pattern, unsigned& pos, Atom& atom) {
     ++pos;
     return true;
   }
-  
+
   const char esc = pattern[pos + 1];
   if (esc == 'd') {
     atom.kind = AtomKind::kDigit;
@@ -749,15 +767,17 @@ bool ParseEscapeSequence(std::string_view pattern, unsigned& pos, Atom& atom) {
     pos += 2;
     return true;
   }
-  
+
   // Literal backslash
   atom.kind = AtomKind::kLiteral;
   atom.literal = '\\';
   ++pos;
   return true;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Anonymous namespace is acceptable for internal linkage; complexity is inherent to pattern compilation algorithm
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 Pattern CompilePattern(std::string_view pattern, bool case_insensitive) {
   Pattern compiled;
   compiled.case_insensitive = case_insensitive;
@@ -785,12 +805,12 @@ Pattern CompilePattern(std::string_view pattern, bool case_insensitive) {
       if (pos + 1 < pattern.size() && pattern[pos + 1] == '*') {
         atom.kind = AtomKind::kDoubleStar;
         atom.min_count = 0;
-        atom.max_count = (std::numeric_limits<unsigned>::max)();
+        atom.max_count = std::numeric_limits<unsigned>::max();
         pos += 2;
       } else {
         atom.kind = AtomKind::kStar;
         atom.min_count = 0;
-        atom.max_count = (std::numeric_limits<unsigned>::max)();
+        atom.max_count = std::numeric_limits<unsigned>::max();
         ++pos;
       }
     } else if (c == '?') {
@@ -823,8 +843,10 @@ Pattern CompilePattern(std::string_view pattern, bool case_insensitive) {
   compiled.valid = true;
   return compiled;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Helper function to check required substring prefix match
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 bool CheckRequiredSubstringPrefix(std::string_view path, std::string_view required_substring, bool case_insensitive) {
   if (path.size() < required_substring.size()) {
     return false;
@@ -864,6 +886,7 @@ bool CheckRequiredSubstringSuffix(std::string_view path, std::string_view requir
                      required_substring.size(),
                      required_substring) == 0;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Helper function to check required substring contains match
 bool CheckRequiredSubstringContains(std::string_view path, std::string_view required_substring, bool case_insensitive) {
@@ -871,6 +894,7 @@ bool CheckRequiredSubstringContains(std::string_view path, std::string_view requ
                           : string_search::ContainsSubstring(path, required_substring);
 }
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 bool MatchAtomOnce(const Atom& atom, std::string_view path, unsigned& index,
                    bool case_insensitive) {
   if (index >= path.size()) {
@@ -908,6 +932,7 @@ bool MatchAtomOnce(const Atom& atom, std::string_view path, unsigned& index,
   }
   return match;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 // Forward declaration for use by MatchFromUnbounded and MatchFromBounded.
 bool MatchFrom(const Pattern& pattern, unsigned atom_index, std::string_view path,
@@ -1099,6 +1124,7 @@ CompiledPathPattern& CompiledPathPattern::operator=(CompiledPathPattern&& other)
  * @param anchor_end Output flag for end anchor (modified)
  * @return Pattern string without anchors
  */
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 std::string_view ExtractAnchors(std::string_view pattern, bool& anchor_start, bool& anchor_end) {
   anchor_start = false;
   anchor_end = false;
@@ -1115,6 +1141,7 @@ std::string_view ExtractAnchors(std::string_view pattern, bool& anchor_start, bo
 
   return pattern_without_anchors;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 /**
  * @brief Normalize pattern by converting double-star-slash to double-star
@@ -1143,6 +1170,7 @@ void NormalizePattern(std::string& pattern) {
  * @param compile_start Start time for timing measurements
  * @return Compiled pattern (valid = true on success)
  */
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - state index bounded by DFA construction; char cast to uint8_t gives 0-255
 CompiledPathPattern CompileSimplePattern(
   std::string_view pattern, bool case_insensitive,
   std::chrono::high_resolution_clock::time_point compile_start) {
@@ -1181,7 +1209,7 @@ CompiledPathPattern CompileSimplePattern(
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) - reinterpret_cast required for type-punning fixed-size storage array to SimpleToken*
   auto* storage = reinterpret_cast<SimpleToken*>(compiled.simple_tokens_storage.data()); // NOSONAR(cpp:S3630) - reinterpret_cast required for type-punning fixed-size storage array to SimpleToken* (performance-critical hot path)
   for (size_t i = 0; i < tokens.size(); ++i) {
-    storage[i] = tokens[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - hot path; storage is contiguous
+    storage[i] = tokens[i];
   }
   compiled.epsilon_mask = ComputeEpsilonMask(storage, tokens.size());
 
@@ -1225,6 +1253,7 @@ CompiledPathPattern CompileSimplePattern(
 
   return compiled;
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 /**
  * @brief Compile advanced pattern (with char classes, quantifiers, etc.)

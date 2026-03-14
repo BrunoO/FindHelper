@@ -41,7 +41,7 @@ public:
 
   // Default destructor (holds references, no cleanup needed)
   ~DirectoryResolver() = default;
-  
+
   // Delete copy and move (holds references)
   DirectoryResolver(const DirectoryResolver&) = delete;
   DirectoryResolver& operator=(const DirectoryResolver&) = delete;

@@ -82,30 +82,30 @@
 namespace privilege_utils {
   /**
    * @brief Drop unnecessary privileges after volume handle acquisition
-   * 
+   *
    * Should be called after opening the volume handle for USN Journal access.
    * Disables privileges that are not needed for USN Journal operations, reducing
    * the attack surface if another vulnerability is found.
-   * 
+   *
    * Privileges disabled:
    * - SE_DEBUG_PRIVILEGE: Debug programs (not needed for USN Journal)
    * - SE_TAKE_OWNERSHIP_PRIVILEGE: Take ownership of files (not needed)
    * - SE_SECURITY_PRIVILEGE: Manage auditing and security log (not needed)
    * - SE_BACKUP_PRIVILEGE: Backup files (not needed for read-only USN access)
    * - SE_RESTORE_PRIVILEGE: Restore files (not needed)
-   * 
+   *
    * Note: The volume handle opened with admin privileges remains valid and
    * usable after dropping privileges. Windows checks privileges at handle
    * creation time, not at handle use time.
-   * 
+   *
    * @return true if privileges were successfully dropped (or weren't enabled),
    *         false on error
    */
   bool DropUnnecessaryPrivileges();
-  
+
   /**
    * @brief Get list of currently enabled privileges (for debugging)
-   * 
+   *
    * @return Vector of privilege names that are currently enabled
    */
   std::vector<std::string> GetCurrentPrivileges();

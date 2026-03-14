@@ -51,18 +51,18 @@ namespace {
 // which heap-allocated a std::string on every insert (fix #6).
 inline size_t PathHashInline(std::string_view raw) {
   size_t n = raw.size();
-  while (n > 0 && (raw[n - 1] == '/' || raw[n - 1] == '\\')) { --n; }
+  while (n > 0 && (raw[n - 1] == '/' || raw[n - 1] == '\\')) { --n; }  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - n > 0 guarantees n-1 is valid
   // FNV-1a 64-bit constants (used for both 32-bit and 64-bit size_t;
   // path_to_id_ is never persisted so the hash function is internal-only).
-  static constexpr uint64_t kFnvOffsetBasis = 14695981039346656037ULL;
-  static constexpr uint64_t kFnvPrime       = 1099511628211ULL;
-  uint64_t hash = kFnvOffsetBasis;
+  static constexpr size_t kFnvOffsetBasis = 14695981039346656037ULL;
+  static constexpr size_t kFnvPrime       = 1099511628211ULL;
+  size_t hash = kFnvOffsetBasis;
   for (size_t i = 0; i < n; ++i) {
-    const auto c = static_cast<unsigned char>((raw[i] == '\\') ? '/' : raw[i]);
-    hash ^= static_cast<uint64_t>(c);
+    const auto c = static_cast<unsigned char>((raw[i] == '\\') ? '/' : raw[i]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i < n loop invariant
+    hash ^= c;  // integral promotion to size_t
     hash *= kFnvPrime;
   }
-  return static_cast<size_t>(hash);
+  return hash;
 }
 
 // Compare two raw (un-normalized) paths for equality after normalization
@@ -71,12 +71,12 @@ inline size_t PathHashInline(std::string_view raw) {
 // collision chain (fix #6).
 inline bool PathViewsEqualNormalized(std::string_view a, std::string_view b) {
   size_t a_len = a.size();
-  while (a_len > 0 && (a[a_len - 1] == '/' || a[a_len - 1] == '\\')) { --a_len; }
+  while (a_len > 0 && (a[a_len - 1] == '/' || a[a_len - 1] == '\\')) { --a_len; }  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - a_len > 0 guarantees a_len-1 is valid
   size_t b_len = b.size();
-  while (b_len > 0 && (b[b_len - 1] == '/' || b[b_len - 1] == '\\')) { --b_len; }
+  while (b_len > 0 && (b[b_len - 1] == '/' || b[b_len - 1] == '\\')) { --b_len; }  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - b_len > 0 guarantees b_len-1 is valid
   if (a_len != b_len) { return false; }
   for (size_t i = 0; i < a_len; ++i) {
-    if (((a[i] == '\\') ? '/' : a[i]) != ((b[i] == '\\') ? '/' : b[i])) { return false; }
+    if (((a[i] == '\\') ? '/' : a[i]) != ((b[i] == '\\') ? '/' : b[i])) { return false; }  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i < a_len == b_len loop invariant
   }
   return true;
 }
@@ -90,16 +90,6 @@ void LogInsertPathErrorAndIncrement(
   if (out_error_count != nullptr) {
     out_error_count->fetch_add(1, std::memory_order_relaxed);
   }
-}
-
-// Trim trailing path separators. Use for parsing and storage to avoid empty
-// filename and trailing separators in PathStorage.
-std::string_view TrimTrailingSeparators(std::string_view path) {
-  size_t n = path.size();
-  while (n > 0 && (path[n - 1] == '/' || path[n - 1] == '\\')) {
-    --n;
-  }
-  return path.substr(0, n);
 }
 
 }  // namespace
@@ -153,12 +143,12 @@ void FileIndex::UpdatePrefixLocked(std::string_view old_prefix,
 // Note: RebuildPathBuffer() has been moved to FileIndexMaintenance
 
 void FileIndex::InsertPathUnderLock(std::string_view full_path, bool is_directory) {
-  const std::string_view path_to_use = TrimTrailingSeparators(full_path);
+  const std::string_view path_to_use = path_utils::TrimTrailingSeparators(full_path);
   const size_t h = PathHashInline(path_to_use);  // zero allocation (fix #6)
   if (const auto idx_it = path_to_id_index_.find(h); idx_it != path_to_id_index_.end()) {
     size_t i = idx_it->second;
     while (i != FileIndex::kPathToIdEnd) {
-      const PathToIdEntry& e = path_to_id_chain_[i];
+      const PathToIdEntry& e = path_to_id_chain_[i];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i validated via path_to_id_index_ lookup and kPathToIdEnd sentinel
       if (PathViewsEqualNormalized(GetPathViewLocked(e.id), path_to_use)) {
         InsertPathLocked(e.id, path_to_use, is_directory);
         return;
@@ -194,8 +184,8 @@ void FileIndex::InsertPathUnderLock(std::string_view full_path, bool is_director
     filename = path_to_use;
   }
 
-  const uint64_t parent_id = directory_resolver_.GetOrCreateDirectoryId(directory_path);  // NOLINT(cppcoreguidelines-init-variables) - initialized from GetOrCreateDirectoryId()
-  const uint64_t file_id = next_file_id_.fetch_add(1, std::memory_order_relaxed);  // NOLINT(cppcoreguidelines-init-variables) - initialized from fetch_add()
+  const uint64_t parent_id = directory_resolver_.GetOrCreateDirectoryId(directory_path);
+  const uint64_t file_id = next_file_id_.fetch_add(1, std::memory_order_relaxed);
 
   InsertLocked(file_id, parent_id, filename, is_directory, kFileTimeNotLoaded);
   if (is_directory) {
@@ -254,6 +244,11 @@ void FileIndex::Clear() {
   LOG_INFO_BUILD("FileIndex::Clear: Cleared all entries from index");
 }
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+// All path_to_id_chain_ accesses use indices that originate from
+// path_to_id_index_ (a validated map lookup) or are traversed via the
+// .next sentinel chain (kPathToIdEnd). Bounds are guaranteed by chain
+// invariants maintained by InsertPathUnderLock / UnlinkPathToIdEntryLocked.
 void FileIndex::UpdatePathToIdChainAfterSwapLocked(size_t old_index, size_t new_index) {
   const size_t moved_h = path_to_id_chain_[new_index].hash;
   if (const auto moved_it = path_to_id_index_.find(moved_h);
@@ -267,7 +262,11 @@ void FileIndex::UpdatePathToIdChainAfterSwapLocked(size_t old_index, size_t new_
     path_to_id_chain_[j].next = new_index;
   }
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+// path_to_id_chain_ accesses are guarded by explicit index checks (i != kPathToIdEnd,
+// prev != kPathToIdEnd, last = size()-1) — bounds are validated before each access.
 void FileIndex::UnlinkPathToIdEntryLocked(size_t h, uint64_t id) {
   const auto idx_it = path_to_id_index_.find(h);
   if (idx_it == path_to_id_index_.end()) {
@@ -300,6 +299,7 @@ void FileIndex::UnlinkPathToIdEntryLocked(size_t h, uint64_t id) {
     return;
   }
 }
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 void FileIndex::Remove(uint64_t id) {
   const std::unique_lock lock(index_mutex_);
@@ -409,24 +409,6 @@ std::vector<std::future<std::vector<uint64_t>>> FileIndex::SearchAsync(  // NOSO
   // total_matches_found_ and duration_milliseconds_ should be populated by caller after collecting results
   return search_engine_->SearchAsync(*this, std::string_view(query), thread_count, context, stats);
 }
-
-// Helper function to extract filename and extension from path
-namespace file_index_detail {
-void ExtractFilenameAndExtension(const char *path, size_t filename_start_offset,
-                                 size_t extension_start_offset,
-                                 std::string &out_filename,
-                                 std::string &out_extension) {
-  const char *filename_start = path + filename_start_offset;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  if (extension_start_offset != SIZE_MAX) {
-    const size_t filename_len = extension_start_offset - filename_start_offset - 1;
-    out_filename.assign(filename_start, filename_len);
-    out_extension.assign(path + extension_start_offset);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  } else {
-    out_filename.assign(filename_start);
-    out_extension.clear();
-  }
-}
-}  // namespace file_index_detail
 
 // This API is intentionally explicit with multiple parameters to mirror search configuration.
 std::vector<std::future<std::vector<SearchResultData>>> FileIndex::SearchAsyncWithData(  // NOSONAR(cpp:S107) - Parallel search API has many parameters to mirror search configuration

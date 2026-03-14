@@ -248,7 +248,6 @@ void UIRenderer::RenderManualSearchHeader(GuiState& state, bool& is_expanded) {
   state.manualSearchExpanded = is_expanded;
 
   if (!is_expanded) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui formatting API is vararg
     ImGui::TextDisabled(
       "[TIP] For precise control: specify path patterns, extensions, and filters directly");
   }
@@ -314,7 +313,6 @@ void UIRenderer::RenderAISearchSection(const RenderMainWindowContext& context) {
   if (ai_is_expanded) {
     if (settings.showWorkflowHint && api_key_set) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui formatting API is vararg
       ImGui::TextWrapped("[TIP] Start here: Describe what you're looking for in natural language. "
                          "For manual control, use Manual Search above.");
       ImGui::PopStyleColor();

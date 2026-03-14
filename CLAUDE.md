@@ -77,6 +77,8 @@ build/FindHelper.app/Contents/MacOS/FindHelper --index-from-file=tests/data/std-
 | Option | Default | Description |
 |--------|---------|-------------|
 | `BUILD_TESTS` | `ON` | Build unit tests |
+| `ENABLE_ASAN` | `ON` | Address Sanitizer for tests (GCC/Clang; memory bugs) |
+| `ENABLE_TSAN` | `OFF` | Thread Sanitizer for tests (macOS/Linux only; data races; mutually exclusive with ASAN) |
 | `ENABLE_IMGUI_TEST_ENGINE` | `OFF` | In-process UI tests (macOS) |
 | `FAST_LIBS_BOOST` | `OFF` | Use Boost (unordered_map, regex, lockfree) |
 | `ENABLE_MFT_METADATA_READING` | `OFF` | Read size/mod time from MFT on initial populate (Windows) |

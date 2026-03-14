@@ -54,7 +54,7 @@ bool SearchResultsService::HandleTableSorting(GuiState& state,
   if (sort_specs->SpecsDirty) {
     const ScopedTimer timer("Search - Sorting");
     if (sort_specs->SpecsCount > 0) {
-      const ImGuiTableColumnSortSpecs& spec = sort_specs->Specs[0];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) NOSONAR(cpp:S3786) - ImGui API
+      const ImGuiTableColumnSortSpecs& spec = sort_specs->Specs[0];
       state.lastSortColumn = spec.ColumnIndex;
       state.lastSortDirection = spec.SortDirection;
 
@@ -65,9 +65,7 @@ bool SearchResultsService::HandleTableSorting(GuiState& state,
         // For other columns, sort immediately (no attribute loading needed)
         SortSearchResults(state.searchResults, spec.ColumnIndex, spec.SortDirection, file_index, thread_pool);
         // Invalidate and rebuild filter caches after sorting
-        state.timeFilterCacheValid = false;
-        state.sizeFilterCacheValid = false;
-        state.InvalidateDisplayedTotalSize();
+        state.InvalidateFilterCacheFlags();
         UpdateTimeFilterCacheIfNeeded(state, file_index, &thread_pool);
         UpdateSizeFilterCacheIfNeeded(state, file_index);
       }
@@ -85,9 +83,7 @@ bool SearchResultsService::HandleTableSorting(GuiState& state,
       // For other columns, sort immediately (no attribute loading needed)
       SortSearchResults(state.searchResults, state.lastSortColumn, state.lastSortDirection, file_index, thread_pool);
       // Invalidate and rebuild filter caches after sorting
-      state.timeFilterCacheValid = false;
-      state.sizeFilterCacheValid = false;
-      state.InvalidateDisplayedTotalSize();
+      state.InvalidateFilterCacheFlags();
       UpdateTimeFilterCacheIfNeeded(state, file_index, &thread_pool);
       UpdateSizeFilterCacheIfNeeded(state, file_index);
     }
@@ -96,7 +92,7 @@ bool SearchResultsService::HandleTableSorting(GuiState& state,
     state.resultsUpdated = false;
     return true;
   }
-  
+
   return false;
 }
 
@@ -112,9 +108,7 @@ bool SearchResultsService::CheckAndCompleteAsyncSort(GuiState& state,
           state.lastSortDirection, state.sort_generation_)) {
     // Sort completed - invalidate and rebuild filter caches
     // Caches must be invalidated because searchResults order changed
-    state.timeFilterCacheValid = false;
-    state.sizeFilterCacheValid = false;
-    state.InvalidateDisplayedTotalSize();
+    state.InvalidateFilterCacheFlags();
 
     // Piggyback: if we just sorted by Size or Last Modified, all attributes are loaded.
     // Sum immediately to avoid unnecessary progressive computation frames.

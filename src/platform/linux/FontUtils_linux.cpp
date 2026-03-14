@@ -185,14 +185,8 @@ void ConfigureFontsFromSettings(const AppSettings& settings) {
 }
 
 void ApplyFontSettings(const AppSettings& settings) {
-  ImGuiIO& io = ImGui::GetIO();
-
-  io.FontGlobalScale = settings.fontScale;
-
-  ConfigureFontsFromSettings(settings);
-  io.Fonts->Build();
-
-  ImGui_ImplOpenGL3_DestroyDeviceObjects();
+  font_utils::ApplyFontSettingsCommon<ConfigureFontsFromSettings,
+                                      ImGui_ImplOpenGL3_DestroyDeviceObjects>(settings);
 }
 
 #endif  // __linux__

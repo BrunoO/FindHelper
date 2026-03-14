@@ -17,37 +17,51 @@
 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - struct with public members; string/mutex default-inits  // NOSONAR(cpp:S125) - directive, not commented-out code
 struct IndexBuildState {
   // Lifecycle flags
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<bool> active{false};            ///< true while an index build is in progress
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<bool> completed{false};         ///< true when build finished successfully
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<bool> failed{false};            ///< true when build terminated with an error
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<bool> cancel_requested{false};  ///< cooperative cancellation flag
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<bool> finalizing_population{false};  ///< true while FinalizeInitialPopulation() is running (prevents search race condition)
 
   // Progress metrics (coarse-grained, safe for UI polling)
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<size_t> entries_processed{0};   ///< total entries (files + dirs) seen so far
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<size_t> files_processed{0};     ///< files processed so far
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<size_t> dirs_processed{0};      ///< directories processed so far
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::atomic<size_t> errors{0};              ///< non-fatal errors encountered
 
   // Human-readable description of the current/last build source
   // Examples: "USN Journal", "Folder crawl: /home/user", "Index file: /tmp/index.json"
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes,cppcoreguidelines-pro-type-member-init) - Struct with public members; std::string/mutex default-inits
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init) - Struct with public members; std::string/mutex default-inits
   std::string source_description;
 
   // Optional last error message (guarded by mutex for rare writes)
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes,cppcoreguidelines-pro-type-member-init) - Struct with public members
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init) - Struct with public members
   std::string last_error_message;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes,cppcoreguidelines-pro-type-member-init) - Struct with public members
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init) - Struct with public members
   mutable std::mutex last_error_mutex;
+
+  /**
+   * @brief Mark the build as active and reset completion / failure flags.
+   *
+   * Called at the start of every index-builder Start() implementation to
+   * initialise the lifecycle flags with release ordering before any worker
+   * thread is launched.
+   */
+  void MarkStarting() {
+    active.store(true, std::memory_order_release);
+    completed.store(false, std::memory_order_release);
+    failed.store(false, std::memory_order_release);
+    cancel_requested.store(false, std::memory_order_release);
+  }
 
   void Reset() {
     active.store(false, std::memory_order_relaxed);

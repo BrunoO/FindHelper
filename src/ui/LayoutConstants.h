@@ -31,6 +31,8 @@ struct LayoutConstants {
   static constexpr float kFooterHeightMultiplierStatusOnly = 1.5F;
   /** Footer reserved height = frame_height * this (full UI: saved searches + status bar). */
   static constexpr float kFooterHeightMultiplierWithSavedSearches = 3.0F;
+  /** Width in pixels for secondary modal/tool-window buttons (Close, Cancel, Delete). Keeps sizing consistent across popups. */
+  static constexpr float kSecondaryButtonWidth = 120.0F;
 };
 
 }  // namespace ui

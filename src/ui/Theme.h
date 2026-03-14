@@ -81,6 +81,17 @@ class Theme {
    */
   static void Apply(bool viewports_enabled = false);
 
+  /**
+   * @brief Push the 4 accent button style colors (Button, ButtonHovered, ButtonActive, Text).
+   * Must be matched by a call to PopAccentButtonStyle().
+   */
+  static void PushAccentButtonStyle();
+
+  /**
+   * @brief Pop the 4 accent button style colors pushed by PushAccentButtonStyle().
+   */
+  static void PopAccentButtonStyle();
+
  private:
   static void SetupColors();
   static void SetupStyle(bool viewports_enabled);

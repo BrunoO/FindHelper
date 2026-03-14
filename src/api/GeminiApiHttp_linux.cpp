@@ -2,47 +2,13 @@
 #include "utils/Logger.h"
 
 #include <curl/curl.h>
-#include <sstream>
 #include <string>
 #include <vector>
 
 namespace gemini_api_utils {
 
 namespace {
-  // Maximum response size limit
-  constexpr size_t kMaxResponseSize = size_t{1024} * 1024;  // 1MB
   constexpr size_t kCurlErrorBufferSize = CURL_ERROR_SIZE;
-
-  // HTTP status codes
-  constexpr int64_t kHttpStatusOk = 200;
-
-  // Helper: Escape JSON string (basic escaping for prompt text)
-  std::string EscapeJsonString(std::string_view str) {
-    std::ostringstream oss;
-    for (const char c : str) {
-      switch (c) {
-      case '"':
-        oss << "\\\"";  // NOSONAR(cpp:S3628) - Raw string literal would be less readable for JSON escaping
-        break;
-      case '\\':
-        oss << "\\\\";  // NOSONAR(cpp:S3628) - Raw string literal would be less readable for JSON escaping
-        break;
-      case '\n':
-        oss << "\\n";
-        break;
-      case '\r':
-        oss << "\\r";
-        break;
-      case '\t':
-        oss << "\\t";
-        break;
-      default:
-        oss << c;
-        break;
-      }
-    }
-    return oss.str();
-  }
 
   // Write callback for libcurl
   // Note: void* parameter is required by libcurl C API callback signature (CURLOPT_WRITEFUNCTION).
@@ -61,74 +27,55 @@ std::pair<bool, std::string> CallGeminiApiHttpPlatform(
     std::string_view prompt,
     std::string_view api_key,
     int timeout_seconds) {
-  
+
   // Build JSON request body
-  const std::string escaped_prompt = EscapeJsonString(prompt);
-  std::ostringstream json_body;
-  json_body << R"({"contents":[{"parts":[{"text":")"
-            << escaped_prompt
-            << R"("}]}]})";
-  const std::string body_str = json_body.str();
-  
+  const std::string body_str = BuildGeminiRequestBody(prompt);
+
   // Initialize libcurl
   CURL* curl = curl_easy_init();
   if (curl == nullptr) {
     LOG_ERROR_BUILD("Gemini API HTTP call failed: failed to initialize libcurl");
     return {false, "Failed to initialize libcurl"};
   }
-  
+
   std::string response_data;
   std::vector<char> error_buffer(kCurlErrorBufferSize, '\0');
-  
+
   // Set URL
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_URL,
                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent");
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str.c_str());
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body_str.size());
   // Set headers
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");
   const std::string api_key_header = "x-goog-api-key: " + std::string(api_key);
   headers = curl_slist_append(headers, api_key_header.c_str());
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, error_buffer.data());
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, static_cast<int64_t>(timeout_seconds));
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, static_cast<int64_t>(timeout_seconds));
   // Enable SSL/TLS with minimum TLS 1.2 (allows TLS 1.2 and 1.3)
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);  // NOSONAR(cpp:S4423) - CURL_SSLVERSION_TLSv1_2 enforces minimum TLS 1.2
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
   curl_easy_setopt(curl, CURLOPT_USERAGENT, "FindHelper/1.0");
   // Perform request
   const CURLcode res = curl_easy_perform(curl);
   int64_t http_code = 0;
   if (res == CURLE_OK) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - libcurl C API is vararg
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
   }
-  
+
   // Cleanup headers before checking errors
   curl_slist_free_all(headers);
-  
+
   // Handle errors
   if (res != CURLE_OK) {
     std::string error_msg = "Network error: ";
-    if (error_buffer[0] != '\0') {
+    if (error_buffer.front() != '\0') {
       error_msg += error_buffer.data();
     } else {
       error_msg += curl_easy_strerror(res);
@@ -137,7 +84,7 @@ std::pair<bool, std::string> CallGeminiApiHttpPlatform(
     LOG_ERROR_BUILD("Gemini API HTTP call failed: " << error_msg);
     return {false, error_msg};
   }
-  
+
   // Check HTTP status code
   if (http_code != kHttpStatusOk) {
     std::string error_msg = "HTTP error " + std::to_string(http_code);
@@ -148,17 +95,17 @@ std::pair<bool, std::string> CallGeminiApiHttpPlatform(
     LOG_ERROR_BUILD("Gemini API HTTP call failed: " << error_msg);
     return {false, error_msg};
   }
-  
+
   // Check response size limit
   if (response_data.size() > kMaxResponseSize) {
     curl_easy_cleanup(curl);
     LOG_ERROR_BUILD("Gemini API HTTP call failed: response too large (" << response_data.size() << " bytes, max " << kMaxResponseSize << ")");
     return {false, "Response too large (max 1MB)"};
   }
-  
+
   // Cleanup
   curl_easy_cleanup(curl);
-  
+
   // Return raw JSON response
   return {true, response_data};
 }

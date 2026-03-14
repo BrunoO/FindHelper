@@ -116,7 +116,7 @@ public:
 #ifdef _WIN32
     PROCESS_MEMORY_COUNTERS_EX pmc = {0};
     pmc.cb = sizeof(pmc);
-    if (GetProcessMemoryInfo(GetCurrentProcess(), 
+    if (GetProcessMemoryInfo(GetCurrentProcess(),
                              reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),  // NOSONAR(cpp:S3630) - Windows API requires reinterpret_cast to convert PROCESS_MEMORY_COUNTERS_EX* to PROCESS_MEMORY_COUNTERS*
                              sizeof(pmc))) {
       return pmc.PrivateUsage;
@@ -306,7 +306,7 @@ private:
       consoleAttached = true;
       SetConsoleTitleA("The FindHelper Experiment - Debug Console");
     }
-    
+
     if (consoleAttached) {
       // Redirect stdout and stderr to the console
       FILE* pCout;
@@ -326,7 +326,7 @@ private:
 #endif  // _WIN32
     // Get executable name
     executable_name_ = GetExecutableName();
-    
+
     if (TryOpenLogFile()) {
       // Log file path is written to the log file itself, no need for console output
       // (Console output causes Windows to allocate a console window for GUI applications)
@@ -378,27 +378,27 @@ private:
     if (result > 0 && result < MAX_PATH) {
       return std::string(temp_path);
     }
-    
+
     // Try TMP environment variable
     result = GetEnvironmentVariableA("TMP", temp_path, MAX_PATH);
     if (result > 0 && result < MAX_PATH) {
       return std::string(temp_path);
     }
-    
+
     // Fallback to <volume>/temp using shared volume root constant
     return path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "temp");
 #else
     // Security: Prefer user-specific cache directory to avoid publicly writable /tmp
     // Try XDG_CACHE_HOME first (standard on Linux)
-    if (const char* xdg_cache = std::getenv("XDG_CACHE_HOME"); xdg_cache != nullptr && xdg_cache[0] != '\0') {  // NOLINT(cppcoreguidelines-init-variables,cppcoreguidelines-pro-bounds-pointer-arithmetic,concurrency-mt-unsafe) - C++17 init-statement; GetDefaultLogDirectory only called under mutex_
+    if (const char* xdg_cache = std::getenv("XDG_CACHE_HOME"); xdg_cache != nullptr && xdg_cache[0] != '\0') {  // NOLINT(concurrency-mt-unsafe) - C++17 init-statement; GetDefaultLogDirectory only called under mutex_
       return {xdg_cache};
     }
-    
+
     // Try $HOME/.cache (fallback for XDG_CACHE_HOME)
-    if (const char* home = std::getenv("HOME"); home != nullptr && home[0] != '\0') {  // NOLINT(cppcoreguidelines-init-variables,cppcoreguidelines-pro-bounds-pointer-arithmetic,concurrency-mt-unsafe) - C++17 init-statement; GetDefaultLogDirectory only called under mutex_
+    if (const char* home = std::getenv("HOME"); home != nullptr && home[0] != '\0') {  // NOLINT(concurrency-mt-unsafe) - C++17 init-statement; GetDefaultLogDirectory only called under mutex_
       return std::string(home) + "/.cache";
     }
-    
+
     // Last resort: use /tmp (publicly writable, but better than failing)
     // Note: Log file permissions are set to 0600 to restrict access
     // /tmp is only used as last resort when $XDG_CACHE_HOME and $HOME are unavailable.
@@ -451,13 +451,13 @@ private:
     try {
       // Flush to ensure we get accurate file size
       log_file_.flush();
-      
+
       // Get current file position (which is the file size for append mode)
       const std::streampos current_pos = log_file_.tellp();
       if (current_pos < 0) {
         return; // Couldn't determine file size
       }
-      
+
       const size_t current_size_mb = static_cast<size_t>(current_pos) / logger_constants::kBytesPerMB;
 
       if (current_size_mb >= max_log_file_size_mb_) {
@@ -474,7 +474,7 @@ private:
         // Rename current log to backup
         if (std::rename(current_log_file.c_str(), backup_file.c_str()) != 0) {
           // Cannot call Log() here (we are inside Log() and hold the mutex); report to stderr
-          (void)std::fprintf(stderr, "[Logger] Log rotation rename failed: %s -> %s\n",  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - Vararg required for stderr reporting
+          (void)std::fprintf(stderr, "[Logger] Log rotation rename failed: %s -> %s\n",
                              current_log_file.c_str(), backup_file.c_str());  // NOLINT(cert-err33-c) - Best-effort report; ignore fprintf return
         }
 
@@ -600,7 +600,7 @@ private:
   #define LOG_WARNING_BUILD(expr) ((void)0) // NOLINT(cppcoreguidelines-macro-usage)
   #define LOG_IMPORTANT_BUILD(expr) LOG_BUILD_HELPER(expr, LOG_IMPORTANT) // NOLINT(cppcoreguidelines-macro-usage)
   #define LOG_ERROR_BUILD(expr) LOG_BUILD_HELPER(expr, LOG_ERROR) // NOLINT(cppcoreguidelines-macro-usage)
-  
+
   // Macros that both log and return the message string
   #define LOG_ERROR_BUILD_AND_GET(expr) LOG_BUILD_AND_GET_HELPER(expr, LOG_ERROR) // NOLINT(cppcoreguidelines-macro-usage)
   #define LOG_IMPORTANT_BUILD_AND_GET(expr) LOG_BUILD_AND_GET_HELPER(expr, LOG_IMPORTANT) // NOLINT(cppcoreguidelines-macro-usage)
@@ -612,7 +612,7 @@ private:
   #define LOG_WARNING_BUILD(expr) LOG_BUILD_HELPER(expr, LOG_WARNING) // NOLINT(cppcoreguidelines-macro-usage)
   #define LOG_IMPORTANT_BUILD(expr) LOG_BUILD_HELPER(expr, LOG_IMPORTANT) // NOLINT(cppcoreguidelines-macro-usage)
   #define LOG_ERROR_BUILD(expr) LOG_BUILD_HELPER(expr, LOG_ERROR) // NOLINT(cppcoreguidelines-macro-usage)
-  
+
   // Macros that both log and return the message string
   #define LOG_ERROR_BUILD_AND_GET(expr) LOG_BUILD_AND_GET_HELPER(expr, LOG_ERROR) // NOLINT(cppcoreguidelines-macro-usage)
   #define LOG_IMPORTANT_BUILD_AND_GET(expr) LOG_BUILD_AND_GET_HELPER(expr, LOG_IMPORTANT) // NOLINT(cppcoreguidelines-macro-usage)

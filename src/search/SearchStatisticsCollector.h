@@ -31,10 +31,10 @@ class SearchStatisticsCollector {
 public:
   /**
    * Calculate total bytes for a chunk range
-   * 
+   *
    * Calculates the total size of paths in the specified chunk range.
    * Used by load balancing strategies to estimate work distribution.
-   * 
+   *
    * @param soaView Read-only view of SoA arrays
    * @param start_index_ Start index of chunk (inclusive)
    * @param end_index_ End index of chunk (exclusive)
@@ -49,10 +49,10 @@ public:
 
   /**
    * Record thread timing information
-   * 
+   *
    * Fills in thread timing statistics for performance monitoring.
    * Used by load balancing strategies to record per-thread metrics.
-   * 
+   *
    * @param timing ThreadTiming struct to populate
    * @param thread_idx Thread index (0-based)
    * @param start_index_ Starting index for initial chunk
@@ -88,17 +88,17 @@ public:
 
   /**
    * Aggregate search results into SearchStats
-   * 
+   *
    * Aggregates results from futures and populates SearchStats with:
    * - total_matches_found_: Total number of matching results
    * - total_items_scanned_: Total number of items scanned (already set by caller)
    * - num_threads_used_: Number of threads used (already set by caller)
    * - duration_milliseconds_: Search duration in milliseconds
-   * 
+   *
    * @param stats SearchStats to populate
    * @param futures Vector of futures containing search results
    * @param start_time Start time of the search operation
-   * 
+   *
    * @tparam ResultType Type of result (uint64_t for IDs, SearchResultData for full data)
    */
   template<typename ResultType>
@@ -125,9 +125,9 @@ public:
 
   /**
    * Aggregate search results into SearchStats (overload for ID-only results)
-   * 
+   *
    * Specialized version for ID-only search results (uint64_t).
-   * 
+   *
    * @param stats SearchStats to populate
    * @param futures Vector of futures containing search result IDs (non-const because future.get() is not const)
    * @param start_time Start time of the search operation
@@ -139,9 +139,9 @@ public:
 
   /**
    * Aggregate search results into SearchStats (overload for full data results)
-   * 
+   *
    * Specialized version for full search data results (SearchResultData).
-   * 
+   *
    * @param stats SearchStats to populate
    * @param futures Vector of futures containing search result data (non-const because future.get() is not const)
    * @param start_time Start time of the search operation

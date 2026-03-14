@@ -12,7 +12,7 @@ class ThreadPool {
 public:
     explicit ThreadPool(size_t threads);
     ~ThreadPool();
-    
+
     // Non-copyable, non-movable (manages threads)
     ThreadPool(const ThreadPool&) = delete;
     ThreadPool& operator=(const ThreadPool&) = delete;

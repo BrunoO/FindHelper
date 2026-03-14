@@ -47,7 +47,7 @@ public:
 
   // Default destructor (holds references, no cleanup needed)
   ~IndexOperations() = default;
-  
+
   // Delete copy and move (holds references)
   IndexOperations(const IndexOperations&) = delete;
   IndexOperations& operator=(const IndexOperations&) = delete;

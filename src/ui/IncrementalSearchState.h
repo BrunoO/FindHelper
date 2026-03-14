@@ -143,6 +143,7 @@ class IncrementalSearchState {
  private:
   void RebuildFilter(const std::vector<SearchResult>& base_results);
   void Reset(int& selected_row);
+  void ClearFilterState();
 
   // NOLINTNEXTLINE(readability-identifier-naming) - Private members use snake_case_ per project convention
   bool prompt_visible_ = false;

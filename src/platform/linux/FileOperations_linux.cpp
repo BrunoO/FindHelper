@@ -37,7 +37,6 @@
 #include <unistd.h>
 #include <vector>
 
-#include "utils/ClipboardUtils.h"
 #include "utils/Logger.h"
 #include "utils/PlatformTypes.h"
 #include "utils/StringUtils.h"
@@ -89,60 +88,58 @@ namespace internal {
       LOG_ERROR(std::string("Failed to create pipe for stderr capture: ") + program);
       return false;
     }
-    
+
     const pid_t pid = fork();
     if (pid == -1) {
-      close(stderr_pipe[0]);
-      close(stderr_pipe[1]);
+      close(stderr_pipe[0]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - std::array<int,2> pipe fds; index always 0 or 1
+      close(stderr_pipe[1]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
       LOG_ERROR(std::string("Failed to fork process for ") + program);
       return false;
     }
-    
+
     if (pid == 0) {
       // Child process - execute the command
       // Redirect stderr to write end of pipe
-      close(stderr_pipe[0]);  // Close read end (not needed in child)
-      dup2(stderr_pipe[1], STDERR_FILENO);
-      close(stderr_pipe[1]);  // Close original fd (STDERR_FILENO now points to pipe)
-      
+      close(stderr_pipe[0]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - Close read end (not needed in child)
+      dup2(stderr_pipe[1], STDERR_FILENO);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+      close(stderr_pipe[1]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - Close original fd (STDERR_FILENO now points to pipe)
+
       if (arg != nullptr) {
         // Command with argument: e.g., "gio open /path/to/file"
         // Security: execlp() passes arguments directly to exec, no shell interpretation
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - POSIX exec API is vararg
         execlp(program, program, arg, path, nullptr);
       } else {
         // Command without argument: e.g., "xdg-open /path/to/file"
         // Security: execlp() passes arguments directly to exec, no shell interpretation
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - POSIX exec API is vararg
         execlp(program, program, path, nullptr);
       }
       // If execlp returns, it means there was an error (127 = exec failed, see exec(3))
       constexpr int kExecFailedExitCode = 127;
       _exit(kExecFailedExitCode);
     }
-    
+
     // Parent process - close write end (child writes to it)
-    close(stderr_pipe[1]);
-    
+    close(stderr_pipe[1]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+
     // Wait for child to complete
     int status = 0;  // Output parameter for waitpid
     if (waitpid(pid, &status, 0) == -1) {
-      close(stderr_pipe[0]);
+      close(stderr_pipe[0]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
       LOG_ERROR(std::string("Failed to wait for ") + program);
       return false;
     }
-    
+
     // Check if command failed and log stderr if available
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
       // Read stderr from pipe
       std::array<char, 256> buffer = {};
-      const ssize_t bytes_read = read(stderr_pipe[0], buffer.data(), buffer.size() - 1);
-      close(stderr_pipe[0]);
-      
+      const ssize_t bytes_read = read(stderr_pipe[0], buffer.data(), buffer.size() - 1);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+      close(stderr_pipe[0]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+
       if (bytes_read > 0) {
         buffer.at(static_cast<size_t>(bytes_read)) = '\0';
         // Truncate at first newline for cleaner log message
-        if (char* newline = std::strchr(buffer.data(), '\n'); newline != nullptr) {  // NOLINT(cppcoreguidelines-init-variables) - Variable initialized in C++17 init-statement
+        if (char* newline = std::strchr(buffer.data(), '\n'); newline != nullptr) {
           *newline = '\0';
         }
         LOG_ERROR(std::string(program) + " failed: " + buffer.data());
@@ -151,16 +148,17 @@ namespace internal {
       }
       return false;
     }
-    
+
     // Command succeeded - close read end of pipe
-    close(stderr_pipe[0]);
+    close(stderr_pipe[0]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     return true;
   }
 } // namespace internal
 
 void OpenFileDefault(std::string_view full_path) {
-  const std::string path(full_path);
-  if (!internal::ValidatePath(path, "OpenFileDefault")) {
+  bool path_valid = false;
+  const std::string path = internal::ToValidatedPath(full_path, "OpenFileDefault", path_valid);
+  if (!path_valid) {
     return;
   }
   LOG_INFO("Opening file: " + path);
@@ -184,8 +182,9 @@ void OpenFileDefault(std::string_view full_path) {
 }
 
 void OpenParentFolder(std::string_view full_path) {
-  const std::string path(full_path);
-  if (!internal::ValidatePath(path, "OpenParentFolder")) {
+  bool path_valid = false;
+  const std::string path = internal::ToValidatedPath(full_path, "OpenParentFolder", path_valid);
+  if (!path_valid) {
     return;
   }
   LOG_INFO("Opening folder and selecting: " + path);
@@ -203,18 +202,6 @@ void OpenParentFolder(std::string_view full_path) {
   if (!internal::ExecuteCommand("xdg-open", nullptr, parent_dir_str.c_str()) &&
       !internal::ExecuteCommand("gio", "open", parent_dir_str.c_str())) {
     LOG_ERROR("Failed to open parent folder: " + parent_dir_str);
-  }
-}
-
-void CopyPathToClipboard(struct GLFWwindow* window, std::string_view full_path) {
-  const std::string path(full_path);
-  if (!internal::ValidatePath(path, "CopyPathToClipboard")) {
-    return;
-  }
-  if (clipboard_utils::SetClipboardText(window, path)) {
-    LOG_INFO("Copied path to clipboard: " + path);
-  } else {
-    LOG_ERROR("Failed to copy path to clipboard: " + path);
   }
 }
 
@@ -241,12 +228,12 @@ bool DeleteFileToRecycleBin(const std::string &full_path) {  // NOSONAR(cpp:S601
 
   // Fallback to manual trash implementation
   // Get XDG_DATA_HOME or default to ~/.local/share
-  const char* xdg_data_home = std::getenv("XDG_DATA_HOME");  // NOLINT(cppcoreguidelines-init-variables,concurrency-mt-unsafe) - getenv result used immediately; trash path from main/UI thread
+  const char* xdg_data_home = std::getenv("XDG_DATA_HOME");  // NOLINT(concurrency-mt-unsafe) - getenv result used immediately; trash path from main/UI thread
   std::filesystem::path trash_base;
   if (xdg_data_home != nullptr) {
     trash_base = std::filesystem::path(xdg_data_home);
   } else {
-    const char* home = std::getenv("HOME");  // NOLINT(cppcoreguidelines-init-variables,concurrency-mt-unsafe) - getenv result used immediately; trash path from main/UI thread
+    const char* home = std::getenv("HOME");  // NOLINT(concurrency-mt-unsafe) - getenv result used immediately; trash path from main/UI thread
     if (home == nullptr) {
       LOG_ERROR("Failed to get HOME directory for trash");
       return false;
@@ -303,7 +290,7 @@ bool DeleteFileToRecycleBin(const std::string &full_path) {  // NOSONAR(cpp:S601
       // Get absolute path
       const std::filesystem::path abs_path = std::filesystem::absolute(full_path);
       const std::string abs_path_str = abs_path.string();
-      
+
       // Write trashinfo file (FreeDesktop.org Trash specification)
       info << "[Trash Info]\n";
       info << "Path=" << abs_path_str << "\n";

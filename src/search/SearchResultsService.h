@@ -22,7 +22,7 @@ struct SearchResult;
 namespace search {
   /**
    * @brief Service for managing search results (sorting, filtering, caching)
-   * 
+   *
    * This service handles all business logic related to search results,
    * separating it from UI rendering code.
    */
@@ -38,7 +38,7 @@ namespace search {
     static bool HandleTableSorting(GuiState& state,
                                    FileIndex& file_index,
                                    ThreadPool& thread_pool);
-    
+
     /**
      * @brief Check if async sorting is complete and perform sort if ready
      * @param state GUI state (modified if sorting completes)
@@ -49,7 +49,7 @@ namespace search {
     static bool CheckAndCompleteAsyncSort(GuiState& state,
                                           const FileIndex& file_index,
                                           ThreadPool& thread_pool);
-    
+
     /**
      * @brief Update filter caches if needed
      * @param state GUI state (modified: filter caches updated)
@@ -59,7 +59,7 @@ namespace search {
     static void UpdateFilterCaches(GuiState& state,
                                    const FileIndex& file_index,
                                    ThreadPool& thread_pool);
-    
+
     /**
      * @brief Get display results (applying active filters)
      * During streaming (!resultsComplete && showingPartialResults), returns partialResults;

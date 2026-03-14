@@ -9,6 +9,7 @@
 #include <thread>
 
 #ifdef _WIN32
+#include <cassert>
 #include "platform/windows/PrivilegeUtils.h"
 #include "utils/LoggingUtils.h"
 #include "utils/ScopedHandle.h"
@@ -103,7 +104,7 @@ bool ProcessInterestingUsnRecord(PUSN_RECORD_V2 record,
   uint64_t parent_ref_num = record->ParentFileReferenceNumber;
 
   // Update FileIndex based on the reason (extracted to reduce nesting depth)
-  bool is_directory =  // NOLINT(cppcoreguidelines-init-variables) - Initialized from boolean expression
+  bool is_directory =
       (record->FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
   ProcessUsnRecordReasons(record, file_ref_num, parent_ref_num, filename,
                           is_directory, file_index, metrics);
@@ -151,9 +152,56 @@ void ProcessUsnRecordReasons(PUSN_RECORD_V2 record,
   }
 }
 
+// Helper: handle the case where a RENAME event arrived for an unknown file ID.
+// Returns true to indicate the caller should return early.
+bool HandleRenameForUnknownEntry(uint64_t file_ref_num, uint64_t parent_ref_num,
+                                 std::string_view filename, bool is_directory,
+                                 FileIndex& file_index, UsnMonitorMetrics& metrics) {
+  // A RENAME event arrived for a file ID not in the index. During normal
+  // monitoring this should not happen: the CREATE event should always precede
+  // a RENAME. If this assert fires it indicates a missed CREATE event, a
+  // dropped queue buffer, or an out-of-order journal replay.
+  assert(false && "RENAME for unknown ID during live monitoring: missed CREATE or dropped buffer");
+  // Treat as create to keep the index consistent (release-mode recovery).
+  file_index.Insert(file_ref_num, parent_ref_num, filename, is_directory, kFileTimeNotLoaded);
+  metrics.files_renamed.fetch_add(1, std::memory_order_relaxed);
+  return true;
+}
+
+// Helper: handle a move (parent changed) and optional rename in one operation.
+void HandleMoveAndOptionalRename(uint64_t file_ref_num, uint64_t parent_ref_num,
+                                 std::string_view filename, FileIndex& file_index) {
+  // Update parent first, then update name if it also changed.
+  if (!file_index.Move(file_ref_num, parent_ref_num)) {
+    LOG_WARNING_BUILD("Failed to move file in index: ref=" << file_ref_num
+                << ", new_parent=" << parent_ref_num);
+    // entry_exists was true moments ago; Move failing now means the entry
+    // was concurrently removed (e.g. a DELETE record in the same buffer
+    // processed before this RENAME). If this fires unexpectedly, it
+    // indicates index divergence.
+    assert(false && "Move failed after entry_exists confirmed: concurrent deletion or index divergence");
+  }
+  // Derive current name from PathStorage and check if it also changed.
+  std::string current_name_str;
+  {
+    const auto accessor = file_index.GetPathAccessor();
+    const std::string_view current_path = accessor.GetPathView(file_ref_num);
+    const size_t last_sep = current_path.find_last_of("/\\");
+    current_name_str = (last_sep != std::string_view::npos)
+        ? std::string(current_path.substr(last_sep + 1))
+        : std::string(current_path);
+  }
+  if (current_name_str != filename && !file_index.Rename(file_ref_num, filename)) {
+    LOG_WARNING_BUILD("Failed to rename file in index: ref=" << file_ref_num
+                << ", new_name=" << filename);
+    // Same reasoning as the Move assert above.
+    assert(false && "Rename (post-move) failed after entry_exists confirmed: concurrent deletion or index divergence");
+  }
+}
+
 // Helper function to handle file rename operations
 // Extracted to reduce nesting depth
-void HandleFileRename(PUSN_RECORD_V2 record, uint64_t file_ref_num, uint64_t parent_ref_num,
+void HandleFileRename([[maybe_unused]] PUSN_RECORD_V2 record, uint64_t file_ref_num, uint64_t parent_ref_num,
                       std::string_view filename, bool is_directory, FileIndex& file_index,
                       UsnMonitorMetrics& metrics) {
   // Read the current parent ID under a shared lock.
@@ -174,37 +222,22 @@ void HandleFileRename(PUSN_RECORD_V2 record, uint64_t file_ref_num, uint64_t par
   }
 
   if (!entry_exists) {
-    // Entry doesn't exist yet - treat as create (shouldn't happen, but handle gracefully)
-    file_index.Insert(file_ref_num, parent_ref_num, filename, is_directory, kFileTimeNotLoaded);
-    metrics.files_renamed.fetch_add(1, std::memory_order_relaxed);
+    HandleRenameForUnknownEntry(file_ref_num, parent_ref_num, filename, is_directory,
+                                file_index, metrics);
     return;
   }
   if (current_parent != parent_ref_num) {
-    // Parent changed - this is a move operation
-    // Update parent first, then update name if it also changed
-    if (!file_index.Move(file_ref_num, parent_ref_num)) {
-      LOG_WARNING_BUILD("Failed to move file in index: ref=" << file_ref_num
-                  << ", new_parent=" << parent_ref_num);
-    }
-    // Derive current name from PathStorage and check if it also changed
-    std::string current_name_str;
-    {
-      const auto accessor = file_index.GetPathAccessor();
-      const std::string_view current_path = accessor.GetPathView(file_ref_num);
-      const size_t last_sep = current_path.find_last_of("/\\");
-      current_name_str = (last_sep != std::string_view::npos)
-          ? std::string(current_path.substr(last_sep + 1))
-          : std::string(current_path);
-    }
-    if (current_name_str != filename && !file_index.Rename(file_ref_num, filename)) {
-      LOG_WARNING_BUILD("Failed to rename file in index: ref=" << file_ref_num
-                  << ", new_name=" << filename);
-    }
+    // Parent changed - this is a move operation (with optional rename).
+    HandleMoveAndOptionalRename(file_ref_num, parent_ref_num, filename, file_index);
   } else {
     // Only name changed (same parent) - simple rename
     if (!file_index.Rename(file_ref_num, filename)) {
-      LOG_WARNING_BUILD("Failed to rename file in index: ref=" << file_ref_num 
+      LOG_WARNING_BUILD("Failed to rename file in index: ref=" << file_ref_num
                   << ", new_name=" << filename);
+      // entry_exists was true moments ago; Rename failing means the entry was
+      // concurrently removed. If this fires unexpectedly, it indicates index
+      // divergence.
+      assert(false && "Rename failed after entry_exists confirmed: concurrent deletion or index divergence");
     }
   }
   metrics.files_renamed.fetch_add(1, std::memory_order_relaxed);
@@ -261,6 +294,7 @@ bool UsnMonitor::Start() {
   // Reset metrics and internal counters for new monitoring session
   metrics_.Reset();
   reader_push_count_ = 0;
+  initial_population_failed_.store(false, std::memory_order_release);
 
   // Create queue with configured size
   queue_ = std::make_unique<UsnJournalQueue>(config_.max_queue_size);
@@ -305,14 +339,14 @@ bool UsnMonitor::Start() {
     Stop();
     return false;
   }
-  
+
   // Initialization succeeded - no need to reacquire lock, we're done
 
   LOG_INFO("UsnMonitor initialized successfully");
   return true;
 }
 
-void UsnMonitor::Stop() {
+void UsnMonitor::Stop() {  // NOLINT(readability-make-member-function-const) - Stop() mutates monitoring_active_, volume_handle_, reader_thread_, processor_thread_, and queue_; atomics are technically callable on const but the method has observable side effects
   auto handle_to_close = INVALID_HANDLE_VALUE;
   {
     std::scoped_lock guard(mutex_);  // NOLINT(readability-identifier-naming) - project convention snake_case for locals
@@ -365,6 +399,8 @@ void UsnMonitor::Stop() {
   }
 
   LOG_INFO("USN monitoring stopped");
+  // Postcondition: Stop must leave the monitor inactive.
+  assert(!IsActive() && "Monitoring must be inactive after Stop");
 }
 
 size_t UsnMonitor::GetQueueSize() const {
@@ -382,7 +418,7 @@ size_t UsnMonitor::GetDroppedBufferCount() const {
 
 void UsnMonitor::UpdateConfig(const MonitoringConfig &config) {
   std::scoped_lock guard(mutex_);  // NOLINT(readability-identifier-naming) - project convention snake_case for locals
-  bool was_active = monitoring_active_.load();  // NOLINT(cppcoreguidelines-init-variables) - Initialized from atomic load() return value
+  bool was_active = monitoring_active_.load();
   if (was_active) {
     Stop();
   }
@@ -460,6 +496,7 @@ bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
     LOG_ERROR("Failed to populate initial index - stopping monitoring. Volume: " +
               config_.volume_path);
     is_populating_index_.store(false, std::memory_order_release);
+    initial_population_failed_.store(true, std::memory_order_release);
     HandleInitializationFailure();
     return false;
   }
@@ -493,6 +530,8 @@ bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
   } else {
     privilege_drop_failed_.store(true, std::memory_order_release);
     LOG_ERROR("Failed to drop privileges - shutting down for security.");
+    is_populating_index_.store(false, std::memory_order_release);
+    initial_population_failed_.store(true, std::memory_order_release);
     HandleInitializationFailure();
     return false;
   }
@@ -589,7 +628,7 @@ void UsnMonitor::ProcessSuccessfulReadAndEnqueue(
   }
 
   if (!queue_->Push(std::move(queue_buffer))) {
-    size_t current_drops = metrics_.buffers_dropped.fetch_add(1, std::memory_order_relaxed) + 1;  // NOLINT(cppcoreguidelines-init-variables) NOSONAR(cpp:S6004) - initialized by fetch_add+1; used after if
+    size_t current_drops = metrics_.buffers_dropped.fetch_add(1, std::memory_order_relaxed) + 1;
     if (current_drops % usn_monitor_constants::kDropLogInterval == 0) {
       LOG_WARNING_BUILD("USN Queue full! Dropped "
                         << current_drops << " buffers (queue size: "
@@ -598,7 +637,7 @@ void UsnMonitor::ProcessSuccessfulReadAndEnqueue(
   }
 
   if (queue_ != nullptr) {
-    size_t queue_size = queue_->Size();  // NOLINT(cppcoreguidelines-init-variables) - initialized by Size()
+    size_t queue_size = queue_->Size();
     metrics_.current_queue_depth.store(queue_size,
                                        std::memory_order_relaxed);
     UpdateMaxQueueDepth(metrics_.max_queue_depth, queue_size);
@@ -606,7 +645,7 @@ void UsnMonitor::ProcessSuccessfulReadAndEnqueue(
 
   if (++reader_push_count_ % usn_monitor_constants::kLogIntervalBuffers == 0 &&
       queue_) {
-    size_t queue_size = queue_->Size();  // NOLINT(cppcoreguidelines-init-variables) - initialized by Size()
+    size_t queue_size = queue_->Size();
     if (queue_size > usn_monitor_constants::kQueueWarningThreshold) {
       LOG_WARNING_BUILD("USN Queue size: " << queue_size
                                            << " buffers pending");
@@ -678,7 +717,7 @@ void UsnMonitor::ReaderThread() {
     read_data.BytesToWaitFor = static_cast<DWORD>(config_.bytes_to_wait_for);
     read_data.UsnJournalID = usn_journal_data.UsnJournalID;
 
-    const int buffer_size = config_.buffer_size;  // NOSONAR(cpp:S1854) - Used in buffer allocation below // NOLINT(cppcoreguidelines-init-variables) - Initialized from config member
+    const int buffer_size = config_.buffer_size;  // NOSONAR(cpp:S1854) - Used in buffer allocation below
 
     std::vector<char> buffer(buffer_size);
     size_t consecutive_errors = 0;
@@ -722,7 +761,7 @@ void UsnMonitor::ReaderThread() {
                                       "Volume: " + config_.volume_path);
     monitoring_active_.store(false, std::memory_order_release);
   }
-  
+
   // Clean up handle if it wasn't already closed by Stop()
   {
     std::scoped_lock guard(mutex_);  // NOLINT(readability-identifier-naming) - project convention snake_case for locals
@@ -816,12 +855,12 @@ void UsnMonitor::ProcessOneBuffer(std::vector<char>& buffer) {  // NOLINT(readab
 
   metrics_.buffers_processed.fetch_add(1, std::memory_order_relaxed);
 
-  size_t buffers_processed =  // NOLINT(cppcoreguidelines-init-variables) - initialized by load()
+  size_t buffers_processed =
       metrics_.buffers_processed.load(std::memory_order_relaxed);
   if (buffers_processed % usn_monitor_constants::kLogIntervalBuffers == 0) {
-    size_t queue_size = queue_->Size();  // NOLINT(cppcoreguidelines-init-variables) - initialized by Size()
-    size_t dropped_count = metrics_.buffers_dropped.load(std::memory_order_relaxed);  // NOLINT(cppcoreguidelines-init-variables) - initialized by load()
-    size_t total_records =  // NOLINT(cppcoreguidelines-init-variables) - initialized by load()
+    size_t queue_size = queue_->Size();
+    size_t dropped_count = metrics_.buffers_dropped.load(std::memory_order_relaxed);
+    size_t total_records =
         metrics_.records_processed.load(std::memory_order_relaxed);
     LOG_INFO_BUILD("Processed "
                    << buffers_processed << " buffers, " << total_records

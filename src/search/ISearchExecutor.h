@@ -25,11 +25,11 @@ class SearchThreadPool;
 class ISearchExecutor {
 public:
   virtual ~ISearchExecutor() = default;
-  
+
 protected:
   // Protected default constructor (interface class)
   ISearchExecutor() = default;
-  
+
 public:
   // Non-copyable, non-movable (interface class)
   ISearchExecutor(const ISearchExecutor&) = delete;
@@ -39,9 +39,9 @@ public:
 
   /**
    * Get the thread pool used for executing search tasks.
-   * 
+   *
    * @return Reference to the SearchThreadPool
-   * 
+   *
    * @note This is the only virtual method in the interface to minimize
    *       overhead. Static methods are accessed directly via ParallelSearchEngine.
    */

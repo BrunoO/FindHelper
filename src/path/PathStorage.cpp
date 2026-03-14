@@ -23,6 +23,9 @@ PathStorage::PathStorage() {  // NOLINT(hicpp-use-equals-default,modernize-use-e
 
 void PathStorage::InsertPath(uint64_t id, const std::string &path,
                               bool isDirectory) {  // NOLINT(readability-identifier-naming) - Public API parameter name
+  // Precondition: id 0 is reserved; all real file/dir IDs must be non-zero.
+  assert(id != 0 && "File ID 0 is reserved; callers must provide a non-zero ID");
+
   // Parse once; used in both the update and new-entry paths.
   size_t filename_start_offset = 0;
   size_t extension_start_offset = SIZE_MAX;
@@ -40,8 +43,8 @@ void PathStorage::InsertPath(uint64_t id, const std::string &path,
     const size_t idx = path_iter->second;
     const size_t old_offset = path_offsets_[idx];
     const size_t new_len = path.length();
-    const size_t old_len = std::strlen(&path_storage_[old_offset]);  // NOSONAR(cpp:S1081) - Safe: path_storage_ entries are null-terminated (see AppendString)
-    if (new_len <= old_len) {
+    if (const size_t old_len = std::strlen(&path_storage_[old_offset]);  // NOSONAR(cpp:S1081) - Safe: path_storage_ entries are null-terminated (see AppendString)
+        new_len <= old_len) {
       // New path fits in the existing slot: overwrite in-place (zero growth in path_storage_).
       // Critical for RecomputeAllPaths which re-inserts identical paths for every entry.
       std::memcpy(&path_storage_[old_offset], path.c_str(), new_len + 1);
@@ -79,6 +82,9 @@ void PathStorage::InsertPath(uint64_t id, const std::string &path,
   is_directory_.push_back(isDirectory ? 1 : 0); // 0 = file, 1 = directory
 
   id_to_path_index_[id] = idx;
+
+  // Postcondition: all SoA arrays must remain the same length after insertion.
+  AssertSoAInvariant("SoA arrays must remain synchronized after InsertPath");
 }
 
 bool PathStorage::RemovePath(uint64_t id) {
@@ -124,13 +130,13 @@ void PathStorage::UpdatePrefix(std::string_view oldPrefix,  // NOLINT(readabilit
       continue;
     }
 
-    const char *path = &path_storage_[path_offsets_[i]];  // NOLINT(cppcoreguidelines-init-variables) - Initialized from path_storage_ array access
+    const char *path = &path_storage_[path_offsets_[i]];
     if (const size_t path_len = std::strlen(path); path_len < old_len) {  // NOSONAR(cpp:S1081) - Safe: path_storage_ entries are null-terminated (see AppendString)
       continue;
     }
     if (std::string_view(path, old_len) == oldPrefix) {
       std::string new_path_str(newPrefix);
-      new_path_str.append(path + old_len);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Required: contiguous path buffer access
+      new_path_str.append(path + old_len);
 
       updates_full.push_back(
           {path_ids_[i], std::move(new_path_str), (is_directory_[i] == 1)});
@@ -148,6 +154,10 @@ PathStorage::SoAView PathStorage::GetReadOnlyView() const {
   if (path_ids_.empty()) {
     return view; // Return empty view
   }
+
+  // Invariant: all SoA arrays must be the same length before we hand out raw
+  // pointers.  A size mismatch indicates a bug in InsertPath / RebuildPathBuffer.
+  AssertSoAInvariant("SoA arrays must be synchronized before producing a view");
 
   view.path_storage = path_storage_.data();
   view.path_offsets = path_offsets_.data();
@@ -192,7 +202,7 @@ std::string_view PathStorage::GetPathView(uint64_t id) const {
   assert(idx < path_offsets_.size());
   assert(is_deleted_[idx] == 0);
   // Zero-copy access to contiguous buffer
-  const char *path_start = &path_storage_[path_offsets_[idx]];  // NOLINT(cppcoreguidelines-init-variables) - Initialized from path_storage_ array access
+  const char *path_start = &path_storage_[path_offsets_[idx]];
   return {path_start};
 }
 
@@ -203,7 +213,7 @@ std::string_view PathStorage::GetPathByIndex(size_t index) const {
 
   assert(index < path_offsets_.size());
   assert(is_deleted_[index] == 0);
-  const char *path_start = &path_storage_[path_offsets_[index]];  // NOLINT(cppcoreguidelines-init-variables) - Initialized from path_storage_ array access
+  const char *path_start = &path_storage_[path_offsets_[index]];
   return {path_start};
 }
 
@@ -233,7 +243,7 @@ void PathStorage::RebuildPathBuffer() {
   // Collect non-deleted entries
   for (size_t i = 0; i < path_ids_.size(); ++i) {
     if (is_deleted_[i] == 0) {
-      const char *path = &path_storage_[path_offsets_[i]];  // NOLINT(cppcoreguidelines-init-variables) - Initialized from path_storage_ array access
+      const char *path = &path_storage_[path_offsets_[i]];
       entries.push_back({path_ids_[i], std::string(path), filename_start_[i],
                          extension_start_[i], (is_directory_[i] == 1)});
     }
@@ -326,6 +336,15 @@ size_t PathStorage::AppendString(const std::string &str) {
   return offset;
 }
 
+void PathStorage::AssertSoAInvariant([[maybe_unused]] const char* context) const {
+  assert(path_offsets_.size() == path_ids_.size() &&
+         path_ids_.size() == filename_start_.size() &&
+         filename_start_.size() == extension_start_.size() &&
+         extension_start_.size() == is_deleted_.size() &&
+         is_deleted_.size() == is_directory_.size() &&
+         context);
+}
+
 void PathStorage::ParsePathOffsets(std::string_view path,
                                     size_t &filename_start,
                                     size_t &extension_start) const {
@@ -376,17 +395,17 @@ PathStorage::PathComponentsView PathStorage::GetPathComponentsByIndex(size_t ind
   assert(is_deleted_[index] == 0);
   PathComponentsView result{};  // Initialize all members with defaults
 
-  const char *path = &path_storage_[path_offsets_[index]];  // NOLINT(cppcoreguidelines-init-variables) - Initialized from path_storage_ array access
+  const char *path = &path_storage_[path_offsets_[index]];
   const size_t filename_offset = filename_start_[index];
   const size_t extension_offset = extension_start_[index];
 
   result.full_path = std::string_view(path);
-  result.filename = std::string_view(path + filename_offset);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Required: contiguous path buffer
+  result.filename = std::string_view(path + filename_offset);
   result.directory_path =
       std::string_view(path, (filename_offset > 0) ? (filename_offset - 1) : 0);
 
   if (extension_offset != SIZE_MAX) {
-    const char *ext_start = path + extension_offset;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - Required: contiguous path buffer
+    const char *ext_start = path + extension_offset;
     const size_t ext_len = strlen(ext_start);  // NOSONAR(cpp:S1081) - Safe: path_storage_ is guaranteed null-terminated (see AppendString)
     result.extension = std::string_view(ext_start, ext_len);
     result.has_extension = true;

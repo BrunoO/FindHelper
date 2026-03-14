@@ -78,7 +78,7 @@ public:
       destroy_ = other.destroy_;
       move_ = other.move_;
       copy_ = other.copy_;
-      
+
       // Clear other
       other.invoke_ = nullptr;
       other.destroy_ = nullptr;
@@ -134,7 +134,7 @@ public:
         destroy_ = other.destroy_;
         move_ = other.move_;
         copy_ = other.copy_;
-        
+
         // Clear other
         other.invoke_ = nullptr;
         other.destroy_ = nullptr;
@@ -205,14 +205,14 @@ private:
   }
 
   // Storage for inline callable (SBO)
-  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays,misc-non-private-member-variables-in-classes,readability-identifier-naming) - Fixed-size SBO buffer for type-erased storage; member is private (clang-tidy false positive), naming follows project convention
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays,readability-identifier-naming) - Fixed-size SBO buffer for type-erased storage; member is private (clang-tidy false positive), naming follows project convention
   alignas(kStorageAlign) char storage_[kStorageSize];  // NOSONAR(cpp:S5945) - Fixed-size SBO buffer for type-erased storage; std::string is not appropriate here
-  
+
   // Function pointers for type-erased operations
-  InvokeFunc invoke_ = nullptr;  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - Member is private, naming follows project convention
-  DestroyFunc destroy_ = nullptr;  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - Member is private, naming follows project convention
-  CopyFunc copy_ = nullptr;  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - Member is private, naming follows project convention
-  MoveFunc move_ = nullptr;  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming) - Member is private, naming follows project convention
+  InvokeFunc invoke_ = nullptr;  // NOLINT(readability-identifier-naming) - Member is private, naming follows project convention
+  DestroyFunc destroy_ = nullptr;  // NOLINT(readability-identifier-naming) - Member is private, naming follows project convention
+  CopyFunc copy_ = nullptr;  // NOLINT(readability-identifier-naming) - Member is private, naming follows project convention
+  MoveFunc move_ = nullptr;  // NOLINT(readability-identifier-naming) - Member is private, naming follows project convention
 };
 
 // Type aliases for common use cases

@@ -55,7 +55,7 @@ public:
    * Check if field is empty
    */
   [[nodiscard]] bool IsEmpty() const {
-    return buffer_[0] == '\0';
+    return buffer_[0] == '\0';  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - buffer_ is std::array<char, kMaxLength> with kMaxLength=256; index 0 is always valid
   }
 
   /**
@@ -76,13 +76,13 @@ public:
    * Clear the field (set to empty string)
    */
   void Clear() {
-    buffer_[0] = '\0';
+    buffer_[0] = '\0';  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - buffer_ is std::array<char, kMaxLength> with kMaxLength=256; index 0 is always valid
   }
 
   /**
    * Set value with safe truncation
    * If value exceeds max length, it will be truncated to fit
-   * 
+   *
    * @param value The string to set (will be truncated if too long)
    */
   void SetValue(std::string_view value) {

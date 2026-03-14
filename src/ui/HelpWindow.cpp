@@ -20,7 +20,24 @@ namespace {
 // Renders a single shortcut as an ImGui bullet: "Ctrl+Shift+F - Toggle Matched Files / Matched Size columns"
 void RenderShortcutBullet(const ShortcutDef& def) {
   const std::string text = FormatLabel(def) + " - " + std::string(def.description);
-  ImGui::BulletText("%s", text.c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::BulletText("%s", text.c_str());
+}
+
+// Renders a bullet point with text wrapping (for long "What's new" entries).
+void BulletWrapped(const char* text) {
+  ImGui::Bullet();
+  ImGui::TextWrapped("%s", text);
+}
+
+// Renders a plain-text bullet shortcut entry.
+void ShortcutBullet(const char* text) {
+  ImGui::BulletText("%s", text);
+}
+
+// Renders a green section header preceded by spacing.
+void SectionHeader(const char* title) {
+  ImGui::Spacing();
+  ImGui::TextColored(Theme::Colors::Success, "%s", title);
 }
 
 }  // namespace
@@ -44,163 +61,98 @@ void HelpWindow::Render(bool* p_open) {
   const detail::WindowGuard window_guard(window_title, p_open, ImGuiWindowFlags_None);
   if (window_guard.ShowContent()) {
     // What's new — high-level user-facing features (since 2026-01-20; dates = git commit date; newest first)
+    // Use BulletWrapped() because BulletText() does not wrap long lines
     if (ImGui::CollapsingHeader("What's new")) {
-      // Use Bullet() + TextWrapped() because BulletText() does not wrap long lines
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-03-05: Faster initial index build: reduced allocations and lock contention when crawling; larger MFT buffer on Windows; bulk directory read (getattrlistbulk) on macOS."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-21: Results table shortcuts: Enter (open), Ctrl+Enter (reveal), Ctrl+Shift+C (copy path), Tab (focus search); Pin to Quick Access more robust."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-21: Settings: Auto button for font size and UI scale from monitor DPI."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-21: Ctrl+Shift+P shortcut under Windows to pin selected file or folder to Quick Access."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-21: ImGui Test Engine (optional) for regression tests and code coverage."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-20: Help window is a normal window (ALT+TAB); Export CSV moved; Ctrl+E / Ctrl+S shortcuts."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-20: Settings stored in HOME/.FindHelper with legacy path fallback."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-20: Empty state: example click starts search; clearer labels, 50 recent searches, scrollable panel."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-18: Folder statistics columns in results table; sort by folder stats; status bar 'file size' label."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-18: M/T/U shortcuts: one press (Shift for global)"); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-16: Extended mark-mode (dired-style) shortcuts for marked results; help and keyboard popup updated."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-15: Marking and bulk operations in results table; path hierarchy indentation (Phase 1)."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-14: Export CSV (Downloads/Desktop); themes (Everforest, Dracula, Nord, One Dark, Gruvbox, Catppuccin Mocha)."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-14: Total size in status bar for full-index searches; alternating row background; improved drag-and-drop feedback."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-13: Export Search Results (CSV) feature added."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-03-07: Windows: in-app elevation prompt restored so UAC can run when user chooses restart as administrator."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-09: Multi-level UI mode toggle (Full, Simplified, Minimalistic)."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-02: Block search while index is building; 'Loading attributes...' for Size/Last Modified sort; Metrics hidden unless --show-metrics."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-02: Windows: start without administrator privileges; elevation prompt when needed."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-01: macOS shortcuts (Cmd+F, Cmd+C); Cmd+Enter in results table reveals in Finder; Ctrl+C copy name on all platforms; macOS drag-and-drop for results."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-02-01: Improved Gemini search-config prompt (filter logic, path+name+extensions)."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-01-31: Streaming search results; Size/Last Modified sort order fixed; filter+streaming clear and filtered count."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-01-31: Path pattern pp:**/ now matches against full path (e.g. pp:**/imgui/**)."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-01-26: Full Path column width calculation fixed after column reordering."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-01-23: OneDrive file size handling (MFT/sentinel, lazy loading)."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
-      ImGui::Bullet();
-      ImGui::TextWrapped("2026-01-22: Simplified UI setting added."); // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
+      BulletWrapped("2026-03-13: Fuzzy search for item name and path with 'fz:' prefix (subsequence matching, e.g. fz:fbr matches 'foobar', 'fiber', 'foo/bar'); Search Help updated with syntax and examples.");
+      BulletWrapped("2026-03-07: Windows: in-app elevation prompt restored so UAC can run when user chooses restart as administrator.");
+      BulletWrapped("2026-03-05: Faster initial index build: reduced allocations and lock contention when crawling; larger MFT buffer on Windows; bulk directory read (getattrlistbulk) on macOS.");
+      BulletWrapped("2026-02-21: Results table shortcuts: Enter (open), Ctrl+Enter (reveal), Ctrl+Shift+C (copy path), Tab (focus search); Pin to Quick Access more robust.");
+      BulletWrapped("2026-02-21: Settings: Auto button for font size and UI scale from monitor DPI.");
+      BulletWrapped("2026-02-21: Ctrl+Shift+P shortcut under Windows to pin selected file or folder to Quick Access.");
+      BulletWrapped("2026-02-21: ImGui Test Engine (optional) for regression tests and code coverage.");
+      BulletWrapped("2026-02-20: Help window is a normal window (ALT+TAB); Export CSV moved; Ctrl+E / Ctrl+S shortcuts.");
+      BulletWrapped("2026-02-20: Settings stored in HOME/.FindHelper with legacy path fallback.");
+      BulletWrapped("2026-02-20: Empty state: example click starts search; clearer labels, 50 recent searches, scrollable panel.");
+      BulletWrapped("2026-02-18: Folder statistics columns in results table; sort by folder stats; status bar 'file size' label.");
+      BulletWrapped("2026-02-18: M/T/U shortcuts: one press (Shift for global)");
+      BulletWrapped("2026-02-16: Extended mark-mode (dired-style) shortcuts for marked results; help and keyboard popup updated.");
+      BulletWrapped("2026-02-15: Marking and bulk operations in results table; path hierarchy indentation (Phase 1).");
+      BulletWrapped("2026-02-14: Export CSV (Downloads/Desktop); themes (Everforest, Dracula, Nord, One Dark, Gruvbox, Catppuccin Mocha).");
+      BulletWrapped("2026-02-14: Total size in status bar for full-index searches; alternating row background; improved drag-and-drop feedback.");
+      BulletWrapped("2026-02-13: Export Search Results (CSV) feature added.");
+      BulletWrapped("2026-02-09: Multi-level UI mode toggle (Full, Simplified, Minimalistic).");
+      BulletWrapped("2026-02-02: Block search while index is building; 'Loading attributes...' for Size/Last Modified sort; Metrics hidden unless --show-metrics.");
+      BulletWrapped("2026-02-02: Windows: start without administrator privileges; elevation prompt when needed.");
+      BulletWrapped("2026-02-01: macOS shortcuts (Cmd+F, Cmd+C); Cmd+Enter in results table reveals in Finder; Ctrl+C copy name on all platforms; macOS drag-and-drop for results.");
+      BulletWrapped("2026-02-01: Improved Gemini search-config prompt (filter logic, path+name+extensions).");
+      BulletWrapped("2026-01-31: Streaming search results; Size/Last Modified sort order fixed; filter+streaming clear and filtered count.");
+      BulletWrapped("2026-01-31: Path pattern pp:**/ now matches against full path (e.g. pp:**/imgui/**).");
+      BulletWrapped("2026-01-26: Full Path column width calculation fixed after column reordering.");
+      BulletWrapped("2026-01-23: OneDrive file size handling (MFT/sentinel, lazy loading).");
+      BulletWrapped("2026-01-22: Simplified UI setting added.");
       ImGui::Spacing();
     }
 
     ImGui::Spacing();
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API uses varargs intentionally
     ImGui::Text("Keyboard Shortcuts");
     ImGui::Separator();
 
-    ImGui::Spacing();
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
-    ImGui::TextColored(Theme::Colors::Success, "Global Shortcuts");
+    SectionHeader("Global Shortcuts");
     RenderShortcutBullet(FindShortcut(ShortcutAction::FocusSearch));
     RenderShortcutBullet(FindShortcut(ShortcutAction::RefreshSearch));
     RenderShortcutBullet(FindShortcut(ShortcutAction::ClearFilters));
     RenderShortcutBullet(FindShortcut(ShortcutAction::ToggleHierarchy));
 
-  ImGui::Spacing();
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
-  ImGui::TextColored(Theme::Colors::Success, "Search & Navigation");  // NOSONAR(cpp:S125)
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-  ImGui::BulletText("Enter - Trigger search (in any search input field)");
-  // Inline "Filter in results" (results-table scoped incremental filter)
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-  ImGui::BulletText("Slash (/) - Start 'Filter in results' in the results table");
+    SectionHeader("Search & Navigation");
+    ShortcutBullet("Enter - Trigger search (in any search input field)");
+    ShortcutBullet("Slash (/) - Start 'Filter in results' in the results table");
 #ifdef __APPLE__
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-  ImGui::BulletText("Cmd+G - Cancel active 'Filter in results' and restore selection/scroll");
+    ShortcutBullet("Cmd+G - Cancel active 'Filter in results' and restore selection/scroll");
 #else
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-  ImGui::BulletText("Ctrl+G - Cancel active 'Filter in results' and restore selection/scroll");
+    ShortcutBullet("Ctrl+G - Cancel active 'Filter in results' and restore selection/scroll");
 #endif  // __APPLE__
 
-  ImGui::Spacing();
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
-  ImGui::TextColored(Theme::Colors::Success, "Saved Searches");
+    SectionHeader("Saved Searches");
     RenderShortcutBullet(FindShortcut(ShortcutAction::SaveSearch));
 
-    ImGui::Spacing();
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
-    ImGui::TextColored(Theme::Colors::Success, "File Operations");
+    SectionHeader("File Operations");
 #ifdef __APPLE__
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Cmd+C - Copy name (hover over name) or full path (hover over path)");
+    ShortcutBullet("Cmd+C - Copy name (hover over name) or full path (hover over path)");
 #else
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Ctrl+C - Copy name (hover over name) or full path (hover over path)");
+    ShortcutBullet("Ctrl+C - Copy name (hover over name) or full path (hover over path)");
 #endif  // __APPLE__
     RenderShortcutBullet(FindShortcut(ShortcutAction::ExportCsv));
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Delete - Delete selected file (opens confirmation)");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Drag row - Drag and drop file to other applications (Windows & macOS)");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Double-click filename - Open file with default application");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Double-click full path - Open parent folder in Explorer");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Enter - Open selected file or folder");
+    ShortcutBullet("Delete - Delete selected file (opens confirmation)");
+    ShortcutBullet("Drag row - Drag and drop file to other applications (Windows & macOS)");
+    ShortcutBullet("Double-click filename - Open file with default application");
+    ShortcutBullet("Double-click full path - Open parent folder in Explorer");
+    ShortcutBullet("Enter - Open selected file or folder");
 #ifdef __APPLE__
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Cmd+Enter - Reveal in Explorer (open parent folder, select file)");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Cmd+Shift+C - Copy full path of selected row");
+    ShortcutBullet("Cmd+Enter - Reveal in Explorer (open parent folder, select file)");
+    ShortcutBullet("Cmd+Shift+C - Copy full path of selected row");
 #else
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Ctrl+Enter - Reveal in Explorer (open parent folder, select file)");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Ctrl+Shift+C - Copy full path of selected row");  // NOSONAR(cpp:S125)
-#endif  // __APPLE__  // NOSONAR(cpp:S125) - directive-matching comment, not commented-out code
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Tab - Focus name search (from results table)");
+    ShortcutBullet("Ctrl+Enter - Reveal in Explorer (open parent folder, select file)");
+    ShortcutBullet("Ctrl+Shift+C - Copy full path of selected row");
+#endif  // __APPLE__
+    ShortcutBullet("Tab - Focus name search (from results table)");
     RenderShortcutBullet(FindShortcut(ShortcutAction::ToggleFolderStats));
 #ifdef _WIN32
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Ctrl+Shift+P - Pin selected file or folder to Quick Access");
+    ShortcutBullet("Ctrl+Shift+P - Pin selected file or folder to Quick Access");
 #endif  // _WIN32
 
-    ImGui::Spacing();
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,readability-magic-numbers) - ImGui color values  // NOSONAR(cpp:S125)
-    ImGui::TextColored(Theme::Colors::Success, "Mark Mode (Selection & Bulk Actions)");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("n or Down - Move to next row");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("p or Up - Move to previous row (plain p; Ctrl+Shift+P is Pin on Windows)");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("m - Mark file and move to next row");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("u - Unmark file and move to next row");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("t - Toggle mark and move to next row");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Shift+M - Mark all visible rows");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Shift+T - Invert marks for visible rows");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Shift+U - Unmark all files");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("W - Copy all marked paths to clipboard");
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Shift+W - Copy all marked names to clipboard");  // NOSONAR(cpp:S125)
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API  // NOSONAR(cpp:S125)
-    ImGui::BulletText("Shift+D - Bulk delete marked files (opens confirmation)");
+    SectionHeader("Mark Mode (Selection & Bulk Actions)");
+    ShortcutBullet("n or Down - Move to next row");
+    ShortcutBullet("p or Up - Move to previous row (plain p; Ctrl+Shift+P is Pin on Windows)");
+    ShortcutBullet("m - Mark file and move to next row");
+    ShortcutBullet("u - Unmark file and move to next row");
+    ShortcutBullet("t - Toggle mark and move to next row");
+    ShortcutBullet("Shift+M - Mark all visible rows");
+    ShortcutBullet("Shift+T - Invert marks for visible rows");
+    ShortcutBullet("Shift+U - Unmark all files");
+    ShortcutBullet("W - Copy all marked paths to clipboard");
+    ShortcutBullet("Shift+W - Copy all marked names to clipboard");
+    ShortcutBullet("Shift+D - Bulk delete marked files (opens confirmation)");
 
     ImGui::Spacing();
     detail::RenderToolWindowCloseButton(p_open);

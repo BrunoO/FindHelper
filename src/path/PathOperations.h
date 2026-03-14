@@ -49,7 +49,7 @@ public:
 
   // Default destructor (holds reference, no cleanup needed)
   ~PathOperations() = default;
-  
+
   // Delete copy and move (holds reference)
   PathOperations(const PathOperations&) = delete;
   PathOperations& operator=(const PathOperations&) = delete;

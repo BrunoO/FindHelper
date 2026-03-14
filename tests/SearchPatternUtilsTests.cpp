@@ -95,7 +95,7 @@ TEST_SUITE("SearchPatternUtils - Pattern Matching") {
   TEST_CASE("Glob patterns match substrings") {
     // This is the key test: *partage*.pdf should match as Glob (substring)
     auto matcher = search_pattern_utils::CreatePathMatcher("*partage*.pdf", false);
-    
+
     // Should match files with "partage" in the name and .pdf extension
     CHECK(matcher("mon_partage_file.pdf"));
     CHECK(matcher("C:/Users/Documents/partage_document.pdf"));
@@ -107,7 +107,7 @@ TEST_SUITE("SearchPatternUtils - Pattern Matching") {
   TEST_CASE("PathPattern requires full path match") {
     // PathPattern with ** should match full paths
     auto matcher = search_pattern_utils::CreatePathMatcher("**partage*.pdf", false);
-    
+
     // Should match full paths
     CHECK(matcher("C:/Users/Documents/partage_document.pdf"));
     CHECK(matcher("partage.pdf"));

@@ -17,7 +17,6 @@
 
 #include <vector>
 
-#include "utils/ClipboardUtils.h"
 #include "utils/Logger.h"
 #include "utils/LoggingUtils.h"
 #include "utils/PlatformTypes.h"
@@ -67,8 +66,9 @@ namespace internal {
 } // namespace internal
 
 void OpenFileDefault(std::string_view full_path) {
-  const std::string path(full_path);
-  if (!internal::ValidatePath(path, "OpenFileDefault")) {
+  bool path_valid = false;
+  const std::string path = internal::ToValidatedPath(full_path, "OpenFileDefault", path_valid);
+  if (!path_valid) {
     return;
   }
   if (!internal::IsPathSafe(path)) {
@@ -77,7 +77,7 @@ void OpenFileDefault(std::string_view full_path) {
   }
   LOG_INFO_BUILD("Opening file: " << path);
   const std::wstring wide_path = Utf8ToWide(path);
-  
+
   // Validate conversion result
   if (wide_path.empty() && !full_path.empty()) {
     LOG_ERROR_BUILD("OpenFileDefault failed: Failed to convert path to wide string. Path: "
@@ -105,8 +105,9 @@ void OpenFileDefault(std::string_view full_path) {
 }
 
 void OpenParentFolder(std::string_view full_path) {
-  const std::string path(full_path);
-  if (!internal::ValidatePath(path, "OpenParentFolder")) {
+  bool path_valid = false;
+  const std::string path = internal::ToValidatedPath(full_path, "OpenParentFolder", path_valid);
+  if (!path_valid) {
     return;
   }
   LOG_INFO("Opening folder and selecting: " + path);
@@ -131,20 +132,6 @@ void OpenParentFolder(std::string_view full_path) {
   }
 }
 
-// NOTE: This function must be called from the UI thread.
-// Uses GLFW clipboard utilities for cross-platform clipboard access.
-void CopyPathToClipboard(struct GLFWwindow* window, std::string_view full_path) {
-  const std::string path(full_path);
-  if (!internal::ValidatePath(path, "CopyPathToClipboard")) {
-    return;
-  }
-  if (clipboard_utils::SetClipboardText(window, path)) {
-    LOG_INFO("Copied path to clipboard: " + path);
-  } else {
-    LOG_ERROR("CopyPathToClipboard failed: Failed to copy path to clipboard. Path: " + path);
-  }
-}
-
 bool DeleteFileToRecycleBin(const std::string &full_path) {
   // Input validation
   if (!internal::ValidatePath(full_path, "DeleteFileToRecycleBin")) {
@@ -153,7 +140,7 @@ bool DeleteFileToRecycleBin(const std::string &full_path) {
 
   LOG_INFO("Deleting file: " + full_path);
   const std::wstring wide_path = Utf8ToWide(full_path);
-  
+
   // Validate conversion result
   if (wide_path.empty() && !full_path.empty()) {
     LOG_ERROR("DeleteFileToRecycleBin failed: Failed to convert path to wide string. Path: " + full_path);
@@ -166,9 +153,9 @@ bool DeleteFileToRecycleBin(const std::string &full_path) {
   // Double-null terminated string is required
   std::vector<wchar_t> path_buffer;
   path_buffer.resize(wide_path.size() + 2); // Resize to include space for 2 null terminators
-  std::copy(wide_path.begin(), wide_path.end(), path_buffer.begin());
-  path_buffer[wide_path.size()] = L'\0';
-  path_buffer[wide_path.size() + 1] = L'\0';
+  std::copy(wide_path.begin(), wide_path.end(), path_buffer.begin());  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+  path_buffer[wide_path.size()] = L'\0';      // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - vector resized to wide_path.size()+2 above
+  path_buffer[wide_path.size() + 1] = L'\0';  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   file_op.pFrom = path_buffer.data();
   file_op.pTo = nullptr;  // Not used for delete operation
   file_op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT;

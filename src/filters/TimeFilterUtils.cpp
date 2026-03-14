@@ -110,7 +110,7 @@ void RecordRecentSearch(const SearchParams &params, const GuiState &state, AppSe
   recent.aiSearchDescription = "";  // Recent searches don't store AI descriptions
 
   // Check if an identical search already exists and remove it
-  auto it = std::find_if(settings.recentSearches.begin(), settings.recentSearches.end(),
+  auto it = std::find_if(settings.recentSearches.begin(), settings.recentSearches.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
                          [&recent](const SavedSearch &existing) {
                            return AreSearchesIdentical(existing, recent);
                          });
@@ -132,7 +132,7 @@ void RecordRecentSearch(const SearchParams &params, const GuiState &state, AppSe
 namespace time_filter_detail {
   /**
    * @brief Set SYSTEMTIME to midnight (00:00:00.000)
-   * 
+   *
    * Helper function to eliminate duplication across time filter calculations.
    */
   inline void SetTimeToMidnight(SYSTEMTIME& st) {
@@ -144,7 +144,7 @@ namespace time_filter_detail {
 
   /**
    * @brief Convert local SYSTEMTIME to FILETIME (UTC)
-   * 
+   *
    * Helper function to eliminate duplication across time filter calculations.
    * Converts a local time SYSTEMTIME to UTC and then to FILETIME format.
    */
@@ -170,10 +170,10 @@ FILETIME CalculateCutoffTime(TimeFilter filter) {
     // Start of current week (Monday in local timezone)
     SYSTEMTIME st_local;
     GetLocalTime(&st_local);
-    
+
     // Calculate days since Monday (0=Monday, 1=Tuesday, ..., 6=Sunday)
     int days_since_monday = (st_local.wDayOfWeek == 0) ? 6 : (st_local.wDayOfWeek - 1);
-    
+
     // Subtract days to get to Monday
     FILETIME ft_local;
     SystemTimeToFileTime(&st_local, &ft_local);
@@ -187,7 +187,7 @@ FILETIME CalculateCutoffTime(TimeFilter filter) {
     filetime_value -= static_cast<ULONGLONG>(days_since_monday) * nanoseconds_per_day;
     // Convert back to FILETIME using std::memcpy
     std::memcpy(&ft_local, &filetime_value, sizeof(FILETIME));
-    
+
     // Convert back to SYSTEMTIME to set time to midnight
     FileTimeToSystemTime(&ft_local, &st_local);
     time_filter_detail::SetTimeToMidnight(st_local);
@@ -231,7 +231,7 @@ FILETIME CalculateCutoffTime(TimeFilter filter) {
 
 /**
  * @brief Converts a std::chrono time_point to FILETIME
- * 
+ *
  * Windows FILETIME: 100-nanosecond intervals since 1601-01-01 00:00:00 UTC
  * Unix epoch: seconds since 1970-01-01 00:00:00 UTC
  * Difference: 11644473600 seconds (369 years)
@@ -246,7 +246,7 @@ static FILETIME ChronoToFileTime(std::chrono::system_clock::time_point tp) {
   constexpr uint64_t low_32_bits_mask = 0xFFFFFFFFULL;
   int64_t total_100ns = (seconds.count() + file_time_constants::kEpochDiffSeconds) * hundred_nanoseconds_per_second;
   total_100ns += nanoseconds.count() / nanoseconds_per_hundred_nanosecond;  // Truncate to 100-ns precision
-  
+
   // Split into high and low 32-bit parts
   constexpr int bits_per_32_bit_word = 32;
   FILETIME ft;
@@ -254,14 +254,14 @@ static FILETIME ChronoToFileTime(std::chrono::system_clock::time_point tp) {
   ft.dwLowDateTime = static_cast<uint32_t>(total_100ns & static_cast<int64_t>(low_32_bits_mask));
   // NOLINTNEXTLINE(hicpp-signed-bitwise) - FILETIME requires bitwise operations on signed int64_t
   ft.dwHighDateTime = static_cast<uint32_t>((total_100ns >> bits_per_32_bit_word) & static_cast<int64_t>(low_32_bits_mask));
-  
+
   return ft;
 }
 
 namespace time_filter_detail {
   /**
    * @brief Get current local time as tm struct
-   * 
+   *
    * Helper function to eliminate duplication across time filter calculations.
    */
   inline std::tm GetLocalTime(std::chrono::system_clock::time_point now) {
@@ -277,7 +277,7 @@ namespace time_filter_detail {
 
   /**
    * @brief Create tm struct with time set to midnight and convert to FILETIME
-   * 
+   *
    * Helper function to eliminate duplication across time filter calculations.
    * Creates a tm struct based on the provided time components, sets time to midnight,
    * and converts to FILETIME format.
@@ -293,7 +293,7 @@ namespace time_filter_detail {
     time_start.tm_min = 0;
     time_start.tm_sec = 0;
     time_start.tm_isdst = -1;  // Let system determine DST
-    
+
     auto cutoff_time_t = std::mktime(&time_start);
     auto cutoff = std::chrono::system_clock::from_time_t(cutoff_time_t);
     return ChronoToFileTime(cutoff);
@@ -305,7 +305,7 @@ FILETIME CalculateCutoffTime(TimeFilter filter) {
   using std::chrono::system_clock;
 
   auto now = system_clock::now();
-  
+
   switch (filter) {
   case TimeFilter::Today: {
     // Start of today (midnight)
@@ -316,10 +316,10 @@ FILETIME CalculateCutoffTime(TimeFilter filter) {
   case TimeFilter::ThisWeek: {
     // Start of current week (Monday in local timezone)
     const std::tm now_tm = time_filter_detail::GetLocalTime(now);
-    
+
     // Calculate days since Monday (0=Monday, 1=Tuesday, ..., 6=Sunday)
     const int days_since_monday = (now_tm.tm_wday == 0) ? 6 : (now_tm.tm_wday - 1);  // NOLINT(readability-magic-numbers) - 6 is days from Sunday to Monday (tm_wday: 0=Sunday, 6=Saturday)
-    
+
     // Create time for start of week (Monday at midnight)
     std::tm week_start = now_tm;
     week_start.tm_mday -= days_since_monday;
@@ -327,7 +327,7 @@ FILETIME CalculateCutoffTime(TimeFilter filter) {
     week_start.tm_min = 0;
     week_start.tm_sec = 0;
     week_start.tm_isdst = -1;  // Let system determine DST
-    
+
     auto cutoff_time_t = std::mktime(&week_start);
     auto cutoff = system_clock::from_time_t(cutoff_time_t);
     return ChronoToFileTime(cutoff);

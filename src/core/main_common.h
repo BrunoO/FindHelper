@@ -15,6 +15,7 @@
  */
 
 #include <functional>
+#include <iostream>
 
 #include "core/AppBootstrapResultBase.h"
 #include "core/Application.h"
@@ -70,9 +71,9 @@ namespace main_common_detail {
     // Determine if we should auto-crawl (no --crawl-folder, no USN monitoring, no --index-from-file)
     bool should_auto_crawl = false;
     std::string auto_crawl_folder;
-    
-    if (cmd_args.crawl_folder.empty() && 
-        !index_builder_config.use_usn_monitor && 
+
+    if (cmd_args.crawl_folder.empty() &&
+        !index_builder_config.use_usn_monitor &&
         cmd_args.index_from_file.empty()) {
       // Determine which folder to crawl: settings folder or HOME folder
       if (bootstrap.settings && !bootstrap.settings->crawlFolder.empty()) {
@@ -131,7 +132,7 @@ namespace main_common_detail {
     // Pass auto-crawl parameters if auto-crawl should be triggered
     Application app(bootstrap, cmd_args, index_build_state, std::move(index_builder),
                    should_auto_crawl, auto_crawl_folder, start_index_build_after_first_frame);
-    
+
     // Run the application (main loop)
     return app.Run();
   }
@@ -168,17 +169,17 @@ int RunApplication(int argc, char** argv) {  // NOLINT(google-objc-function-nami
 
   // Parse command line arguments
   CommandLineArgs cmd_args = ParseCommandLineArgs(argc, argv);
-  
+
   // Handle help request
   if (cmd_args.show_help) {
     const char* program_name =
         (argc > 0 && argv != nullptr)
-            ? argv[0]  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+            ? argv[0]
             : "";
     ShowHelp(program_name);
     return 0;
   }
-  
+
   // Handle version request
   if (cmd_args.show_version) {
     ShowVersion();
@@ -220,7 +221,7 @@ int RunApplication(int argc, char** argv) {  // NOLINT(google-objc-function-nami
       init_result != 0) {
     return init_result;
   }
-  
+
   if (!bootstrap.IsValid()) {
     LOG_ERROR("Failed to initialize application");
     return 1;
@@ -250,5 +251,25 @@ int RunApplication(int argc, char** argv) {  // NOLINT(google-objc-function-nami
       },
       1,
       [&bootstrap]() { BootstrapTraits::Cleanup(bootstrap); });
+}
+
+/**
+ * @brief Wraps a call to RunApplication with platform-agnostic top-level catch blocks.
+ *
+ * Eliminates duplicated catch clauses in every platform main().
+ * Calls RunApplication<BootstrapResult, BootstrapTraits>(argc, argv) and
+ * logs any uncaught exceptions to std::cerr before returning 1.
+ */
+template<typename BootstrapResult, typename BootstrapTraits>
+inline int RunApplicationWithCatch(int argc, char** argv) {  // NOLINT(google-objc-function-naming) - C++ template in .h shared by ObjC++ files; follows project PascalCase convention
+  try {
+    return RunApplication<BootstrapResult, BootstrapTraits>(argc, argv);
+  } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - std::exception is the widest meaningful base; more specific types are handled inside RunApplication
+    std::cerr << "Fatal error: " << e.what() << '\n';
+    return 1;
+  } catch (...) {  // NOSONAR(cpp:S2738) - Catch-all safety net for non-std exceptions (e.g. SEH on Windows) after the std::exception handler
+    std::cerr << "Unknown fatal error occurred" << '\n';
+    return 1;
+  }
 }
 

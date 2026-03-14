@@ -53,11 +53,11 @@ struct IndexBuilderConfig {  // NOLINT(cppcoreguidelines-pro-type-member-init,hi
 class IIndexBuilder {
 public:
   virtual ~IIndexBuilder() = default;
-  
+
 protected:
   // Protected default constructor (interface class)
   IIndexBuilder() = default;
-  
+
 public:
   // Non-copyable, non-movable (interface class)
   IIndexBuilder(const IIndexBuilder&) = delete;

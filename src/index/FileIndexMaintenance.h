@@ -54,7 +54,7 @@ public:
 
   // Default destructor (holds references, no cleanup needed)
   ~FileIndexMaintenance() = default;
-  
+
   // Delete copy and move (holds references)
   FileIndexMaintenance(const FileIndexMaintenance&) = delete;
   FileIndexMaintenance& operator=(const FileIndexMaintenance&) = delete;
@@ -71,7 +71,7 @@ public:
    *
    * @return true if maintenance was performed, false otherwise
    */
-  bool Maintain();
+  [[nodiscard]] bool Maintain();
 
   /**
    * @brief Get maintenance statistics

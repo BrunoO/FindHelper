@@ -27,11 +27,11 @@ namespace opengl_constants {
   // Clear color (ImGui default background: light gray-blue)
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays) - constexpr aggregate init for GL clear color
   constexpr float kClearColor[4] = {0.45F, 0.55F, 0.60F, 1.00F};  // NOSONAR(cpp:S5945) - C-style array required for constexpr aggregate initialization
-  
+
   // OpenGL version required for ImGui OpenGL3 backend
   constexpr int kOpenGLVersionMajor = 3;
   constexpr int kOpenGLVersionMinor = 3;
-  
+
   // GLSL version string for ImGui
   constexpr const char* kGLSLVersion = "#version 330";
 }
@@ -73,12 +73,12 @@ bool OpenGLManager::Initialize(GLFWwindow* window) {
   int minor = 0;
   glGetIntegerv(GL_MAJOR_VERSION, &major);
   glGetIntegerv(GL_MINOR_VERSION, &minor);
-  
-  if (major < opengl_constants::kOpenGLVersionMajor || 
+
+  if (major < opengl_constants::kOpenGLVersionMajor ||
       (major == opengl_constants::kOpenGLVersionMajor && minor < opengl_constants::kOpenGLVersionMinor)) {
-    LOG_ERROR("OpenGL " + 
+    LOG_ERROR("OpenGL " +
               std::to_string(opengl_constants::kOpenGLVersionMajor) + "." +
-              std::to_string(opengl_constants::kOpenGLVersionMinor) + 
+              std::to_string(opengl_constants::kOpenGLVersionMinor) +
               " or higher required. Found " + std::to_string(major) + "." + std::to_string(minor));
     window_ = nullptr;
     return false;
@@ -120,7 +120,7 @@ void OpenGLManager::BeginFrame() {
   int framebuffer_width = 0;
   int framebuffer_height = 0;
   glfwGetFramebufferSize(window_, &framebuffer_width, &framebuffer_height);
-  
+
   // Set viewport
   glViewport(0, 0, framebuffer_width, framebuffer_height);
 

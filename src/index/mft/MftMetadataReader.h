@@ -51,7 +51,7 @@ public:
     // Made public to allow static helper functions to access it.
     template<typename T>
     static T* GetAttributeAtOffset(const char* base, size_t offset) {
-        return reinterpret_cast<T*>(const_cast<char*>(base + offset));  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-type-const-cast,cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR(cpp:S3630) - MFT structure access via offset
+        return reinterpret_cast<T*>(const_cast<char*>(base + offset));  // NOLINT(cppcoreguidelines-pro-type-const-cast,cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR(cpp:S3630) - MFT structure access via offset
     }
 
 private:

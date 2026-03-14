@@ -20,8 +20,8 @@ constexpr int64_t kEpochDiffSeconds = 11644473600LL;
 }  // namespace file_time_constants
 
 // Sentinel values for FILETIME (modification time)
-const FILETIME kFileTimeNotLoaded = {UINT32_MAX, UINT32_MAX};  // NOLINT(cert-err58-cpp) - trivial aggregate init, no throw
-const FILETIME kFileTimeFailed = {1, 0};  // NOLINT(cert-err58-cpp) - trivial aggregate init, no throw
+const FILETIME kFileTimeNotLoaded = {UINT32_MAX, UINT32_MAX};  // NOLINT(cert-err58-cpp,bugprone-throwing-static-initialization) - aggregate initialization cannot throw
+const FILETIME kFileTimeFailed = {1, 0};  // NOLINT(cert-err58-cpp,bugprone-throwing-static-initialization) - aggregate initialization cannot throw
 
 // Helper function to check if FILETIME is sentinel (not loaded yet)
 inline bool IsSentinelTime(const FILETIME &ft) {
@@ -47,7 +47,7 @@ inline bool IsEpochTime(const FILETIME &ft) {
   if (ft.dwHighDateTime == 0 && ft.dwLowDateTime == 0) {
     return true;
   }
-  
+
   // Check if the date is in year 1601 (accounts for timezone offsets)
   // FILETIME for 1601-01-01 00:00:00 UTC = 0x0000000000000000
   // FILETIME for 1602-01-01 00:00:00 UTC ≈ 0x00000000002A69C0 (31,536,000,000,000 = 100ns intervals in a year)
@@ -62,7 +62,7 @@ inline bool IsEpochTime(const FILETIME &ft) {
       return true;  // Within year 1601 (accounting for timezone)
     }
   }
-  
+
   return false;
 }
 

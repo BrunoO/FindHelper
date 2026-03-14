@@ -39,20 +39,20 @@ inline constexpr std::size_t kMaxPatternTokens = 64;
 // We use fixed sizes here to avoid exposing internal types.
 struct CompiledPathPattern {  // NOSONAR(cpp:S3624) NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - default ctor default-initializes members; destructor cleans up RAII
   // The original pattern string (normalized for simple patterns).
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::string pattern_string;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool case_insensitive = false;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool valid = false;
 
   // True if pattern uses advanced features (char classes, quantifiers, etc.)
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool uses_advanced = false;
 
   // True if pattern is pure literal (no wildcards: *, ?, **)
   // For literal-only patterns, we use direct string comparison instead of DFA/NFA
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool is_literal_only = false;
 
   // For simple patterns: DFA state table (faster than NFA simulation).
@@ -65,56 +65,54 @@ struct CompiledPathPattern {  // NOSONAR(cpp:S3624) NOLINT(cppcoreguidelines-pro
 
   // DFA state table: dfa_table[state_index * 256 + char] = next_state_index
   // Only allocated if uses_advanced == false and dfa_state_count > 0
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::unique_ptr<std::uint16_t[]> dfa_table_;  // NOSONAR(cpp:S5945) NOLINT(readability-identifier-naming,cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays) - unique_ptr<T[]> is correct for dynamic array; project snake_case_
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::size_t dfa_state_count_ = 0;  // NOLINT(readability-identifier-naming)
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
   std::uint16_t dfa_start_state_ = 0;  // NOLINT(readability-identifier-naming)
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
   std::uint16_t dfa_accept_state_ = kInvalidDfaState;  // NOLINT(readability-identifier-naming)
 
   // Legacy NFA support (fallback if DFA construction fails or is too large)
   // Each SimpleToken is 2 bytes (kind + literal).
   static constexpr std::size_t kSimpleTokenSize = 2;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   alignas(8) std::array<std::uint8_t,
                         kMaxPatternTokens *
-                          kSimpleTokenSize> simple_tokens_storage{};  // NOLINT(readability-identifier-naming,misc-non-private-member-variables-in-classes) - Fixed-size array for performance-critical pattern matching (hot path)
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+                          kSimpleTokenSize> simple_tokens_storage{};  // NOLINT(readability-identifier-naming) - Fixed-size array for performance-critical pattern matching (hot path)
+
   std::size_t simple_token_count = 0;
   // Pre-computed epsilon closure mask for star positions.
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::uint64_t epsilon_mask = 0;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool use_dfa_ = false;  // NOLINT(readability-identifier-naming) - True if DFA is available, false to use NFA fallback
 
   // For advanced patterns: cached compiled pattern to avoid re-parsing.
   // Opaque pointer to Pattern structure (allocated on heap).
   // Only valid when uses_advanced == true and valid == true.
   // Uses unique_ptr<void, PatternDeleter> for RAII - zero runtime overhead, automatic cleanup
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   PatternPtr cached_pattern_ = nullptr;  // NOLINT(readability-identifier-naming) - RAII-managed type-erased storage
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool anchor_start = false;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool anchor_end = false;
 
   // Optimization: fast rejection if a required substring is missing.
   // This helps significantly for patterns like "**" + wildcard + "substring" + wildcard + "...".
   // For case-insensitive patterns, the substring is stored in lowercase.
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   std::string required_substring;
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool has_required_substring = false;
   // If true, the required substring must appear at the start (after anchors).
   // Note: For now we only use general substring search (not prefix optimized) to keep it simple,
   // unless we find it's a prefix.
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool required_substring_is_prefix = false;
   // If true, the required substring must appear at the end of the path.
   // This enables faster suffix checks (e.g., for extension-based patterns like "**" + "*.cpp").
-  // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
   bool required_substring_is_suffix = false;
 
   // Default constructor

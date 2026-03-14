@@ -49,21 +49,21 @@ public:
    * and no modifications are made. Caller must ensure proper synchronization.
    */
   struct SoAView {
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     const char *path_storage = nullptr;        // Contiguous path buffer
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     const size_t *path_offsets = nullptr;      // Offset into path_storage_ for each entry
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     const uint64_t *path_ids = nullptr;        // ID for each path entry
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     const size_t *filename_start = nullptr;    // Filename offset in path
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     const size_t *extension_start = nullptr;   // Extension offset (SIZE_MAX = no extension)
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     const uint8_t *is_deleted = nullptr;       // Tombstone flag (0 = not deleted, 1 = deleted)
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     const uint8_t *is_directory = nullptr;     // Directory flag (0 = file, 1 = directory)
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     size_t size = 0;                      // Number of entries
 
     SoAView() = default;
@@ -73,7 +73,7 @@ public:
    * @brief Construct PathStorage with initial capacity
    */
   PathStorage();
-  
+
   // Default destructor (RAII members handle cleanup)
   ~PathStorage() = default;
 
@@ -224,13 +224,13 @@ public:
    * @brief Get statistics for diagnostics
    */
   struct Stats {
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     size_t total_entries = 0;  // NOLINT(readability-redundant-member-init) - Explicit initialization for member init check
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     size_t deleted_entries = 0;  // NOLINT(readability-redundant-member-init) - Explicit initialization for member init check
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     size_t path_storage_bytes = 0;  // NOLINT(readability-redundant-member-init) - Explicit initialization for member init check
-    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes) - Struct with public members (POD type)
+
     size_t rebuild_count = 0;  // NOLINT(readability-redundant-member-init) - Explicit initialization for member init check
   };
   [[nodiscard]] Stats GetStats() const;
@@ -269,6 +269,9 @@ private:
   // Helper to parse path and extract filename/extension offsets
   void ParsePathOffsets(std::string_view path, size_t &filename_start,
                         size_t &extension_start) const;
+
+  // Assert that all SoA arrays have equal length (invariant check).
+  void AssertSoAInvariant(const char* context) const;
 
   // Constants for initial capacity allocation
   // kInitialPathStorageCapacity: Sized for ~500,000 paths (typical target)

@@ -47,6 +47,24 @@ constexpr size_t kDefaultDirEntryReserve = 100;
 // Use at least 2 threads so crawling retains some parallelism; matches SearchThreadPool fallback.
 constexpr size_t kCrawlerMinThreadsWhenHardwareUnknown = 2;
 
+#ifndef _WIN32
+// Helper: translate an open()/opendir() errno into a log message and return code.
+// Returns true  when the error means "directory does not exist" (callers treat it as success).
+// Returns false for all other errors after logging an appropriate warning.
+[[nodiscard]] inline bool HandleOpenErrno(int error, std::string_view dir_path,
+                                          const char* syscall_name) {
+  if (error == ENOENT) {
+    return true;
+  }
+  if (error == EACCES) {
+    LOG_WARNING_BUILD("Access denied to directory: " << dir_path);
+    return false;
+  }
+  LOG_WARNING_BUILD(syscall_name << " failed for: " << dir_path << ", error: " << error);
+  return false;
+}
+#endif  // _WIN32
+
 }  // namespace
 
 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - worker_threads_, queue_mutex_, queue_cv_, completion_cv_, work_queue_ are default-constructed
@@ -54,7 +72,7 @@ FolderCrawler::FolderCrawler(FileIndex& file_index, const FolderCrawlerConfig& c
     : file_index_(file_index), config_(config) {
   // Validate config (assert messages omitted to satisfy readability-simplify-boolean-expr)
   assert(config_.batch_size > 0);
-  assert(config_.progress_update_interval > 0);
+  assert(config_.progress_update_interval_ms > 0);
 }
 
 FolderCrawler::~FolderCrawler() {
@@ -101,6 +119,11 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
     error_count_.store(0, std::memory_order_relaxed);
     should_stop_.store(false, std::memory_order_release);
     total_queued_.store(0, std::memory_order_relaxed);
+    last_progress_update_ms_.store(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count(),
+        std::memory_order_relaxed);
 
     // Determine thread count
     size_t thread_count = config_.thread_count;
@@ -134,8 +157,8 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
 
     // Seed work: push the root directory to worker 0's queue
     {
-      const std::scoped_lock wq_lock(*wq_mutexes_[0]);
-      wq_items_[0].emplace_back(root_path);
+      const std::scoped_lock wq_lock(*wq_mutexes_[0]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - index 0 valid: num_workers_ >= 1
+      wq_items_[0].emplace_back(root_path);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     }
     total_queued_.fetch_add(1, std::memory_order_release);
     {
@@ -354,7 +377,7 @@ bool ProcessEntries(  // NOSONAR(cpp:S107) - Function has 13 parameters
 }
 }  // namespace
 
-// NOLINTNEXTLINE(readability-identifier-naming,readability-function-cognitive-complexity) - WorkerThread is public API; loop and error handling required for crawler NOSONAR(cpp:S3776)
+// NOLINTNEXTLINE(readability-identifier-naming,readability-function-cognitive-complexity) - WorkerThread is public API; loop and error handling required for crawler
 void FolderCrawler::WorkerThread(size_t worker_idx,
                                  std::atomic<size_t>* indexed_file_count,
                                  const std::atomic<bool>* cancel_flag) {
@@ -406,13 +429,7 @@ void FolderCrawler::WorkerThread(size_t worker_idx,
       }
 
       active_workers_.fetch_sub(1, std::memory_order_release);
-
-      // Signal completion when this was the last active worker and no dirs remain queued
-      if (total_queued_.load(std::memory_order_acquire) == 0 &&
-          active_workers_.load(std::memory_order_acquire) == 0) {
-        const std::scoped_lock lock(completion_mutex_);
-        completion_cv_.notify_all();
-      }
+      SignalCompletionIfLastWorker();
     }
   } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Catch-all safety net for entire WorkerThread operation
     (void)e;       // Suppress unused variable warning in Release mode
@@ -438,20 +455,44 @@ void FolderCrawler::WorkerThread(size_t worker_idx,
   }
 }
 
+void FolderCrawler::SignalCompletionIfLastWorker() {
+  if (total_queued_.load(std::memory_order_acquire) == 0 &&
+      active_workers_.load(std::memory_order_acquire) == 0) {
+    const std::scoped_lock lock(completion_mutex_);
+    completion_cv_.notify_all();
+  }
+}
+
 // NOLINTNEXTLINE(hicpp-named-parameter,readability-named-parameter) - parameters are named (batch, indexed_file_count)
 void FolderCrawler::FlushBatch(const std::vector<std::pair<std::string, bool>>& batch,
                                std::atomic<size_t>* indexed_file_count) {  // NOLINT(readability-non-const-parameter) - Parameter modifies atomic value via store()
+  // Precondition: calling FlushBatch with an empty batch wastes a lock acquisition.
+  assert(!batch.empty() && "FlushBatch must not be called with an empty batch");
   file_index_.InsertPaths(batch, &error_count_);
 
   // Update progress counter
   if (indexed_file_count != nullptr) {
     const size_t total = files_processed_.load(std::memory_order_relaxed) +
                          dirs_processed_.load(std::memory_order_relaxed);
-    if (total > 0 && (total % config_.progress_update_interval == 0)) {
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch())
+                               .count();
+    int64_t last_update = last_progress_update_ms_.load(std::memory_order_relaxed);
+
+    if (now_ms - last_update >= static_cast<int64_t>(config_.progress_update_interval_ms) &&
+        last_progress_update_ms_.compare_exchange_strong(last_update, now_ms,
+                                                        std::memory_order_relaxed)) {
       indexed_file_count->store(total, std::memory_order_relaxed);
       LOG_INFO_BUILD("Crawled " << total << " entries...");
     }
   }
+}
+
+void FolderCrawler::AcquireWorkItem() {
+  const size_t prev_active = active_workers_.fetch_add(1, std::memory_order_relaxed);  // BEFORE sub
+  // Invariant: active workers never exceed the pool size (one slot per thread).
+  assert(prev_active < num_workers_ && "Active worker count must not exceed pool size");
+  total_queued_.fetch_sub(1, std::memory_order_relaxed);
 }
 
 // Pop work from own queue; on empty, attempt to steal from peers (try_lock, no blocking).
@@ -460,12 +501,11 @@ void FolderCrawler::FlushBatch(const std::vector<std::pair<std::string, bool>>& 
 std::string FolderCrawler::TryGetWork(size_t worker_idx) {
   // Try own queue first — typically no contention with other workers.
   {
-    const std::scoped_lock lock(*wq_mutexes_[worker_idx]);
-    if (!wq_items_[worker_idx].empty()) {
-      std::string dir = std::move(wq_items_[worker_idx].front());
-      wq_items_[worker_idx].pop_front();
-      active_workers_.fetch_add(1, std::memory_order_relaxed);  // BEFORE sub
-      total_queued_.fetch_sub(1, std::memory_order_relaxed);
+    const std::scoped_lock lock(*wq_mutexes_[worker_idx]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - worker_idx < num_workers_ == vector size
+    if (!wq_items_[worker_idx].empty()) {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+      std::string dir = std::move(wq_items_[worker_idx].front());  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+      wq_items_[worker_idx].pop_front();  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+      AcquireWorkItem();
       return dir;
     }
   }
@@ -473,12 +513,11 @@ std::string FolderCrawler::TryGetWork(size_t worker_idx) {
   // Own queue empty — try stealing from peers in round-robin order.
   for (size_t j = 1; j < num_workers_; ++j) {
     const size_t victim = (worker_idx + j) % num_workers_;
-    const std::unique_lock lock(*wq_mutexes_[victim], std::try_to_lock);
-    if (lock.owns_lock() && !wq_items_[victim].empty()) {
-      std::string dir = std::move(wq_items_[victim].front());
-      wq_items_[victim].pop_front();
-      active_workers_.fetch_add(1, std::memory_order_relaxed);
-      total_queued_.fetch_sub(1, std::memory_order_relaxed);
+    const std::unique_lock lock(*wq_mutexes_[victim], std::try_to_lock);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - victim = (worker_idx+j) % num_workers_
+    if (lock.owns_lock() && !wq_items_[victim].empty()) {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+      std::string dir = std::move(wq_items_[victim].front());  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+      wq_items_[victim].pop_front();  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+      AcquireWorkItem();
       return dir;
     }
   }
@@ -494,9 +533,9 @@ void FolderCrawler::PushSubdirs(size_t worker_idx, std::vector<std::string>& sub
   }
   const size_t n = subdirs.size();
   {
-    const std::scoped_lock wq_lock(*wq_mutexes_[worker_idx]);
+    const std::scoped_lock wq_lock(*wq_mutexes_[worker_idx]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - worker_idx < num_workers_ == vector size
     for (auto& s : subdirs) {
-      wq_items_[worker_idx].push_back(std::move(s));
+      wq_items_[worker_idx].push_back(std::move(s));  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     }
   }
   total_queued_.fetch_add(n, std::memory_order_release);
@@ -619,9 +658,25 @@ namespace {
 // replacing the per-entry readdir loop with a single bulk kernel call.
 constexpr size_t kBulkAttrBufSize = 256UL * 1024UL;
 
+// Helper: run lstat on a full path and set is_directory / is_symlink from the mode bits.
+// Returns false when lstat fails (caller should skip the entry); true on success.
+inline bool StatAndClassify(const std::string& full_path,
+                            bool& out_is_directory,
+                            bool& out_is_symlink) {
+  struct stat stat_buf = {};
+  if (lstat(full_path.c_str(), &stat_buf) != 0) {
+    LOG_WARNING_BUILD("lstat failed for: " << full_path << ", error: " << errno);
+    return false;
+  }
+  const auto mode = static_cast<unsigned>(stat_buf.st_mode);
+  out_is_directory = (S_ISDIR(mode) != 0);  // NOLINT(hicpp-signed-bitwise) - S_ISDIR uses bitwise ops on potentially signed constants
+  out_is_symlink   = (S_ISLNK(mode) != 0);  // NOLINT(hicpp-signed-bitwise) - S_ISLNK uses bitwise ops on potentially signed constants
+  return true;
+}
+
 // RAII wrapper for POSIX file descriptors.
 struct AutoFd {
-  int fd = -1;  // NOLINT(misc-non-private-member-variables-in-classes) - intentional; struct used as local RAII handle only
+  int fd = -1;
   AutoFd() = default;  // Must be explicit: deleted copy/move ctors suppress implicit default ctor
   ~AutoFd() {
     if (fd != -1) {
@@ -640,14 +695,7 @@ bool EnumerateDirectoryOpenDir(std::string_view dir_path,
                                std::vector<FolderCrawler::DirectoryEntry>& entries) {
   DIR* dir = opendir(std::string(dir_path).c_str());
   if (dir == nullptr) {
-    const int error = errno;
-    if (error == ENOENT) {
-      return true;
-    }
-    LOG_WARNING_BUILD(((error == EACCES)
-                           ? std::string("Access denied to directory: ") + std::string(dir_path)
-                           : std::string("opendir failed for: ") + std::string(dir_path) + ", error: " + std::to_string(error)));
-    return false;
+    return HandleOpenErrno(errno, dir_path, "opendir");
   }
 
   const struct dirent* entry = nullptr;
@@ -669,15 +717,9 @@ bool EnumerateDirectoryOpenDir(std::string_view dir_path,
         full_path += "/";
       }
       full_path += entry->d_name;  // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay,hicpp-no-array-decay) - d_name is an array
-
-      struct stat stat_buf = {};
-      if (lstat(full_path.c_str(), &stat_buf) != 0) {
-        LOG_WARNING_BUILD("lstat failed for: " << full_path << ", error: " << errno);
+      if (!StatAndClassify(full_path, dir_entry.is_directory, dir_entry.is_symlink)) {
         continue;
       }
-      const auto mode = static_cast<unsigned>(stat_buf.st_mode);
-      dir_entry.is_directory = (S_ISDIR(mode) != 0);  // NOLINT(hicpp-signed-bitwise) - S_ISDIR uses bitwise ops on potentially signed constants
-      dir_entry.is_symlink = (S_ISLNK(mode) != 0);    // NOLINT(hicpp-signed-bitwise) - S_ISLNK uses bitwise ops on potentially signed constants
     }
 
     entries.push_back(std::move(dir_entry));
@@ -701,18 +743,9 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
   // replacing the per-entry readdir loop (APFS and most local macOS filesystems
   // support this; falls back to opendir/readdir on ENOTSUP).
   AutoFd afd;
-  afd.fd = open(std::string(dir_path).c_str(), O_RDONLY);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - POSIX open(), mode arg not needed for O_RDONLY
+  afd.fd = open(std::string(dir_path).c_str(), O_RDONLY);
   if (afd.fd == -1) {
-    const int error = errno;
-    if (error == ENOENT) {
-      return true;
-    }
-    if (error == EACCES) {
-      LOG_WARNING_BUILD("Access denied to directory: " << dir_path);
-      return false;
-    }
-    LOG_WARNING_BUILD("open failed for: " << dir_path << ", error: " << error);
-    return false;
+    return HandleOpenErrno(errno, dir_path, "open");
   }
 
   // Request returned-attribute mask, name, and object type.
@@ -729,7 +762,7 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
   std::vector<char> buf(kBulkAttrBufSize);
 
   for (;;) {
-    const int count = getattrlistbulk(afd.fd, &alist, buf.data(), buf.size(), 0);  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg)
+    const int count = getattrlistbulk(afd.fd, &alist, buf.data(), buf.size(), 0);
     if (count == 0) {
       break;  // End of directory
     }
@@ -744,7 +777,7 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
       return false;
     }
 
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
     // Buffer layout parsing uses reinterpret_cast and pointer arithmetic as required
     // by the getattrlistbulk API contract; the layout is documented above and
     // guaranteed by the kernel. All casts match documented field sizes and alignments.
@@ -805,19 +838,14 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
           full_path += '/';
         }
         full_path += dir_entry.name;
-        struct stat stat_buf = {};
-        if (lstat(full_path.c_str(), &stat_buf) != 0) {
-          LOG_WARNING_BUILD("lstat failed for: " << full_path << ", error: " << errno);
+        if (!StatAndClassify(full_path, dir_entry.is_directory, dir_entry.is_symlink)) {
           continue;
         }
-        const auto mode = static_cast<unsigned>(stat_buf.st_mode);
-        dir_entry.is_directory = (S_ISDIR(mode) != 0);  // NOLINT(hicpp-signed-bitwise)
-        dir_entry.is_symlink = (S_ISLNK(mode) != 0);    // NOLINT(hicpp-signed-bitwise)
       }
 
       entries.push_back(std::move(dir_entry));
     }
-    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
   }
 
   return true;
@@ -871,6 +899,22 @@ void AppendLinuxDirent(const LinuxDirent64* d, std::string_view dir_path,
   }
   entries.push_back(std::move(dir_entry));
 }
+
+// Process one getdents64 buffer chunk to reduce nesting in EnumerateDirectory (S134).
+void ProcessGetdents64Buffer(const char* buf_data, long nread, std::string_view dir_path,  // NOLINT(google-runtime-int) - must match syscall return type
+                             std::vector<FolderCrawler::DirectoryEntry>& entries) {
+  // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+  long offset = 0;  // NOLINT(google-runtime-int) - must match nread type for comparison
+  while (offset < nread) {
+    const auto* d = reinterpret_cast<const LinuxDirent64*>(buf_data + offset);  // NOSONAR(cpp:S3630) - kernel ABI layout
+    if (d->d_reclen == 0) {
+      break;  // Guard against malformed entry
+    }
+    offset += static_cast<long>(d->d_reclen);  // NOLINT(google-runtime-int) - match offset type
+    AppendLinuxDirent(d, dir_path, entries);
+  }
+  // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+}
 }  // namespace
 
 // NOLINTNEXTLINE(readability-identifier-naming) - EnumerateDirectory is public API name
@@ -880,30 +924,20 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
   entries.reserve(kDefaultDirEntryReserve);
 
   // Open directory as a plain fd — no DIR* needed; getdents64 works on the fd.
-  const int fd = open(std::string(dir_path).c_str(),  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - POSIX open()
+  const int fd = open(std::string(dir_path).c_str(),
                       O_RDONLY | O_DIRECTORY);         // NOLINT(hicpp-signed-bitwise) - O_RDONLY/O_DIRECTORY are POSIX signed constants
   if (fd == -1) {
-    const int error = errno;
-    if (error == ENOENT) {
-      return true;
-    }
-    if (error == EACCES) {
-      LOG_WARNING_BUILD("Access denied to directory: " << dir_path);
-      return false;
-    }
-    LOG_WARNING_BUILD("open failed for: " << dir_path << ", error: " << error);
-    return false;
+    return HandleOpenErrno(errno, dir_path, "open");
   }
 
   std::vector<char> buf(kGetdents64BufSize);
   bool success = true;
   bool read_done = false;
 
-  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-type-reinterpret-cast)
-  // Buffer parsing uses pointer arithmetic and reinterpret_cast per the
-  // kernel's getdents64 ABI contract; layout is documented by the syscall spec.
+  // Buffer parsing uses pointer arithmetic and reinterpret_cast in ProcessGetdents64Buffer
+  // per the kernel's getdents64 ABI contract; layout is documented by the syscall spec.
   while (!read_done) {
-    const long nread = syscall(SYS_getdents64, fd,  // NOLINT(google-runtime-int,cppcoreguidelines-pro-type-vararg,hicpp-vararg) - syscall() signature uses long
+    const long nread = syscall(SYS_getdents64, fd,  // NOLINT(google-runtime-int) - syscall() signature uses long
                                buf.data(), buf.size());
     if (nread < 0) {
       LOG_WARNING_BUILD("getdents64 failed for: " << dir_path << ", error: " << errno);
@@ -912,18 +946,9 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
     } else if (nread == 0) {
       read_done = true;
     } else {
-      long offset = 0;  // NOLINT(google-runtime-int) - must match nread type for comparison
-      while (offset < nread) {
-        const auto* d = reinterpret_cast<const LinuxDirent64*>(buf.data() + offset);  // NOSONAR(cpp:S3630) - kernel ABI layout
-        if (d->d_reclen == 0) {
-          break;  // Guard against malformed entry
-        }
-        offset += d->d_reclen;
-        AppendLinuxDirent(d, dir_path, entries);
-      }
+      ProcessGetdents64Buffer(buf.data(), nread, dir_path, entries);
     }
   }
-  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-type-reinterpret-cast)
 
   close(fd);
   return success;

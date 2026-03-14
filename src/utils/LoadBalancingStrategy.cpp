@@ -69,9 +69,9 @@ namespace load_balancing_detail {
  * The lock itself must remain in the lambda scope for proper RAII.
  */
 struct ThreadSetupAfterLock {
-  PathStorage::SoAView soa_view_; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t storage_size_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  ParallelSearchEngine::PatternMatchers matchers_; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  PathStorage::SoAView soa_view_; // NOLINT(readability-identifier-naming)
+  size_t storage_size_ = 0; // NOLINT(readability-identifier-naming)
+  ParallelSearchEngine::PatternMatchers matchers_; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -107,17 +107,17 @@ struct ThreadSetupAfterLock {
  * @brief Parameters for thread timing recording
  */
 struct ThreadTimingParams {
-  size_t start_index_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t end_index_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t initial_items_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t dynamic_chunks_count_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t total_items_processed_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t bytes_processed_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t results_count_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  const PathStorage::SoAView* soa_view_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t storage_size_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t chunk_start_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t chunk_end_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  size_t start_index_ = 0; // NOLINT(readability-identifier-naming)
+  size_t end_index_ = 0; // NOLINT(readability-identifier-naming)
+  size_t initial_items_ = 0; // NOLINT(readability-identifier-naming)
+  size_t dynamic_chunks_count_ = 0; // NOLINT(readability-identifier-naming)
+  size_t total_items_processed_ = 0; // NOLINT(readability-identifier-naming)
+  size_t bytes_processed_ = 0; // NOLINT(readability-identifier-naming)
+  size_t results_count_ = 0; // NOLINT(readability-identifier-naming)
+  const PathStorage::SoAView* soa_view_ = nullptr; // NOLINT(readability-identifier-naming)
+  size_t storage_size_ = 0; // NOLINT(readability-identifier-naming)
+  size_t chunk_start_ = 0; // NOLINT(readability-identifier-naming)
+  size_t chunk_end_ = 0; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -158,7 +158,7 @@ inline void RecordThreadTimingIfRequested(
                                            params.results_count_, elapsed);
 
   if (thread_idx < static_cast<int>(thread_timings->size())) {
-    (*thread_timings)[thread_idx] = timing;
+    (*thread_timings)[thread_idx] = timing;  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounds checked by the enclosing if condition
   }
 }
 
@@ -188,11 +188,11 @@ inline void RecordThreadTimingIfRequested(
  */
 struct ChunkProcessingParams {
   const ThreadSetupAfterLock& setup; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  size_t chunk_start_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t chunk_end_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  int thread_idx_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  const char* strategy_name_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  const char* chunk_type_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  size_t chunk_start_ = 0; // NOLINT(readability-identifier-naming)
+  size_t chunk_end_ = 0; // NOLINT(readability-identifier-naming)
+  int thread_idx_ = 0; // NOLINT(readability-identifier-naming)
+  const char* strategy_name_ = nullptr; // NOLINT(readability-identifier-naming)
+  const char* chunk_type_ = nullptr; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -237,15 +237,15 @@ inline void ProcessChunkWithExceptionHandling(
  */
 struct DynamicChunksLoopParams {
   const ThreadSetupAfterLock& setup; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  size_t total_items_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t initial_chunks_end_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  std::atomic<size_t>* next_chunk_start_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  size_t total_items_ = 0; // NOLINT(readability-identifier-naming)
+  size_t initial_chunks_end_ = 0; // NOLINT(readability-identifier-naming)
+  std::atomic<size_t>* next_chunk_start_ = nullptr; // NOLINT(readability-identifier-naming)
   const SearchContext& context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   std::vector<SearchResultData>& local_results; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  int thread_idx_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  const char* strategy_name_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  int thread_count_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t min_chunk_size_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  int thread_idx_ = 0; // NOLINT(readability-identifier-naming)
+  const char* strategy_name_ = nullptr; // NOLINT(readability-identifier-naming)
+  int thread_count_ = 0; // NOLINT(readability-identifier-naming)
+  size_t min_chunk_size_ = 0; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -254,8 +254,8 @@ struct DynamicChunksLoopParams {
 struct DynamicChunksLoopOutput {
   size_t& dynamic_chunks_count; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   size_t& dynamic_items_total; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  size_t* total_bytes_processed_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t* total_items_processed_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  size_t* total_bytes_processed_ = nullptr; // NOLINT(readability-identifier-naming)
+  size_t* total_items_processed_ = nullptr; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -303,7 +303,7 @@ inline void ProcessDynamicChunksLoop(const DynamicChunksLoopParams& params,
     }
 
     // Calculate chunk end, ensuring we don't exceed total_items
-    const size_t chunk_end = (std::min)(chunk_start + current_chunk_size, params.total_items_);  // NOLINT(cppcoreguidelines-init-variables) - initialized by (std::min)
+    const size_t chunk_end = (std::min)(chunk_start + current_chunk_size, params.total_items_);
 
     // Process the dynamic chunk
     if (chunk_end <= chunk_start) {
@@ -333,11 +333,11 @@ inline void ProcessDynamicChunksLoop(const DynamicChunksLoopParams& params,
  */
 struct StaticStrategyTaskParams {
   const ISearchableIndex& index; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  size_t start_index_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t end_index_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  int thread_idx_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  size_t start_index_ = 0; // NOLINT(readability-identifier-naming)
+  size_t end_index_ = 0; // NOLINT(readability-identifier-naming)
+  int thread_idx_ = 0; // NOLINT(readability-identifier-naming)
   const SearchContext& context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -380,16 +380,16 @@ inline std::vector<SearchResultData> ExecuteStaticStrategyTask(
  */
 struct HybridStrategyTaskParams {
   const ISearchableIndex& index; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  size_t start_index_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t end_index_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  int thread_idx_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t total_items_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t initial_chunks_end_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  size_t start_index_ = 0; // NOLINT(readability-identifier-naming)
+  size_t end_index_ = 0; // NOLINT(readability-identifier-naming)
+  int thread_idx_ = 0; // NOLINT(readability-identifier-naming)
+  size_t total_items_ = 0; // NOLINT(readability-identifier-naming)
+  size_t initial_chunks_end_ = 0; // NOLINT(readability-identifier-naming)
   const std::shared_ptr<std::atomic<size_t>>& next_dynamic_chunk; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   const SearchContext& context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  int thread_count_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t min_chunk_size_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming)
+  int thread_count_ = 0; // NOLINT(readability-identifier-naming)
+  size_t min_chunk_size_ = 0; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -445,16 +445,16 @@ inline std::vector<SearchResultData> ExecuteHybridStrategyTask(
  */
 struct DynamicStrategyTaskParams {
   const ISearchableIndex& index; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  int thread_idx_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t total_items_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t initial_chunks_end_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t my_initial_start_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t my_initial_end_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  int thread_idx_ = 0; // NOLINT(readability-identifier-naming)
+  size_t total_items_ = 0; // NOLINT(readability-identifier-naming)
+  size_t initial_chunks_end_ = 0; // NOLINT(readability-identifier-naming)
+  size_t my_initial_start_ = 0; // NOLINT(readability-identifier-naming)
+  size_t my_initial_end_ = 0; // NOLINT(readability-identifier-naming)
   const std::shared_ptr<std::atomic<size_t>>& next_chunk_start; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  size_t min_chunk_size_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  size_t min_chunk_size_ = 0; // NOLINT(readability-identifier-naming)
   const SearchContext& context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  int thread_count_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming)
+  int thread_count_ = 0; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -470,7 +470,7 @@ inline std::vector<SearchResultData> ExecuteDynamicStrategyTask(
   std::vector<SearchResultData> local_results;
   // Reserve space assuming ~5% match rate (heuristic for performance)
   constexpr size_t k_match_rate_heuristic = 20;
-  const size_t estimated_matches = (std::max)(  // NOLINT(cppcoreguidelines-init-variables) - initialized by (std::max)
+  const size_t estimated_matches = (std::max)(
     (params.my_initial_end_ - params.my_initial_start_) / k_match_rate_heuristic,
     params.min_chunk_size_);
   local_results.reserve(estimated_matches);
@@ -524,13 +524,13 @@ inline std::vector<SearchResultData> ExecuteDynamicStrategyTask(
  */
 struct InterleavedStrategyTaskParams {
   const ISearchableIndex& index; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  int thread_idx_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t total_items_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  int thread_count_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t sub_chunk_size_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
-  size_t num_sub_chunks_ = 0; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  int thread_idx_ = 0; // NOLINT(readability-identifier-naming)
+  size_t total_items_ = 0; // NOLINT(readability-identifier-naming)
+  int thread_count_ = 0; // NOLINT(readability-identifier-naming)
+  size_t sub_chunk_size_ = 0; // NOLINT(readability-identifier-naming)
+  size_t num_sub_chunks_ = 0; // NOLINT(readability-identifier-naming)
   const SearchContext& context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming, misc-non-private-member-variables-in-classes)
+  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming)
 };
 
 /**
@@ -552,7 +552,7 @@ inline std::vector<SearchResultData> ExecuteInterleavedStrategyTask(
                               : params.total_items_;
   constexpr size_t k_hit_rate_heuristic_divisor = 5;
   constexpr size_t k_min_capacity = 16;
-  const size_t initial_capacity = (std::max)(items_per_thread / k_hit_rate_heuristic_divisor, k_min_capacity);  // NOLINT(cppcoreguidelines-init-variables) - initialized by (std::max); 20% hit rate heuristic
+  const size_t initial_capacity = (std::max)(items_per_thread / k_hit_rate_heuristic_divisor, k_min_capacity);
   local_results.reserve(initial_capacity);
 
   // CRITICAL: Acquire shared_lock in worker thread to prevent race conditions
@@ -1120,7 +1120,7 @@ inline std::vector<SearchResultData> ExecuteWorkStealingTask(
   size_t chunks_processed = 0;
   size_t bytes_processed = 0;
 
-  WorkQueue* my_queue = all_queues[static_cast<size_t>(thread_idx)].get();  // NOLINT(cppcoreguidelines-init-variables) - initialized by .get()
+  WorkQueue* my_queue = all_queues[static_cast<size_t>(thread_idx)].get();
   WorkChunk chunk{};
 
   // 1. Process local queue first
@@ -1141,7 +1141,7 @@ inline std::vector<SearchResultData> ExecuteWorkStealingTask(
   // Simple random stealing or round-robin
   for (int i = 1; i < thread_count; ++i) {
     const int victim_idx = (thread_idx + i) % thread_count;
-    WorkQueue* victim_queue = all_queues[static_cast<size_t>(victim_idx)].get();  // NOLINT(cppcoreguidelines-init-variables) - initialized by .get()
+    WorkQueue* victim_queue = all_queues[static_cast<size_t>(victim_idx)].get();
 
     // Try to steal until empty
     while (victim_queue->pop(chunk)) {

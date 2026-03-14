@@ -100,7 +100,7 @@ if(WIN32)
 elseif(APPLE)
     set(GEMINI_API_HTTP_SRC src/api/GeminiApiHttp_mac.mm)
     set(PLATFORM_THREAD_UTILS_SRC src/platform/macos/ThreadUtils_mac.cpp)
-    set(PLATFORM_STRING_UTILS_SRC src/platform/macos/StringUtils_mac.cpp)
+    set(PLATFORM_STRING_UTILS_SRC src/platform/posix/StringUtils_posix.cpp)
 elseif(UNIX AND NOT APPLE)
     find_package(Threads REQUIRED)
     find_package(CURL QUIET)
@@ -110,7 +110,7 @@ elseif(UNIX AND NOT APPLE)
         set(GEMINI_API_HTTP_SRC src/api/GeminiApiHttp_stub.cpp)
     endif()
     set(PLATFORM_THREAD_UTILS_SRC src/platform/linux/ThreadUtils_linux.cpp)
-    set(PLATFORM_STRING_UTILS_SRC src/platform/linux/StringUtils_linux.cpp)
+    set(PLATFORM_STRING_UTILS_SRC src/platform/posix/StringUtils_posix.cpp)
 endif()
 
 # --- Shared utility sources (cross-platform, reused in app and test targets) ---
@@ -779,16 +779,32 @@ option(BUILD_TESTS "Build unit tests" ON)
 option(CROSS_PLATFORM_TESTS "Enable cross-platform test support (macOS/Linux)" ON)
 # ASan is ON by default for tests - catches memory bugs like use-after-free
 option(ENABLE_ASAN "Enable Address Sanitizer for tests (GCC/Clang only)" ON)
+# TSAN (Thread Sanitizer) is OFF by default - catches data races; macOS/Linux only (not supported on Windows). Mutually exclusive with ASAN.
+option(ENABLE_TSAN "Enable Thread Sanitizer for tests (macOS/Linux, Clang/GCC only)" OFF)
 # Code coverage is OFF by default
 option(ENABLE_COVERAGE "Enable code coverage instrumentation (Clang/GCC only)" OFF)
 # When ENABLE_COVERAGE and APPLE, also instrument find_helper for ImGui test coverage.
 option(COVERAGE_INSTRUMENT_FIND_HELPER "Instrument find_helper for coverage on macOS when ENABLE_COVERAGE is ON (ImGui tests)" ON)
 
+# ASan and TSAN are mutually exclusive (cannot link both runtimes).
+if(ENABLE_TSAN AND ENABLE_ASAN)
+    set(ENABLE_ASAN OFF CACHE BOOL "Disabled because ENABLE_TSAN is ON (mutually exclusive)" FORCE)
+    message(STATUS "  TSAN and ASAN are mutually exclusive; ASAN disabled because TSAN is enabled")
+endif()
+
 # ASan helper function
 function(apply_asan_to_target target_name)
-    if(ENABLE_ASAN AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    if(ENABLE_ASAN AND NOT ENABLE_TSAN AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${target_name} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
         target_link_options(${target_name} PRIVATE -fsanitize=address)
+    endif()
+endfunction()
+
+# TSAN helper function (macOS/Linux only; not supported on Windows - see LLVM ThreadSanitizer docs).
+function(apply_tsan_to_target target_name)
+    if(ENABLE_TSAN AND NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${target_name} PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
+        target_link_options(${target_name} PRIVATE -fsanitize=thread)
     endif()
 endfunction()
 
@@ -1119,6 +1135,17 @@ if(BUILD_TESTS)
         add_test(NAME StringSearchTests COMMAND string_search_tests)
         message(STATUS "  Test executable: string_search_tests")
 
+        # Fuzzy search tests
+        add_executable(fuzzy_search_tests
+            tests/FuzzySearchTests.cpp
+            $<TARGET_OBJECTS:test_utils_obj>
+            $<TARGET_OBJECTS:test_path_obj>
+            $<TARGET_OBJECTS:test_string_utils_obj>
+        )
+        configure_test_target(fuzzy_search_tests)
+        add_test(NAME FuzzySearchTests COMMAND fuzzy_search_tests)
+        message(STATUS "  Test executable: fuzzy_search_tests")
+
         # CPU features tests
         add_executable(cpu_features_tests
             tests/CpuFeaturesTests.cpp
@@ -1264,6 +1291,29 @@ if(BUILD_TESTS)
         add_test(NAME SearchPatternUtilsTests COMMAND search_pattern_utils_tests)
         message(STATUS "  Test executable: search_pattern_utils_tests")
 
+        # ExportSearchResultsService tests (CSV escaping and ExportToCsv)
+        add_executable(export_search_results_service_tests
+            tests/ExportSearchResultsServiceTests.cpp
+            src/search/ExportSearchResultsService.cpp
+            src/search/SearchResultUtils.cpp
+            src/filters/SizeFilterUtils.cpp
+            src/filters/TimeFilterUtils.cpp
+            src/gui/GuiState.cpp
+            ${PLATFORM_THREAD_UTILS_SRC}
+            $<TARGET_OBJECTS:test_search_obj>
+            $<TARGET_OBJECTS:test_utils_obj>
+            $<TARGET_OBJECTS:test_path_obj>
+            $<TARGET_OBJECTS:test_string_utils_obj>
+            $<TARGET_OBJECTS:test_core_obj>
+            $<TARGET_OBJECTS:test_fileindex_obj>
+        )
+        configure_test_target(export_search_results_service_tests)
+        target_include_directories(export_search_results_service_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
+        )
+        add_test(NAME ExportSearchResultsServiceTests COMMAND export_search_results_service_tests)
+        message(STATUS "  Test executable: export_search_results_service_tests")
+
         # RegexGeneratorUtils tests
         add_executable(regex_generator_utils_tests
             tests/RegexGeneratorUtilsTests.cpp
@@ -1314,6 +1364,7 @@ if(BUILD_TESTS)
             )
         endif()
         apply_asan_to_target(lazy_attribute_loader_tests)
+        apply_tsan_to_target(lazy_attribute_loader_tests)
         add_test(NAME LazyAttributeLoaderTests COMMAND lazy_attribute_loader_tests)
         message(STATUS "  Test executable: lazy_attribute_loader_tests")
 
@@ -1387,6 +1438,7 @@ if(BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
         )
         apply_asan_to_target(gui_state_tests)
+        apply_tsan_to_target(gui_state_tests)
         add_test(NAME GuiStateTests COMMAND gui_state_tests)
         message(STATUS "  Test executable: gui_state_tests")
 
@@ -1645,6 +1697,7 @@ if(BUILD_TESTS)
         add_executable(incremental_search_state_tests
             tests/IncrementalSearchStateTests.cpp
             src/ui/IncrementalSearchState.cpp
+            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(incremental_search_state_tests)
         add_test(NAME IncrementalSearchStateTests COMMAND incremental_search_state_tests)
@@ -1692,6 +1745,14 @@ if(BUILD_TESTS)
                 tests/CoverageAllSourcesMain.cpp
             )
 
+            # Include Windows MFT metadata reader in coverage when the feature is enabled so
+            # src/index/mft/MftMetadataReader.cpp no longer appears in coverage/missing_files.txt.
+            if(WIN32 AND ENABLE_MFT_METADATA_READING)
+                list(APPEND COVERAGE_ALL_SOURCES
+                    src/index/mft/MftMetadataReader.cpp
+                )
+            endif()
+
             add_executable(coverage_all_sources ${COVERAGE_ALL_SOURCES})
             configure_test_target(coverage_all_sources)
 
@@ -1700,6 +1761,9 @@ if(BUILD_TESTS)
             endif()
             if(ENABLE_ASAN)
                 apply_asan_to_target(coverage_all_sources)
+            endif()
+            if(ENABLE_TSAN)
+                apply_tsan_to_target(coverage_all_sources)
             endif()
 
             if(APPLE)
@@ -1756,8 +1820,10 @@ if(BUILD_TESTS)
             apply_asan_to_target(path_pattern_matcher_tests)
             apply_asan_to_target(path_pattern_integration_tests)
             apply_asan_to_target(simple_regex_tests)
+            apply_asan_to_target(export_search_results_service_tests)
             apply_asan_to_target(string_utils_tests)
             apply_asan_to_target(file_system_utils_tests)
+            apply_asan_to_target(fuzzy_search_tests)
             apply_asan_to_target(file_index_search_strategy_tests)
             if(TARGET gemini_api_utils_tests)
                 apply_asan_to_target(gemini_api_utils_tests)
@@ -1767,9 +1833,32 @@ if(BUILD_TESTS)
             message(STATUS "  Address Sanitizer enabled for all test targets")
         endif()
 
+        # Apply Thread Sanitizer to all test targets if enabled (macOS/Linux only; mutually exclusive with ASAN)
+        if(ENABLE_TSAN)
+            apply_tsan_to_target(string_search_tests)
+            apply_tsan_to_target(cpu_features_tests)
+            apply_tsan_to_target(string_search_avx2_tests)
+            apply_tsan_to_target(path_utils_tests)
+            apply_tsan_to_target(path_pattern_matcher_tests)
+            apply_tsan_to_target(path_pattern_integration_tests)
+            apply_tsan_to_target(simple_regex_tests)
+            apply_tsan_to_target(export_search_results_service_tests)
+            apply_tsan_to_target(string_utils_tests)
+            apply_tsan_to_target(file_system_utils_tests)
+            apply_tsan_to_target(fuzzy_search_tests)
+            apply_tsan_to_target(file_index_search_strategy_tests)
+            if(TARGET gemini_api_utils_tests)
+                apply_tsan_to_target(gemini_api_utils_tests)
+            endif()
+            apply_tsan_to_target(settings_tests)
+            apply_tsan_to_target(std_regex_utils_tests)
+            message(STATUS "  Thread Sanitizer enabled for all test targets (macOS/Linux)")
+        endif()
+
         # Apply code coverage instrumentation to all test targets if enabled
         if(ENABLE_COVERAGE)
             apply_coverage_to_target(string_search_tests)
+            apply_coverage_to_target(fuzzy_search_tests)
             apply_coverage_to_target(cpu_features_tests)
             apply_coverage_to_target(string_search_avx2_tests)
             apply_coverage_to_target(string_search_neon_tests)
@@ -1778,6 +1867,8 @@ if(BUILD_TESTS)
             apply_coverage_to_target(path_pattern_integration_tests)
             apply_coverage_to_target(simple_regex_tests)
             apply_coverage_to_target(search_pattern_utils_tests)
+            apply_coverage_to_target(export_search_results_service_tests)
+            apply_coverage_to_target(regex_generator_utils_tests)
             apply_coverage_to_target(string_utils_tests)
             apply_coverage_to_target(file_system_utils_tests)
             apply_coverage_to_target(lazy_attribute_loader_tests)
@@ -1798,6 +1889,7 @@ if(BUILD_TESTS)
             apply_coverage_to_target(std_regex_utils_tests)
             apply_coverage_to_target(search_result_sort_tests)
             apply_coverage_to_target(total_size_computation_tests)
+            apply_coverage_to_target(incremental_search_state_tests)
             if(TARGET path_pattern_benchmark)
                 apply_coverage_to_target(path_pattern_benchmark)
             endif()
@@ -1830,9 +1922,11 @@ if(BUILD_TESTS)
         endif()
 
         set(TEST_TARGETS
-            string_search_tests cpu_features_tests string_search_avx2_tests
+            string_search_tests fuzzy_search_tests cpu_features_tests string_search_avx2_tests
+            string_search_neon_tests
             path_utils_tests path_pattern_matcher_tests path_pattern_integration_tests
-            simple_regex_tests search_pattern_utils_tests string_utils_tests file_system_utils_tests
+            simple_regex_tests search_pattern_utils_tests export_search_results_service_tests regex_generator_utils_tests
+            string_utils_tests file_system_utils_tests
             lazy_attribute_loader_tests parallel_search_engine_tests time_filter_utils_tests
             gui_state_tests file_index_search_strategy_tests gemini_api_utils_tests
             streaming_results_collector_tests

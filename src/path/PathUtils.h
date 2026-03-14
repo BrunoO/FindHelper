@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -29,6 +30,15 @@ inline constexpr const char* kPathSeparatorStr = "/";
  * macOS/Linux: "/"
  */
 std::string GetDefaultVolumeRootPath();
+
+/**
+ * @brief Get a view of the default volume root path without allocating
+ *
+ * Returns a std::string_view into internal storage on Windows (g_defaultVolumeRootPath)
+ * or a string literal on macOS/Linux. This is useful for performance-sensitive
+ * code paths (e.g. path recomputation) that only need to read the root prefix.
+ */
+std::string_view GetDefaultVolumeRootPathView();
 
 /**
  * @brief Set the default volume root path (Windows only)
@@ -174,6 +184,23 @@ std::string TruncatePathAtBeginning(std::string_view path, float max_width,
  * @param path Path to extract filename from
  * @return Filename component (e.g., "file.txt" from "/path/to/file.txt")
  */
+/**
+ * @brief Remove trailing path separators (both '/' and '\\') from a path
+ *
+ * Returns a zero-copy view into the original string with trailing separators
+ * stripped. Used to normalise paths before storage or comparison.
+ *
+ * @param path Path to trim
+ * @return View of path without trailing separators
+ */
+inline std::string_view TrimTrailingSeparators(std::string_view path) {
+  size_t n = path.size();
+  while (n > 0 && (path[n - 1] == '/' || path[n - 1] == '\\')) {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounds-checked by n > 0
+    --n;
+  }
+  return path.substr(0, n);
+}
+
 inline std::string_view GetFilename(std::string_view path) {
   // Find last separator
   // Note: We check for both separators to handle mixed paths correctly on Windows
@@ -201,6 +228,36 @@ inline std::string_view GetExtension(std::string_view path) {
   }
 
   return {};
+}
+
+// ============================================================================
+// Filename / Extension Extraction
+// ============================================================================
+
+/**
+ * @brief Extract filename stem and extension from a pre-computed path
+ *
+ * @param path         Null-terminated path string (e.g. "C:\\Users\\file.txt")
+ * @param filename_start_offset  Offset where the filename begins (after last separator)
+ * @param extension_start_offset Offset of the first extension character (after the dot),
+ *                               or SIZE_MAX when there is no extension
+ * @param out_filename  Receives the filename stem (no dot, no extension)
+ * @param out_extension Receives the extension (no dot), or is cleared when absent
+ */
+inline void ExtractFilenameAndExtension(const char* path,
+                                        size_t filename_start_offset,
+                                        size_t extension_start_offset,
+                                        std::string& out_filename,
+                                        std::string& out_extension) {
+  const char* filename_start = path + filename_start_offset;
+  if (extension_start_offset != SIZE_MAX) {
+    const size_t filename_len = extension_start_offset - filename_start_offset - 1;
+    out_filename.assign(filename_start, filename_len);
+    out_extension.assign(path + extension_start_offset);
+  } else {
+    out_filename.assign(filename_start);
+    out_extension.clear();
+  }
 }
 
 }  // namespace path_utils

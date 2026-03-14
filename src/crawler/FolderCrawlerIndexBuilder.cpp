@@ -27,7 +27,7 @@ public:
   ~FolderCrawlerIndexBuilder() override {  // NOLINT(bugprone-exception-escape) - Stop() wraps thread::join in a catch-all; no exception can escape
     Stop();
   }
-  
+
   // Non-copyable, non-movable (manages indexing state)
   FolderCrawlerIndexBuilder(const FolderCrawlerIndexBuilder&) = delete;
   FolderCrawlerIndexBuilder& operator=(const FolderCrawlerIndexBuilder&) = delete;
@@ -47,10 +47,7 @@ public:
       return;
     }
 
-    state.active.store(true, std::memory_order_release);
-    state.completed.store(false, std::memory_order_release);
-    state.failed.store(false, std::memory_order_release);
-    state.cancel_requested.store(false, std::memory_order_release);
+    state.MarkStarting();
 
     // Remember the shared state so Stop() can signal cancellation.
     shared_state_ = &state;

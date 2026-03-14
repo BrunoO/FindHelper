@@ -318,12 +318,11 @@ if "$SONAR_SCANNER" "${SCANNER_ARGS[@]}"; then
         # Create output directory
         mkdir -p "$OUTPUT_DIR"
         
-        # Check if get_sonarqube_issues.sh exists and use it
-        ISSUES_SCRIPT="$SCRIPT_DIR/get_sonarqube_issues.sh"
-        if [[ -f "$ISSUES_SCRIPT" ]] && [[ -x "$ISSUES_SCRIPT" ]]; then
-            echo -e "${BLUE}Using existing get_sonarqube_issues.sh script...${NC}"
+        # Fetch results using fetch_sonar_results.sh (single script for SonarCloud issues)
+        FETCH_SCRIPT="$SCRIPT_DIR/fetch_sonar_results.sh"
+        if [[ -f "$FETCH_SCRIPT" ]] && [[ -x "$FETCH_SCRIPT" ]]; then
+            echo -e "${BLUE}Fetching results with fetch_sonar_results.sh...${NC}"
             
-            # Determine output file based on format
             case "$FETCH_FORMAT" in
                 json)
                     OUTPUT_FILE="$OUTPUT_DIR/sonarqube_issues.json"
@@ -339,13 +338,12 @@ if "$SONAR_SCANNER" "${SCANNER_ARGS[@]}"; then
                     ;;
             esac
             
-            # Run the issues script
-            if "$ISSUES_SCRIPT" \
+            if "$FETCH_SCRIPT" \
                 --org "$ORGANIZATION" \
                 --project "$PROJECT_KEY" \
                 --token "$TOKEN" \
                 --format "$FETCH_FORMAT" \
-                --output "$OUTPUT_FILE"; then
+                --output-dir "$OUTPUT_DIR"; then
                 echo ""
                 echo -e "${GREEN}✅ Results saved to: $OUTPUT_FILE${NC}"
                 # Display OPEN issues on stdout when we have JSON (so user doesn't have to open the file)

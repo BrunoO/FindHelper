@@ -15,7 +15,7 @@
 
 // Simple timer for metrics (lightweight, no logging overhead)
 struct MetricsTimer {
-  std::chrono::high_resolution_clock::time_point start{std::chrono::high_resolution_clock::now()};  // NOLINT(misc-non-private-member-variables-in-classes) - Simple struct for metrics, public member is intentional
+  std::chrono::high_resolution_clock::time_point start{std::chrono::high_resolution_clock::now()};
   MetricsTimer() = default;
   [[nodiscard]] uint64_t ElapsedMs() const {
     auto end = std::chrono::high_resolution_clock::now();
@@ -60,7 +60,7 @@ public:
   // See class documentation above for design rationale.
   explicit SearchWorker(FileIndex &file_index);
   ~SearchWorker();
-  
+
   // Non-copyable, non-movable (manages search state and threads)
   SearchWorker(const SearchWorker &) = delete;
   SearchWorker &operator=(const SearchWorker &) = delete;
@@ -169,7 +169,7 @@ private:
   std::atomic<bool> is_searching_ = false;  // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
   std::atomic<bool> search_complete_ = false; // NOLINT(readability-identifier-naming) - True when all chunks are processed; project convention: snake_case_ for members
   std::atomic<bool> stream_partial_results_ = true;  // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
-  
+
   // shared_ptr so worker can hold a reference during ProcessStreamingSearchFutures;
   // prevents use-after-free when DiscardResults or StartSearch destroys collector
   // while worker is in exception handler calling SetError.

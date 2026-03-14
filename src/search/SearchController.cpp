@@ -109,6 +109,20 @@ void WaitAndCleanupFuture(std::future<void>& future) {
 }
 
 /**
+ * @brief Invalidate filter caches and clear filtered result vectors
+ *
+ * Must be called whenever searchResults is replaced or cleared so that
+ * GetDisplayResults does not return stale filtered data.
+ *
+ * @param state GUI state whose filter caches should be invalidated
+ */
+inline void InvalidateFilterCaches(GuiState& state) {
+  state.InvalidateFilterCacheFlags();
+  state.filteredResults.clear();
+  state.sizeFilteredResults.clear();
+}
+
+/**
  * @brief Wait for and cleanup all attribute loading futures
  *
  * Cleans up all pending attribute loading futures before replacing results.
@@ -123,7 +137,7 @@ void WaitForAllAttributeLoadingFutures(GuiState& state) {
   }
   state.attributeLoadingFutures.clear();
   state.loadingAttributes = false;
-  
+
   // Also clean up cloud file loading futures
   for (auto& future : state.cloudFileLoadingFutures) {
     WaitAndCleanupFuture(future);
@@ -150,7 +164,7 @@ void WaitForAllAttributeLoadingFutures(GuiState& state) {
     // Partial results: always update (they're incremental by nature)
     return true;
   }
-  
+
   // Complete results: only update if they actually changed
   // This prevents the "blink" effect when auto-refresh triggers but results are identical
   if (constexpr size_t kLargeResultSetThreshold = 100000; new_results.size() > kLargeResultSetThreshold) {  // NOLINT(readability-identifier-naming) - Constant follows project convention
@@ -160,8 +174,8 @@ void WaitForAllAttributeLoadingFutures(GuiState& state) {
              " items), skipping comparison");
     return true;
   }
-  
-  const bool results_changed = CompareSearchResults(current_results, new_results);  // NOLINT(cppcoreguidelines-init-variables) - initialized from CompareSearchResults() return value
+
+  const bool results_changed = CompareSearchResults(current_results, new_results);
   LOG_INFO("CompareSearchResults returned: " +
            std::string(results_changed ? "true (changed)" : "false (identical)"));
   return results_changed;
@@ -184,12 +198,8 @@ void UpdateSearchResults(GuiState& state,
   // CRITICAL: Invalidate filter caches whenever searchResults is replaced.
   // GetDisplayResults checks valid flags and falls back to searchResults when invalid.
   // Clear the vectors so we do not hold stale filter data.
-  state.timeFilterCacheValid = false;
-  state.sizeFilterCacheValid = false;
-  state.InvalidateDisplayedTotalSize();
+  InvalidateFilterCaches(state);
   state.InvalidateFolderStats();
-  state.filteredResults.clear();
-  state.sizeFilteredResults.clear();
   // Only set resultsUpdated when search is complete
   // This prevents auto re-sorting during incremental updates
   // Results are shown incrementally (unsorted) until complete, then sorted
@@ -202,7 +212,7 @@ void UpdateSearchResults(GuiState& state,
   }
   if (!state.searchResultPathPool.empty()) {
     const auto pool_size = state.searchResultPathPool.size();
-    assert(std::all_of(state.searchResults.begin(), state.searchResults.end(),
+    assert(std::all_of(state.searchResults.begin(), state.searchResults.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
                        [&state, pool_size](const SearchResult& r) {
                          const auto* const pool_start = state.searchResultPathPool.data();
                          const auto pool_index =
@@ -225,11 +235,7 @@ void ApplyStreamingErrorToState(GuiState& state,
     state.searchResults = std::move(state.partialResults);
     state.partialResults.clear();
   }
-  state.timeFilterCacheValid = false;
-  state.sizeFilterCacheValid = false;
-  state.InvalidateDisplayedTotalSize();
-  state.filteredResults.clear();
-  state.sizeFilteredResults.clear();
+  InvalidateFilterCaches(state);
   state.resultsComplete = true;
   state.showingPartialResults = false;
   state.searchActive = false;
@@ -255,7 +261,7 @@ void ConsumePendingStreamingBatches(GuiState& state,
   }
 
   // Compute bytes needed for the new batch (same formula as MergeAndConvertToSearchResults).
-  const size_t pool_bytes_needed = std::accumulate(  // NOLINT(cppcoreguidelines-init-variables) - initialized by std::accumulate result
+  const size_t pool_bytes_needed = std::accumulate(
       pending_batches.begin(), pending_batches.end(), size_t{0},
       [](size_t acc, const SearchResultData& datum) {
         return acc + datum.fullPath.size() + 1;
@@ -264,7 +270,7 @@ void ConsumePendingStreamingBatches(GuiState& state,
   // If appending would reallocate the pool, existing partialResults[].fullPath would become
   // dangling (they point into the current buffer). Migrate to a new pool so we never invalidate.
   // Reserve aggressively (2x current batch) to reduce migration frequency for large result sets.
-  const size_t reserve_target = state.searchResultPathPool.size() + (pool_bytes_needed * 2);  // NOLINT(cppcoreguidelines-init-variables) - headroom for ~1 more batch
+  const size_t reserve_target = state.searchResultPathPool.size() + (pool_bytes_needed * 2);
   if (std::vector<char>& pool = state.searchResultPathPool;
       !pool.empty() && pool.capacity() < pool.size() + pool_bytes_needed) {
     const char* old_data = pool.data();
@@ -298,11 +304,7 @@ void FinalizeStreamingSearchComplete(GuiState& state,
     // Clear result vectors and caches BEFORE clearing the pool (path pool lifecycle).
     state.searchResults.clear();
     state.partialResults.clear();
-    state.timeFilterCacheValid = false;
-    state.sizeFilterCacheValid = false;
-    state.InvalidateDisplayedTotalSize();
-    state.filteredResults.clear();
-    state.sizeFilteredResults.clear();
+    InvalidateFilterCaches(state);
     state.searchResultPathPool.clear();
 
     std::vector<SearchResult> new_results =
@@ -311,7 +313,7 @@ void FinalizeStreamingSearchComplete(GuiState& state,
     // Debug invariant: every SearchResult.fullPath must point into the current pool.
     if (!state.searchResultPathPool.empty()) {
       const auto pool_size = state.searchResultPathPool.size();
-      assert(std::all_of(state.searchResults.begin(), state.searchResults.end(),
+      assert(std::all_of(state.searchResults.begin(), state.searchResults.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
                          [&state, pool_size](const SearchResult& r) {
                            const auto* const pool_start = state.searchResultPathPool.data();
                            const auto pool_index =
@@ -325,11 +327,7 @@ void FinalizeStreamingSearchComplete(GuiState& state,
     WaitForAllAttributeLoadingFutures(state);
     state.searchResults.clear();
     state.partialResults.clear();
-    state.timeFilterCacheValid = false;
-    state.sizeFilterCacheValid = false;
-    state.InvalidateDisplayedTotalSize();
-    state.filteredResults.clear();
-    state.sizeFilteredResults.clear();
+    InvalidateFilterCaches(state);
     state.searchResultPathPool.clear();
     state.resultsUpdated = true;
   }
@@ -358,12 +356,8 @@ void ClearSearchResults(GuiState& state, [[maybe_unused]] std::string_view reaso
   // (string_view into the pool) is left dangling. See path pool lifecycle in file header.
   state.searchResults.clear();
   state.partialResults.clear();
-  state.timeFilterCacheValid = false;
-  state.sizeFilterCacheValid = false;
-  state.InvalidateDisplayedTotalSize();
+  InvalidateFilterCaches(state);
   state.InvalidateFolderStats();
-  state.filteredResults.clear();
-  state.sizeFilteredResults.clear();
   state.searchResultPathPool.clear();
   // Clear marks for new searches (ClearSearchResults is called when a new search starts)
   state.markedFileIds.clear();
@@ -394,7 +388,7 @@ void ApplyNonStreamingSearchResults(GuiState& state,
     ClearSearchResults(state, "new search completed with 0 results (early return)");
     return;
   }
-  if (const bool should_update = ShouldUpdateResults(is_complete, new_results, state.searchResults);  // NOLINT(cppcoreguidelines-init-variables) - C++17 if-init pattern; variable initialized by ShouldUpdateResults
+  if (const bool should_update = ShouldUpdateResults(is_complete, new_results, state.searchResults);
       should_update) {
     if (is_complete || !new_results.empty() || state.searchResults.empty()) {
       UpdateSearchResults(state, std::move(new_results), is_complete);
@@ -541,10 +535,10 @@ void SearchController::HandleAutoRefresh(GuiState &state,
 
 // Helper structure to compare SearchResult metadata efficiently
 struct ResultMetadata {
-  uint64_t fileSize = 0;  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
-  FILETIME lastModificationTime{};  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init)
-  std::string filename{};  // NOLINT(misc-non-private-member-variables-in-classes,readability-redundant-member-init)
-  std::string fullPath{};  // NOLINT(misc-non-private-member-variables-in-classes,readability-identifier-naming,readability-redundant-member-init)
+  uint64_t fileSize = 0;  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
+  FILETIME lastModificationTime{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init)
+  std::string filename{};  // NOLINT(readability-redundant-member-init)
+  std::string fullPath{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init)
 
   bool operator==(const ResultMetadata &other) const {  // NOSONAR(cpp:S2807) - Member operator is acceptable; could be refactored to hidden friend later if needed
     return fileSize == other.fileSize &&
@@ -710,11 +704,7 @@ void SearchController::PollResults(GuiState &state,
   // Clear result vectors and caches BEFORE clearing the pool so no SearchResult.fullPath
   // (string_view into the pool) is left dangling. See path pool lifecycle in file header.
   state.searchResults.clear();
-  state.timeFilterCacheValid = false;
-  state.sizeFilterCacheValid = false;
-  state.InvalidateDisplayedTotalSize();
-  state.filteredResults.clear();
-  state.sizeFilteredResults.clear();
+  InvalidateFilterCaches(state);
   state.searchResultPathPool.clear();
 
   std::vector<SearchResult> new_results =

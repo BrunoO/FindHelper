@@ -17,7 +17,7 @@ using gemini_api_utils::ParseSearchConfigJson;
 using gemini_api_utils::ValidatePathPatternFormat;
 
 // IMPORTANT: These unit tests skip API calls by default for safety.
-// 
+//
 // - By default, tests will NOT make real API calls (safer, faster)
 // - To enable real API calls in tests, set GEMINI_API_TEST_ENABLE environment variable
 // - Note: This variable is test-only and does not affect production code
@@ -87,7 +87,7 @@ TEST_CASE("ParseSearchConfigJson - Valid Responses") {
 
   SUBCASE("API error response") {
     const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
-      {test_helpers::CreateGeminiErrorResponse(400, "Invalid API key", "INVALID_ARGUMENT"), 
+      {test_helpers::CreateGeminiErrorResponse(400, "Invalid API key", "INVALID_ARGUMENT"),
        false, "", "Invalid API key", {}, "API error response"}
     };
     test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
@@ -175,7 +175,7 @@ TEST_CASE("BuildSearchConfigPrompt - Basic Descriptions") {
 
   SUBCASE("Description with special characters") {
     const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
-      {R"(files with 'quotes' and "double quotes" and \backslashes)", 
+      {R"(files with 'quotes' and "double quotes" and \backslashes)",
        R"(files with 'quotes' and "double quotes" and \backslashes)"}
     };
     test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
@@ -183,7 +183,7 @@ TEST_CASE("BuildSearchConfigPrompt - Basic Descriptions") {
 
   SUBCASE("Description with newlines") {
     const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
-      {"all files\nin directory\nwith extension .txt", 
+      {"all files\nin directory\nwith extension .txt",
        "all files\nin directory\nwith extension .txt"}
     };
     test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
@@ -191,7 +191,7 @@ TEST_CASE("BuildSearchConfigPrompt - Basic Descriptions") {
 
   SUBCASE("Description with Unicode characters") {
     const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
-      {u8"files in 目录 with 中文 names", 
+      {u8"files in 目录 with 中文 names",
        u8"files in 目录 with 中文 names"}
     };
     test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
@@ -199,7 +199,7 @@ TEST_CASE("BuildSearchConfigPrompt - Basic Descriptions") {
 
   SUBCASE("Description with Windows path separators") {
     const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
-      {R"(files in C:\Users\Documents\)", 
+      {R"(files in C:\Users\Documents\)",
        R"(files in C:\Users\Documents\)"}
     };
     test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
@@ -210,10 +210,10 @@ TEST_CASE("BuildSearchConfigPrompt - Prompt Structure") {
   SUBCASE("Prompt structure - path field is primary, no filename/extensions in schema") {
     const std::string desc = "find all .cpp files";
     const std::string prompt = BuildSearchConfigPrompt(desc);
-    
+
     // Verify prompt mentions path field
     CHECK(prompt.find("\"path\"") != std::string::npos);
-    
+
     // Verify prompt does NOT mention filename or extensions in the schema
     // (They may appear in examples or documentation, but not as primary fields)
     // Note: We check that "filename" and "extensions" are not in the main schema section
@@ -243,7 +243,7 @@ TEST_CASE("BuildSearchConfigPrompt - Prompt with Description Size") {
   const std::string desc = "find all C++ source files modified this week";
   const std::string prompt = BuildSearchConfigPrompt(desc);
   CHECK(prompt.size() < k_max_prompt_size);
-  
+
   // Verify prompt includes the user description
   CHECK(prompt.find(desc) != std::string::npos);
 }
@@ -404,8 +404,8 @@ TEST_CASE("ParseSearchConfigJson - Invalid Fields") {
     // Empty text after cleaning results in JSON parse error or invalid structure message
     auto result = ParseSearchConfigJson(json);
     CHECK(result.success == false);
-    const bool has_valid_error = (result.error_message.find("parse error") != std::string::npos) ||  // NOLINT(cppcoreguidelines-init-variables)
-                                  (result.error_message.find("Invalid JSON structure") != std::string::npos);
+    const bool has_valid_error = (result.error_message.find("parse error") != std::string::npos) ||
+                                 (result.error_message.find("Invalid JSON structure") != std::string::npos);
     CHECK(has_valid_error);
   }
 
@@ -553,7 +553,7 @@ TEST_CASE("ValidatePathPatternFormat - Complex Patterns") {
     std::string long_pattern = "pp:";
     long_pattern += std::string(k_long_pattern_length, '*');
     long_pattern += ".txt";
-    
+
     CHECK(ValidatePathPatternFormat(long_pattern) == true);
   }
 }
@@ -600,7 +600,7 @@ TEST_CASE("GetGeminiApiKeyFromEnv - Edge Cases") {
 }
 
 // NOTE: These tests verify backward compatibility with old format that included extensions field.
-// The new prompt (BuildSearchConfigPrompt) only uses path field, but parsing still supports 
+// The new prompt (BuildSearchConfigPrompt) only uses path field, but parsing still supports
 // old format for backward compatibility (in case old responses are cached or from previous API versions).
 
 TEST_CASE("ParseSearchConfigJson - Old Format Fix Path Pattern with Extension") {
@@ -661,9 +661,9 @@ TEST_CASE("ParseSearchConfigJson - Old Format Multiple Extensions") {
 
   Json outer_json;
   outer_json["candidates"][0]["content"]["parts"][0]["text"] = inner_json.dump();
-  
+
   auto result = ParseSearchConfigJson(outer_json.dump());
-  
+
   REQUIRE(result.success == true);
   REQUIRE(result.search_config.extensions.size() == 2);
   CHECK(result.search_config.extensions[0] == "cpp");
@@ -695,9 +695,9 @@ TEST_CASE("ParseSearchConfigJson - Old Format Real World Case") {
   const std::string json = test_helpers::CreateGeminiJsonResponse(
     R"({"version": "1.0", "search_config": {"extensions": ["cpp"], "path": "pp:USN_windows/**/*.cpp", "time_filter": "Today"}})"
   );
-  
+
   auto result = ParseSearchConfigJson(json);
-  
+
   CHECK(result.success == true);
   CHECK(result.search_config.extensions.size() == 1);
   CHECK(result.search_config.extensions[0] == "cpp");
@@ -711,9 +711,9 @@ TEST_CASE("ParseSearchConfigJson - New Format Path Only with Extension") {
   const std::string json = test_helpers::CreateGeminiJsonResponse(
     R"({"version": "1.0", "search_config": {"path": "pp:**/USN_windows**/*.cpp", "time_filter": "Today"}})"
   );
-  
+
   auto result = ParseSearchConfigJson(json);
-  
+
   CHECK(result.success == true);
   CHECK(result.search_config.extensions.empty()); // No extensions field in new format
   CHECK(result.search_config.time_filter == "Today");
@@ -728,9 +728,9 @@ TEST_CASE("ParseSearchConfigJson - New Format Regex Exclusion Pattern") {
   const std::string json = test_helpers::CreateGeminiJsonResponse(
     R"({"version": "1.0", "search_config": {"path": "rs:^(?!.*[/]thirdparty[/]).*\\.cpp$"}})"
   );
-  
+
   auto result = ParseSearchConfigJson(json);
-  
+
   CHECK(result.success == true);
   CHECK(result.search_config.extensions.empty()); // No extensions field
   // Path uses regex for exclusion pattern
@@ -751,9 +751,9 @@ TEST_CASE("ParseSearchConfigJson - New Format Regex Multiple Extensions") {
       }
     }]
   })";
-  
+
   auto result = ParseSearchConfigJson(json);
-  
+
   CHECK(result.success == true);
   CHECK(result.search_config.extensions.empty()); // No extensions field
   // Path uses regex for multiple extensions (PathPattern doesn't support alternation)

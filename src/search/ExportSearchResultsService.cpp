@@ -61,7 +61,7 @@ std::string ExportSearchResultsService::EscapeCsv(std::string_view str) {
   // Prevent formula injection by checking the first character
   // If it starts with =, +, -, or @, we prepend a single quote and force double quotes
   bool needs_formula_escape = false;
-  if (const char first_char = str[0];
+  if (const char first_char = str[0];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - str is non-empty: early return for empty str at line 49 above
       first_char == '=' || first_char == '+' || first_char == '-' || first_char == '@') {
     needs_formula_escape = true;
   }

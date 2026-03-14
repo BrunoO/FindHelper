@@ -11,23 +11,23 @@
 
 /**
  * Simple thread pool for search operations.
- * 
+ *
  * Reuses threads instead of creating new ones for each search, which:
  * 1. Eliminates thread creation overhead (1-10ms per thread)
  * 2. Makes strategy comparisons fairer (consistent baseline)
  * 3. Improves performance for frequent searches
- * 
+ *
  * Thread-safe: Can be used from multiple threads concurrently.
  */
 class SearchThreadPool {
 public:
   /**
    * Create a thread pool with the specified number of threads.
-   * 
+   *
    * @param num_threads Number of worker threads (default: hardware concurrency)
    */
   explicit SearchThreadPool(size_t num_threads = 0);
-  
+
   /**
    * Destructor: Shuts down the thread pool and waits for all threads to finish.
    */
@@ -42,7 +42,7 @@ public:
 
   /**
    * Enqueue a task to be executed by a worker thread.
-   * 
+   *
    * @param f Callable object (function, lambda, etc.)
    * @return Future that will contain the result when the task completes
    */
@@ -51,10 +51,10 @@ public:
     // Create a packaged_task to wrap the callable
     auto task = std::make_shared<std::packaged_task<decltype(f())()>>(
         std::forward<F>(f));
-    
+
     // Get future for the result
     std::future<decltype(f())> result = task->get_future();
-    
+
     {
       const std::scoped_lock lock(mutex_);
       if (shutdown_) {
@@ -63,11 +63,11 @@ public:
         LOG_WARNING_BUILD("SearchThreadPool: Task rejected during shutdown (thread pool is shutting down)");
         return result;
       }
-      
+
       // Enqueue the task
       tasks_.emplace([task]() { (*task)(); });
     }
-    
+
     // Notify one waiting thread
     cv_.notify_one();
     return result;

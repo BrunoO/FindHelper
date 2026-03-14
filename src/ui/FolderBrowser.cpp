@@ -35,9 +35,9 @@ constexpr float kModalPivotHalf = 0.5F;
   }
   std::string lower_display(display_name);
   std::string lower_filter(filter_text);
-  std::transform(lower_display.begin(), lower_display.end(), lower_display.begin(),
+  std::transform(lower_display.begin(), lower_display.end(), lower_display.begin(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
                  [](unsigned char c) { return std::tolower(c); });
-  std::transform(lower_filter.begin(), lower_filter.end(), lower_filter.begin(),
+  std::transform(lower_filter.begin(), lower_filter.end(), lower_filter.begin(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
                  [](unsigned char c) { return std::tolower(c); });
   return lower_display.find(lower_filter) != std::string::npos;
 }
@@ -57,7 +57,7 @@ void NavigateToRootFallback(FolderBrowser* browser) {
 #ifdef _WIN32
   browser->NavigateTo(std::filesystem::path("C:\\Users"));
 #else
-  if (const char* home = std::getenv("HOME"); home != nullptr) {  // NOLINT(concurrency-mt-unsafe,cppcoreguidelines-init-variables) - home set in init-statement; fallback, UI thread only
+  if (const char* home = std::getenv("HOME"); home != nullptr) {  // NOLINT(concurrency-mt-unsafe) - home set in init-statement; fallback, UI thread only
     browser->NavigateTo(std::filesystem::path(home));
   } else {
     browser->NavigateTo(std::filesystem::path("/"));
@@ -101,9 +101,9 @@ void TryNavigateToCurrentPath(FolderBrowser* browser) {
 // Helper function to render header section (reduces cognitive complexity)
 void RenderHeader(const std::filesystem::path& current_path, FolderBrowser* browser) {  // NOSONAR(cpp:S6010) - current_path stored as string in class, but path type is more appropriate for filesystem operations
   // Current path display
-  ImGui::Text("Current Path:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::Text("Current Path:");
   ImGui::SameLine();
-  ImGui::TextWrapped("%s", current_path.string().c_str());  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::TextWrapped("%s", current_path.string().c_str());
 
   ImGui::Spacing();
 
@@ -127,11 +127,11 @@ void RenderHeader(const std::filesystem::path& current_path, FolderBrowser* brow
 
 // Helper function to render filter input (reduces cognitive complexity)
 void RenderFilterInput(std::string& filter_text, int& selected_index) {
-  ImGui::Text("Filter:");  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  ImGui::Text("Filter:");
   ImGui::SameLine();
   std::array<char, kFilterBufferSize> filter_buf{};
   strcpy_safe(filter_buf.data(), filter_buf.size(), filter_text.c_str());
-  if (ImGui::InputText("##filter", filter_buf.data(), filter_buf.size())) {  // NOLINT(cppcoreguidelines-pro-type-vararg,hicpp-vararg) - ImGui API
+  if (ImGui::InputText("##filter", filter_buf.data(), filter_buf.size())) {
     filter_text = filter_buf.data();
     selected_index = -1;
   }
@@ -148,7 +148,7 @@ void RenderDirectoryList(const std::vector<std::filesystem::path>& entries,
   ImGui::BeginChild("##folder_list", ImVec2(0.0F, kFolderListBottomPadding), true, ImGuiWindowFlags_HorizontalScrollbar);  // NOLINT(readability-implicit-bool-conversion) - ImGui API expects int for border
 
   for (size_t i = 0; i < entries.size(); ++i) {
-    const auto& entry = entries[i];
+    const auto& entry = entries[i];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - loop-guarded: i < entries.size(); index needed for i==0 check below
     std::string display_name;
 
     // Special handling for parent directory

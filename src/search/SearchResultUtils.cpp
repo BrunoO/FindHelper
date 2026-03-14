@@ -34,6 +34,7 @@
 
 #include "filters/SizeFilterUtils.h"
 #include "filters/TimeFilterUtils.h"
+#include "search/SearchResultsService.h"
 #include "utils/AsyncUtils.h"
 #include "utils/FileAttributeConstants.h"
 #include "utils/FileSystemUtils.h"
@@ -55,7 +56,7 @@ constexpr int kMaxWaitForCancelledTasksMs = 10;
  * @return True if all futures are ready, false otherwise
  */
 bool AreAllFuturesComplete(const std::vector<std::future<void>>& futures) {
-  return std::all_of(futures.begin(), futures.end(), [](const auto& f) {
+  return std::all_of(futures.begin(), futures.end(), [](const auto& f) {  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
     return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
   });
 }
@@ -287,7 +288,7 @@ static void InitializeFilteredResults(std::vector<SearchResult>& filtered, size_
 static bool MatchesTimeFilter(const FILETIME& last_mod_time, const FILETIME& cutoff_time,
                               TimeFilter filter) {
   const int comparison = CompareFileTime(
-    &last_mod_time, &cutoff_time);  // NOLINT(cppcoreguidelines-init-variables) - Variable
+    &last_mod_time, &cutoff_time);
                                     // initialized by CompareFileTime return value
   return (filter == TimeFilter::Older) ? (comparison < 0) : (comparison >= 0);
 }
@@ -698,7 +699,7 @@ void UpdateDisplayedTotalSizeIfNeeded(GuiState& state, const FileIndex& file_ind
   while (idx < results.size() &&
          loads_this_frame < kDisplayedTotalSizeLoadsPerFrame &&
          scans_this_frame < kDisplayedTotalSizeScansPerFrame) {
-    const SearchResult& result = results[idx];
+    const SearchResult& result = results[idx];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - idx < results.size() is the while-loop guard
     ++idx;
     ++scans_this_frame;
 
@@ -780,6 +781,7 @@ static std::vector<std::future<void>> StartAttributeLoadingAsync(
 
   // Enqueue all I/O tasks using index-based access for safety.
   // This prevents use-after-free if the results vector is replaced while tasks are running.
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by results.size() in outer loop; lambdas re-validate via ValidateIndexAndCancellation before accessing results[i]
   for (size_t i = 0; i < results.size(); ++i) {
     const auto& result = results[i];
     if (result.isDirectory) {
@@ -803,6 +805,7 @@ static std::vector<std::future<void>> StartAttributeLoadingAsync(
       }));
     }
   }
+  // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
   return futures;
 }
@@ -907,6 +910,7 @@ void SortSearchResults(std::vector<SearchResult>& results, int column_index,
     const size_t n = results.size();
     std::vector<uint64_t> keys;
     keys.reserve(n);
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - all accesses (results[i], keys[i], keys[j], results[i], results[idx]) are bounded: i/j are sort indices in [0,n); idx comes from indices which are iota [0,n)
     for (size_t i = 0; i < n; ++i) {
       const SearchResult& r = results[i];
       const uint64_t metric = GetFolderSortMetric(r, column_index, stats_by_path);
@@ -927,6 +931,7 @@ void SortSearchResults(std::vector<SearchResult>& results, int column_index,
     for (const size_t idx : indices) {
       sorted.push_back(results[idx]);
     }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     results = std::move(sorted);
     return;
   }

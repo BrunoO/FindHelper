@@ -27,13 +27,14 @@ constexpr size_t kMaxPatternLength = 1000;
 enum class PatternType : std::uint8_t {  // NOLINT(performance-enum-size) - explicit uint8_t; checker may still flag in some contexts
   StdRegex,    // rs: prefix - full ECMAScript regex
   PathPattern, // pp: prefix OR auto-detected (contains ^, $, **, [], {}, \d, \w) - advanced path pattern
+  Fuzzy,       // fz: prefix - fuzzy matching (subsequence)
   Glob,        // contains * or ? - wildcard pattern (matches substrings)
   Substring    // default - substring search
 };
 
 // Detect the type of pattern based on its content
 // Detection priority:
-// 1. Explicit prefixes (rs:, pp:) - highest priority
+// 1. Explicit prefixes (rs:, pp:, fz:) - highest priority
 // 2. Advanced PathPattern features (^, $, **, [], {}, \d, \w) - auto-detect
 // 3. Glob patterns (*, ?) - simple wildcards
 // 4. Substring - default fallback
@@ -47,20 +48,23 @@ inline PatternType DetectPatternType(std::string_view pattern) {
     if (prefix == "pp:") {
       return PatternType::PathPattern;
     }
+    if (prefix == "fz:") {
+      return PatternType::Fuzzy;
+    }
   }
 
   // 2. Advanced PathPattern auto-detect (no prefix, but clearly using PathPattern features)
   const bool has_anchor_start = !pattern.empty() && pattern.front() == '^';
   const bool has_anchor_end = !pattern.empty() && pattern.back() == '$';
-  const bool has_double_star = pattern.find("**") != std::string_view::npos;  // NOLINT(cppcoreguidelines-init-variables)
-  const bool has_char_class =  // NOLINT(cppcoreguidelines-init-variables)
+  const bool has_double_star = pattern.find("**") != std::string_view::npos;
+  const bool has_char_class =
       pattern.find('[') != std::string_view::npos ||
       pattern.find(']') != std::string_view::npos;
-  const bool has_quantifier =  // NOLINT(cppcoreguidelines-init-variables)
+  const bool has_quantifier =
       pattern.find('{') != std::string_view::npos ||
       pattern.find('}') != std::string_view::npos;
 
-  if (const bool has_d_or_w_escape =  // NOLINT(cppcoreguidelines-init-variables)
+  if (const bool has_d_or_w_escape =
           pattern.find("\\d") != std::string_view::npos ||
           pattern.find("\\w") != std::string_view::npos;
       has_anchor_start || has_anchor_end || has_double_star ||
@@ -81,7 +85,8 @@ inline PatternType DetectPatternType(std::string_view pattern) {
 // Extract the actual pattern (remove prefix if present)
 inline std::string ExtractPattern(std::string_view input) {
   if (input.size() >= 3 &&
-      (input.substr(0, 3) == "rs:" || input.substr(0, 3) == "pp:")) {
+      (input.substr(0, 3) == "rs:" || input.substr(0, 3) == "pp:" ||
+       input.substr(0, 3) == "fz:")) {
     return std::string(input.substr(3));
   }
   return std::string(input);
@@ -95,7 +100,7 @@ inline bool MatchPattern(std::string_view pattern, std::string_view text,
     return true; // Empty pattern matches everything
   }
 
-  switch (const PatternType type = DetectPatternType(pattern); type) {  // NOLINT(cppcoreguidelines-init-variables) - Variable initialized in C++17 init-statement
+  switch (const PatternType type = DetectPatternType(pattern); type) {
   case PatternType::StdRegex: {
     const std::string regex_pattern = ExtractPattern(pattern);
     // Empty pattern after extracting "rs:" prefix is invalid
@@ -122,6 +127,12 @@ inline bool MatchPattern(std::string_view pattern, std::string_view text,
     return path_pattern::PathPatternMatches(path_pattern, text, options);
   }
 
+  case PatternType::Fuzzy: {
+    const std::string fuzzy_pattern = ExtractPattern(pattern);
+    return case_sensitive ? string_search::FuzzyMatch(text, fuzzy_pattern)
+                          : string_search::FuzzyMatchI(text, fuzzy_pattern);
+  }
+
   case PatternType::Glob:
     return case_sensitive ? simple_regex::GlobMatch(pattern, text)
                           : simple_regex::GlobMatchI(pattern, text);
@@ -145,16 +156,16 @@ struct TextTypeTraits;
 template<>
 struct TextTypeTraits<const char*> {
   using ReturnType = lightweight_callable::LightweightCallable<bool, const char*>;
-  
+
   static bool ContainsSubstringCaseSensitive(const char* text, std::string_view pattern) {
     // strstr is safe here: text is null-terminated (from std::string), pattern is bounded by string_view
     return strstr(text, pattern.data()) != nullptr;  // NOSONAR(cpp:S7132) NOLINT(bugprone-suspicious-stringview-data-usage) - text null-terminated, pattern bounded
   }
-  
+
   static bool ContainsSubstringCaseInsensitive(const char* text, std::string_view pattern) {
     return string_search::StrStrCaseInsensitive(text, pattern.data()) != nullptr;  // NOLINT(bugprone-suspicious-stringview-data-usage) - pattern bounded by string_view
   }
-  
+
   static std::string ConvertToStdString(const char* text) {
     return std::string{text};
   }
@@ -163,15 +174,15 @@ struct TextTypeTraits<const char*> {
 template<>
 struct TextTypeTraits<std::string_view> {
   using ReturnType = lightweight_callable::LightweightCallable<bool, std::string_view>;
-  
+
   static bool ContainsSubstringCaseSensitive(std::string_view text, std::string_view pattern) {
     return string_search::ContainsSubstring(text, pattern);
   }
-  
+
   static bool ContainsSubstringCaseInsensitive(std::string_view text, std::string_view pattern) {
     return string_search::ContainsSubstringI(text, pattern);
   }
-  
+
   static std::string ConvertToStdString(std::string_view text) {
     return std::string{text};
   }
@@ -218,6 +229,23 @@ inline typename TextTypeTraits<TextType>::ReturnType CreateMatcherImplPathPatter
       path_pattern::CompilePathPattern(path_pattern, options));
   return [compiled_ptr](TextType text) {
     return path_pattern::PathPatternMatches(*compiled_ptr, text);
+  };
+}
+
+template<typename TextType>
+inline typename TextTypeTraits<TextType>::ReturnType CreateMatcherImplFuzzy(
+    std::string_view pattern, bool case_sensitive) {
+  const std::string fuzzy_pattern = ExtractPattern(pattern);
+  if (fuzzy_pattern.empty()) {
+    return [](TextType) { return true; };
+  }
+  if (case_sensitive) {
+    return [fuzzy_pattern](TextType text) {  // NOLINT(bugprone-exception-escape) - FuzzyMatch performs string comparison and does not throw in practice
+      return string_search::FuzzyMatch(text, fuzzy_pattern);
+    };
+  }
+  return [fuzzy_pattern](TextType text) {  // NOLINT(bugprone-exception-escape) - FuzzyMatchI performs string comparison and does not throw in practice
+    return string_search::FuzzyMatchI(text, fuzzy_pattern);
   };
 }
 
@@ -271,11 +299,13 @@ CreateMatcherImpl(std::string_view pattern, bool case_sensitive,
   if (pattern.empty()) {
     return [](TextType) { return true; };
   }
-  switch (const PatternType type = DetectPatternType(pattern); type) {  // NOLINT(cppcoreguidelines-init-variables) - Variable initialized in C++17 init-statement
+  switch (const PatternType type = DetectPatternType(pattern); type) {
   case PatternType::StdRegex:
     return CreateMatcherImplStdRegex<TextType>(pattern, case_sensitive);
   case PatternType::PathPattern:
     return CreateMatcherImplPathPattern<TextType>(pattern, case_sensitive);
+  case PatternType::Fuzzy:
+    return CreateMatcherImplFuzzy<TextType>(pattern, case_sensitive);
   case PatternType::Glob:
     return CreateMatcherImplGlob<TextType>(pattern, case_sensitive);
   case PatternType::Substring:
@@ -363,7 +393,7 @@ inline bool ExtensionMatches(std::string_view ext_view,
   std::array<char, k_max_ext_len> lower_buf{};
   size_t i = 0;  // NOLINT(misc-const-correctness) - incremented in loop
   for (const char c : ext_view) {
-    lower_buf[i] = string_search::ToLowerChar(static_cast<unsigned char>(c));  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index) - i bounded by ext_view.size() <= k_max_ext_len
+    lower_buf[i] = string_search::ToLowerChar(static_cast<unsigned char>(c));  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index,cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by ext_view.size() <= k_max_ext_len
     ++i;
   }
   const std::string_view lower_view(lower_buf.data(), ext_view.size());

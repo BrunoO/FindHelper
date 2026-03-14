@@ -16,15 +16,15 @@ size_t SearchStatisticsCollector::CalculateChunkBytes(
   if (soaView.size == 0) {
     return 0;
   }
-  
+
   size_t total_bytes = 0;
   for (size_t i = start_index_; i < end_index_ && i < soaView.size; ++i) {
     if (i + 1 < soaView.size) {
-      total_bytes += soaView.path_offsets[i + 1] - soaView.path_offsets[i] - 1;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic) - SoAView raw array; bounds checked by loop
+      total_bytes += soaView.path_offsets[i + 1] - soaView.path_offsets[i] - 1;
     } else {
       // Last entry: calculate from offset to end of storage
-      if (soaView.path_offsets[i] < storage_size) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        total_bytes += storage_size - soaView.path_offsets[i] - 1;  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      if (soaView.path_offsets[i] < storage_size) {
+        total_bytes += storage_size - soaView.path_offsets[i] - 1;
       }
     }
   }
