@@ -358,8 +358,6 @@ HGLOBAL CreateHDropForPath(const std::wstring& path) {
   return h_global;
 }
 
-}  // namespace
-
 bool StartFileDragDrop(std::string_view full_path_utf8) {
   const std::string path(full_path_utf8);
   if (!file_operations::internal::ValidatePath(path, "StartFileDragDrop")) {
