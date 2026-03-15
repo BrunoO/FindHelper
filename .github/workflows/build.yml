@@ -53,6 +53,7 @@ jobs:
           submodules: recursive
 
       # Boost (Windows): use downloaded source; CMake finds it via BOOST_ROOT (Option A).
+      # Two-layer cache: extracted dir (fast path) and zip (fallback so we only re-extract, not re-download).
       - name: Cache Boost source (Windows)
         id: cache-boost-win
         uses: actions/cache@v4
@@ -61,26 +62,50 @@ jobs:
           key: boost-src-1.90.0-win
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true'
 
+      - name: Cache Boost zip (Windows)
+        id: cache-boost-zip-win
+        uses: actions/cache@v4
+        with:
+          path: boost_zip_win
+          key: boost-zip-1.90.0-win
+        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true' && steps.cache-boost-win.outputs.cache-hit != 'true'
+
       - name: Download Boost source (Windows)
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true' && steps.cache-boost-win.outputs.cache-hit != 'true'
         run: |
-          curl -sSL -o boost.zip "https://archives.boost.io/release/1.90.0/source/boost_1_90_0.zip"
-          Expand-Archive -Path boost.zip -DestinationPath .
-          Remove-Item boost.zip
+          if (Test-Path "boost_zip_win/boost_1_90_0.zip") {
+            Expand-Archive -Path "boost_zip_win/boost_1_90_0.zip" -DestinationPath .
+          } else {
+            New-Item -ItemType Directory -Force -Path boost_zip_win | Out-Null
+            curl -sSL -o boost_zip_win/boost_1_90_0.zip "https://archives.boost.io/release/1.90.0/source/boost_1_90_0.zip"
+            Expand-Archive -Path "boost_zip_win/boost_1_90_0.zip" -DestinationPath .
+          }
 
       # Boost (macOS): install via Homebrew (Option B).
       - name: Install Boost (macOS)
         if: matrix.os == 'macos-latest' && env.BUILD_WITH_BOOST == 'true'
         run: brew install boost
 
+      # Boost (Linux): use vcpkg (previous working approach). Entire vcpkg dir (incl. downloaded Boost) is cached.
+      - name: Cache vcpkg (Linux, Boost)
+        id: vcpkg-cache-linux
+        uses: actions/cache@v4
+        with:
+          path: vcpkg
+          key: vcpkg-linux-boost-minimal-2
+        if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true'
+
+      - name: Install vcpkg and Boost (Linux, minimal)
+        if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true' && steps.vcpkg-cache-linux.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git vcpkg
+          ./vcpkg/bootstrap-vcpkg.sh
+          ./vcpkg/vcpkg install boost-headers boost-unordered boost-regex boost-lockfree
+
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-22.04'
         run: |
           PACKAGES="build-essential cmake pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev libcurl4-openssl-dev libfontconfig1-dev libx11-dev libxss-dev wayland-protocols libwayland-dev libxkbcommon-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libwayland-bin"
-          if [ "${{ env.BUILD_WITH_BOOST }}" = "true" ]; then
-            sudo add-apt-repository -y ppa:mhier/libboost-latest
-            PACKAGES="$PACKAGES libboost-dev"
-          fi
           sudo apt-get update
           sudo apt-get install -y $PACKAGES
 
@@ -88,7 +113,7 @@ jobs:
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true'
         run: |
           $env:BOOST_ROOT = "${{ github.workspace }}/boost_1_90_0"
-          cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_MFT_METADATA_READING=ON -DFAST_LIBS_BOOST=ON -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=OFF
+          cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_MFT_METADATA_READING=ON -DFAST_LIBS_BOOST=ON -DBOOST_ROOT="${{ github.workspace }}/boost_1_90_0"
 
       - name: Configure (Windows, without Boost)
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST != 'true'
@@ -105,7 +130,7 @@ jobs:
         if: matrix.os == 'ubuntu-22.04'
         run: |
           EXTRA=""
-          [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON"
+          [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA
 
       - name: Build (Windows)

@@ -773,8 +773,8 @@ TEST_SUITE("FileIndex Search Strategies") {
       for (int attempt = 0; attempt < kMaxAttempts && !any_run_clean; ++attempt) {
         test_helpers::TestFileIndexFixture index_fixture(2000);
         FileIndex& index = index_fixture.GetIndex();
-        std::atomic writer_error{false};
-        std::atomic reader_error{false};
+        std::atomic<bool> writer_error{false};  // NOSONAR(cpp:S6012) - C++17; std::atomic has no CTAD until C++20
+        std::atomic<bool> reader_error{false};   // NOSONAR(cpp:S6012) - C++17; std::atomic has no CTAD until C++20
 
         auto writer_task = [&index, &writer_error]() {
           for (int i = 0; i < kWriterIterations && !writer_error.load(std::memory_order_relaxed); ++i) {
@@ -794,7 +794,7 @@ TEST_SUITE("FileIndex Search Strategies") {
               }
             } catch (const std::exception&) {
               reader_error.store(true, std::memory_order_relaxed);
-            } catch (...) {
+            } catch (...) {  // NOSONAR(cpp:S2738) - Stress test: record any exception (e.g. assert, system) from concurrent search
               reader_error.store(true, std::memory_order_relaxed);
             }
           }
