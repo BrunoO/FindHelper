@@ -27,7 +27,7 @@ TEST_CASE("IndexOperations::Insert creates file entry") {
   CHECK(entry->parentID == 1);
 
   // Verify path was inserted
-  const std::string path = fixture.GetPathStorage().GetPath(2);
+  const std::string path = fixture.GetPathOperations().GetPath(2);
   CHECK(path.find("test.txt") != std::string::npos);
 }
 
@@ -99,7 +99,7 @@ TEST_CASE("IndexOperations::Rename updates file name") {
   CHECK(entry->name_length == 11);  // len("newname.txt")
 
   // Verify path was updated
-  const std::string path = fixture.GetPathStorage().GetPath(2);
+  const std::string path = fixture.GetPathOperations().GetPath(2);
   CHECK(path.find("newname.txt") != std::string::npos);
 }
 
@@ -134,7 +134,7 @@ TEST_CASE("IndexOperations::Move updates parent directory") {
   CHECK(entry->parentID == 3);
 
   // Verify path was updated
-  const std::string path = fixture.GetPathStorage().GetPath(4);
+  const std::string path = fixture.GetPathOperations().GetPath(4);
   CHECK(path.find("dir2") != std::string::npos);
 }
 

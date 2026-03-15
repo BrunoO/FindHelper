@@ -1,10 +1,11 @@
 #pragma once
 
-#include "utils/HashMapAliases.h"
 #include "utils/Logger.h"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -91,40 +92,33 @@ public:
    * @param id File ID
    * @param path Full path string
    * @param isDirectory True if this is a directory  // NOLINT(readability-identifier-naming) - Public API parameter name
-   *
-   * If the ID already exists, the old entry is marked as deleted and a new
-   * entry is appended. This maintains the SoA layout without complex in-place
-   * updates.
+   * @param existing_index If set, try in-place update at this index (e.g. rename); else append
+   * @return SoA index of the entry (existing or newly appended)
    */
-  void InsertPath(uint64_t id, const std::string &path, bool isDirectory);  // NOLINT(readability-identifier-naming) - Public API parameter names
+  [[nodiscard]] size_t InsertPath(uint64_t id, const std::string& path, bool isDirectory,  // NOLINT(readability-identifier-naming) - Public API parameter names
+                                  std::optional<size_t> existing_index = std::nullopt);
 
   /**
-   * @brief Mark a path entry as deleted (tombstone)
+   * @brief Mark the path entry at the given SoA index as deleted (tombstone)
    *
-   * @param id File ID to mark as deleted
-   *
-   * Returns true if the entry was found and marked, false if not found.
+   * @param index SoA array index
+   * @return true if the slot was marked deleted, false if index invalid or already deleted
    */
-  [[nodiscard]] bool RemovePath(uint64_t id);
-
-  /**
-   * @brief Update a path entry (remove old, insert new)
-   *
-   * @param id File ID
-   * @param newPath New full path string  // NOLINT(readability-identifier-naming) - Public API parameter name
-   * @param isDirectory True if this is a directory  // NOLINT(readability-identifier-naming) - Public API parameter name
-   */
-  void UpdatePath(uint64_t id, const std::string &newPath, bool isDirectory);  // NOLINT(readability-identifier-naming) - Public API parameter names
+  [[nodiscard]] bool RemovePathByIndex(size_t index);
 
   /**
    * @brief Update all paths with a given prefix
    *
    * @param oldPrefix Old path prefix to replace
    * @param newPrefix New path prefix
+   * @param on_index_changed Called when a path is re-allocated at a new index (new path longer
+   *        than old slot). Caller should update FileEntry.path_storage_index so it points to the
+   *        new slot; otherwise GetPathByIndex will return {} for those entries.
    *
    * Used when renaming/moving directories to update all descendant paths.
    */
-  void UpdatePrefix(std::string_view oldPrefix, std::string_view newPrefix);  // NOLINT(readability-identifier-naming) - Public API parameter names
+  void UpdatePrefix(std::string_view oldPrefix, std::string_view newPrefix,  // NOLINT(readability-identifier-naming) - Public API parameter names
+                    const std::function<void(uint64_t file_id, size_t new_index)>& on_index_changed = {});  // NOLINT(readability-identifier-naming) - Public API parameter names
 
   /**
    * @brief Get a read-only view of SoA arrays for search operations
@@ -137,23 +131,7 @@ public:
   [[nodiscard]] SoAView GetReadOnlyView() const;
 
   /**
-   * @brief Get path string for a given ID
-   *
-   * @param id File ID
-   * @return Full path string, or empty string if not found
-   */
-  [[nodiscard]] std::string GetPath(uint64_t id) const;
-
-  /**
-   * @brief Get zero-copy path view for a given ID
-   *
-   * @param id File ID
-   * @return String view of path, or empty view if not found
-   */
-  [[nodiscard]] std::string_view GetPathView(uint64_t id) const;
-
-  /**
-   * @brief Get path by array index (for search operations)
+   * @brief Get path by array index (for search operations and id→path via FileEntry.path_storage_index)
    *
    * @param index Array index
    * @return String view of path, or empty view if index is invalid
@@ -172,28 +150,12 @@ public:
   };
 
   /**
-   * @brief Get path components for a given ID
-   *
-   * @param id File ID
-   * @return PathComponentsView with all path components
-   */
-  [[nodiscard]] PathComponentsView GetPathComponents(uint64_t id) const;
-
-  /**
    * @brief Get path components by array index
    *
    * @param index Array index
    * @return PathComponentsView with all path components
    */
   [[nodiscard]] PathComponentsView GetPathComponentsByIndex(size_t index) const;
-
-  /**
-   * @brief Get array index for a given ID
-   *
-   * @param id File ID
-   * @return Array index, or SIZE_MAX if not found
-   */
-  [[nodiscard]] size_t GetIndexForId(uint64_t id) const;
 
   /**
    * @brief Get the number of entries (including deleted)
@@ -210,10 +172,11 @@ public:
   /**
    * @brief Rebuild path buffer to remove deleted entries
    *
-   * This defragments the storage by removing all deleted entries and rebuilding
-   * the contiguous buffer. Should be called periodically during maintenance.
+   * Defragments storage by removing deleted entries and rebuilding the buffer.
+   * Calls on_rebuilt_entry(file_id, new_index) for each kept entry so caller can
+   * update FileEntry.path_storage_index.
    */
-  void RebuildPathBuffer();
+  void RebuildPathBuffer(const std::function<void(uint64_t file_id, size_t index)>& on_rebuilt_entry);
 
   /**
    * @brief Clear all entries
@@ -255,9 +218,6 @@ private:
   std::vector<size_t> extension_start_;  // NOLINT(readability-identifier-naming)
   std::vector<uint8_t> is_deleted_;  // NOLINT(readability-identifier-naming)
   std::vector<uint8_t> is_directory_;  // NOLINT(readability-identifier-naming)
-
-  // ID -> array index mapping for O(1) lookup
-  hash_map_t<uint64_t, size_t> id_to_path_index_;  // NOLINT(readability-identifier-naming)
 
   // Statistics
   std::atomic<size_t> deleted_count_{0};  // NOLINT(readability-identifier-naming)

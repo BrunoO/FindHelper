@@ -523,13 +523,13 @@ SearchContext CreateExtensionSearchContext(const std::vector<std::string>& exten
 }
 
 TestIndexOperationsFixture::TestIndexOperationsFixture()
-    : storage_(mutex_), path_operations_(path_storage_),
+    : storage_(mutex_), path_operations_(storage_, path_storage_),
       operations_(storage_, path_operations_, remove_not_in_index_count_,
                   remove_inconsistency_count_),
       lock_(mutex_) {}
 
 TestDirectoryResolverFixture::TestDirectoryResolverFixture()
-    : storage_(mutex_), path_operations_(path_storage_),
+    : storage_(mutex_), path_operations_(storage_, path_storage_),
       operations_(storage_, path_operations_, remove_not_in_index_count_,
                   remove_inconsistency_count_),
       resolver_(storage_, operations_, next_file_id_), lock_(mutex_) {}
@@ -537,8 +537,9 @@ TestDirectoryResolverFixture::TestDirectoryResolverFixture()
 test_helpers::TestFileIndexMaintenanceFixture::TestFileIndexMaintenanceFixture(
   const std::function<size_t()>& get_alive_count)
     : remove_not_in_index_count_(0), remove_duplicate_count_(0), remove_inconsistency_count_(0),
-      maintenance_(path_storage_, mutex_, get_alive_count, remove_not_in_index_count_,
-                   remove_duplicate_count_, remove_inconsistency_count_) {}
+      maintenance_(path_storage_, mutex_, get_alive_count,
+                   [this](uint64_t file_id, size_t index) { id_to_index_[file_id] = index; },
+                   remove_not_in_index_count_, remove_duplicate_count_, remove_inconsistency_count_) {}
 
 test_helpers::TestFileIndexMaintenanceFixture::TestFileIndexMaintenanceFixture(
   size_t remove_not_in_index_count, size_t remove_duplicate_count,
@@ -546,8 +547,9 @@ test_helpers::TestFileIndexMaintenanceFixture::TestFileIndexMaintenanceFixture(
     : remove_not_in_index_count_(remove_not_in_index_count),
       remove_duplicate_count_(remove_duplicate_count),
       remove_inconsistency_count_(remove_inconsistency_count),
-      maintenance_(path_storage_, mutex_, get_alive_count, remove_not_in_index_count_,
-                   remove_duplicate_count_, remove_inconsistency_count_) {}
+      maintenance_(path_storage_, mutex_, get_alive_count,
+                   [this](uint64_t file_id, size_t index) { id_to_index_[file_id] = index; },
+                   remove_not_in_index_count_, remove_duplicate_count_, remove_inconsistency_count_) {}
 
 void test_helpers::TestFileIndexMaintenanceFixture::InsertTestPath(uint64_t id,
                                                                    const std::string& path,
@@ -556,42 +558,45 @@ void test_helpers::TestFileIndexMaintenanceFixture::InsertTestPath(uint64_t id,
   if (actual_path.empty()) {
     actual_path = "C:\\test\\file" + std::to_string(id) + (is_dir ? "" : ".txt");
   }
-  path_storage_.InsertPath(id, actual_path, is_dir);
+  const size_t idx = path_storage_.InsertPath(id, actual_path, is_dir, std::nullopt);
+  id_to_index_[id] = idx;
 }
 
 void test_helpers::TestFileIndexMaintenanceFixture::InsertTestPaths(uint64_t start_id,
                                                                     uint64_t count,
                                                                     const std::string& base_path) {
   for (uint64_t i = 0; i < count; ++i) {
-    uint64_t id = start_id + i;
-    std::string path = BuildTestFilePath(base_path, id);
-    path_storage_.InsertPath(id, path, false);
+    const uint64_t id = start_id + i;
+    const std::string path = BuildTestFilePath(base_path, id);
+    const size_t idx = path_storage_.InsertPath(id, path, false, std::nullopt);
+    id_to_index_[id] = idx;
   }
 }
 
 void test_helpers::TestFileIndexMaintenanceFixture::RemoveTestPath(uint64_t id) {
-  // Note: We intentionally ignore RemovePath's return value - it doesn't matter if the path existed
-  (void)path_storage_.RemovePath(id);
+  const auto it = id_to_index_.find(id);
+  if (it != id_to_index_.end()) {
+    (void)path_storage_.RemovePathByIndex(it->second);
+    id_to_index_.erase(it);
+  }
 }
 
 void test_helpers::TestFileIndexMaintenanceFixture::RemoveTestPaths(uint64_t start_id,
                                                                     uint64_t count) {
   for (uint64_t i = 0; i < count; ++i) {
-    // Note: We intentionally ignore RemovePath's return value - it doesn't matter if the path
-    // existed
-    (void)path_storage_.RemovePath(start_id + i);
+    RemoveTestPath(start_id + i);
   }
 }
 
 void test_helpers::TestFileIndexMaintenanceFixture::InsertAndRemoveTestPaths(
   uint64_t start_id, uint64_t count, const std::string& base_path) {
   for (uint64_t i = 0; i < count; ++i) {
-    uint64_t id = start_id + i;
-    std::string path = BuildTestFilePath(base_path, id);
-    path_storage_.InsertPath(id, path, false);
-    // Note: We intentionally ignore RemovePath's return value - it doesn't matter if the path
-    // existed
-    (void)path_storage_.RemovePath(id);
+    const uint64_t id = start_id + i;
+    const std::string path = BuildTestFilePath(base_path, id);
+    const size_t idx = path_storage_.InsertPath(id, path, false, std::nullopt);
+    id_to_index_[id] = idx;
+    (void)path_storage_.RemovePathByIndex(idx);
+    id_to_index_.erase(id);
   }
 }
 
@@ -910,7 +915,8 @@ void TestLazyAttributeLoaderFixture::InsertFileEntryInternal(uint64_t id, const 
     ext = ExtractExtensionFromFilename(name);
   }
   storage_.InsertLocked(id, 0, name, is_dir, kFileTimeNotLoaded, ext);
-  path_storage_.InsertPath(id, path, is_dir);
+  const size_t idx = path_storage_.InsertPath(id, path, is_dir, std::nullopt);
+  storage_.SetPathStorageIndex(id, idx);
 }
 
 // ============================================================================
@@ -986,7 +992,8 @@ MinimalLoaderSetup& CreateLoaderSetupWithDirectory(MinimalLoaderSetup& setup, ui
   std::string actual_dir_path = dir_path.empty() ? CreateTempDirectory("test_dir") : dir_path;
 
   setup.storage.InsertLocked(dir_id, 0, dir_name, true, kFileTimeNotLoaded, "");
-  setup.path_storage.InsertPath(dir_id, actual_dir_path, true);
+  const size_t idx = setup.path_storage.InsertPath(dir_id, actual_dir_path, true, std::nullopt);
+  setup.storage.SetPathStorageIndex(dir_id, idx);
   return setup;
 }
 

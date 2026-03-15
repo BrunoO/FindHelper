@@ -40,6 +40,7 @@ public:
    * @param path_storage Reference to PathStorage (for stats and rebuild)
    * @param mutex Reference to shared_mutex (for thread safety)
    * @param get_alive_count Function to get current alive entry count
+   * @param set_path_storage_index Callback (file_id, index) to update FileEntry.path_storage_index after rebuild
    * @param remove_not_in_index_count Reference to atomic counter
    * @param remove_duplicate_count Reference to atomic counter
    * @param remove_inconsistency_count Reference to atomic counter
@@ -48,6 +49,7 @@ public:
       PathStorage& path_storage,
       std::shared_mutex& mutex,
       std::function<size_t()> get_alive_count,
+      std::function<void(uint64_t file_id, size_t index)> set_path_storage_index,
       std::atomic<size_t>& remove_not_in_index_count,
       std::atomic<size_t>& remove_duplicate_count,
       std::atomic<size_t>& remove_inconsistency_count);
@@ -98,6 +100,7 @@ private:
   PathStorage& path_storage_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
   std::shared_mutex& index_mutex_ref_;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members,readability-identifier-naming) - ref to FileIndex's index_mutex_; name follows project snake_case_ convention
   std::function<size_t()> get_alive_count_{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - project convention; in-class init satisfies member-init check
+  std::function<void(uint64_t file_id, size_t index)> set_path_storage_index_{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - project convention; in-class init for default-empty callback
   std::atomic<size_t>& remove_not_in_index_count_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
   std::atomic<size_t>& remove_duplicate_count_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
   std::atomic<size_t>& remove_inconsistency_count_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_

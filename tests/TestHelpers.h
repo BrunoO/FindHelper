@@ -23,6 +23,7 @@
 #include "doctest/doctest.h"
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 #include <future>
 #include <stdexcept>
@@ -459,6 +460,7 @@ public:
 private:
   PathStorage path_storage_;
   std::shared_mutex mutex_;
+  std::unordered_map<uint64_t, size_t> id_to_index_{};  // Track id→SoA index for RemoveTestPath
   std::atomic<size_t> remove_not_in_index_count_;
   std::atomic<size_t> remove_duplicate_count_;
   std::atomic<size_t> remove_inconsistency_count_;

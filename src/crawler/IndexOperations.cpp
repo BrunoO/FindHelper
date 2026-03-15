@@ -83,20 +83,17 @@ void IndexOperations::Remove(uint64_t id) {
       }
     }
 
-    // Remove from storage
-    storage_.RemoveLocked(id);
-
-    // Mark path entry as deleted (lock already held)
-    if (path_operations_.RemovePath(id)) {
-      // Successfully marked as deleted
-    } else {
+    // Mark path entry as deleted first (needs entry.path_storage_index)
+    if (!path_operations_.RemovePath(id)) {
       // File exists in storage but not in path_storage_ - data inconsistency
-      // Track this for diagnostics
       remove_inconsistency_count_.fetch_add(1, std::memory_order_relaxed);
       LOG_WARNING_BUILD("IndexOperations::Remove: File "
                        << id
                        << " in storage but not in path_storage_ (data inconsistency)");
     }
+
+    // Remove from storage
+    storage_.RemoveLocked(id);
   } else {
     // File not in index - delete event for file that was never indexed
     // This is expected for files created/deleted before initial indexing, or

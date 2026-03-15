@@ -26,10 +26,11 @@
 FileIndex::FileIndex(std::shared_ptr<SearchThreadPool> thread_pool)  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - members use in-class initialization; index_mutex_ is initialized in header
     : storage_(index_mutex_),
       lazy_loader_(storage_, path_storage_, index_mutex_),
-      path_operations_(path_storage_),
+      path_operations_(storage_, path_storage_),
       path_recomputer_(storage_, path_storage_, path_operations_),
       maintenance_(path_storage_, index_mutex_,
                    [this]() { return this->Size(); },
+                   [this](uint64_t id, size_t idx) { storage_.SetPathStorageIndex(id, idx); },
                    remove_not_in_index_count_,
                    remove_duplicate_count_,
                    remove_inconsistency_count_),

@@ -85,7 +85,11 @@ FileSizeCheckResult CheckFileSizeNeedsLoading(
     return {false, false, loaded, loaded ? entry->fileSize.GetValue() : 0ULL, {}};
   }
   const bool need_time = entry->lastModificationTime.IsNotLoaded();
-  return {true, need_time, false, 0ULL, path_storage.GetPath(id)};
+  if (entry->path_storage_index == static_cast<size_t>(-1)) {
+    return {true, need_time, false, 0ULL, {}};
+  }
+  return {true, need_time, false, 0ULL,
+          std::string(path_storage.GetPathByIndex(entry->path_storage_index))};
 }
 
 // Check if modification time needs loading.
@@ -105,7 +109,11 @@ ModTimeCheckResult CheckModificationTimeNeedsLoading(
     return {false, false, false, true, {}, {}};
   }
   const bool need_size = entry->fileSize.IsNotLoaded();
-  return {true, need_size, false, false, {}, path_storage.GetPath(id)};
+  if (entry->path_storage_index == static_cast<size_t>(-1)) {
+    return {true, need_size, false, false, {}, {}};
+  }
+  return {true, need_size, false, false, {},
+          std::string(path_storage.GetPathByIndex(entry->path_storage_index))};
 }
 
 // Helper function to validate path and mark file size as failed if invalid
@@ -365,11 +373,13 @@ bool LazyAttributeLoader::LoadFileSize(uint64_t id) {
   std::string path;
   {
     const std::shared_lock lock(index_mutex_ref_);
-    if (const FileEntry* const entry = storage_.GetEntry(id);
-        entry == nullptr || entry->isDirectory || !entry->fileSize.IsNotLoaded()) {
+    const FileEntry* const entry = storage_.GetEntry(id);
+    if (entry == nullptr || entry->isDirectory || !entry->fileSize.IsNotLoaded()) {
       return false;
     }
-    path = path_storage_.GetPath(id);
+    if (entry->path_storage_index != static_cast<size_t>(-1)) {
+      path = std::string(path_storage_.GetPathByIndex(entry->path_storage_index));
+    }
   }
   if (!ValidatePathAndMarkFileSizeFailed(id, path, storage_, index_mutex_ref_)) {
     return false;
@@ -399,11 +409,13 @@ bool LazyAttributeLoader::LoadModificationTime(uint64_t id) {
   std::string path;
   {
     const std::shared_lock lock(index_mutex_ref_);
-    if (const FileEntry* const entry = storage_.GetEntry(id);
-        entry == nullptr || entry->isDirectory || !entry->lastModificationTime.IsNotLoaded()) {
+    const FileEntry* const entry = storage_.GetEntry(id);
+    if (entry == nullptr || entry->isDirectory || !entry->lastModificationTime.IsNotLoaded()) {
       return false;
     }
-    path = path_storage_.GetPath(id);
+    if (entry->path_storage_index != static_cast<size_t>(-1)) {
+      path = std::string(path_storage_.GetPathByIndex(entry->path_storage_index));
+    }
   }
   if (!ValidatePathAndMarkModificationTimeFailed(id, path, storage_, index_mutex_ref_)) {
     return false;

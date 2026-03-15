@@ -63,16 +63,16 @@ void FileIndexStorage::InsertLocked(uint64_t id, uint64_t parent_id,
 void FileIndexStorage::RemoveLocked(uint64_t id) {
   auto it = id_to_entry_.find(id);
   if (it != id_to_entry_.end()) {
-    // If it's a directory, remove from path cache to prevent memory leak
-    if (it->second.isDirectory) {
-      // Note: We can't get the path here without PathStorage, so we'll rely
-      // on FileIndex to handle directory cache cleanup if needed
-      // This is a limitation of the current design - directory cache cleanup
-      // requires path lookup which needs PathStorage
-    }
+    // Directory cache cleanup is done by caller (IndexOperations::Remove) before calling RemoveLocked
     id_to_entry_.erase(it);
     // Update atomic counter
     entry_count_.fetch_sub(1, std::memory_order_relaxed);
+  }
+}
+
+void FileIndexStorage::SetPathStorageIndex(uint64_t id, size_t index) {
+  if (FileEntry* entry = GetEntryMutable(id)) {
+    entry->path_storage_index = index;
   }
 }
 

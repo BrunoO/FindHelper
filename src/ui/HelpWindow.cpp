@@ -40,6 +40,18 @@ void SectionHeader(const char* title) {
   ImGui::TextColored(Theme::Colors::Success, "%s", title);
 }
 
+// Renders PGO tooltip when the previous item is hovered (reduces nesting in Render).
+void RenderPgoTooltipIfHovered(char pgo_mode) {
+  if (!ImGui::IsItemHovered()) {
+    return;
+  }
+  if (const char* tooltip = GetAboutPgoTooltip(pgo_mode); tooltip != nullptr) {
+    ImGui::BeginTooltip();
+    ImGui::TextUnformatted(tooltip);
+    ImGui::EndTooltip();
+  }
+}
+
 }  // namespace
 
 void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
@@ -69,13 +81,7 @@ void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
       if (const char pgo_mode = GetAboutPgoMode(); pgo_mode != '\0') {
         ImGui::SameLine();
         ImGui::TextDisabled("[%c]", pgo_mode);
-        if (ImGui::IsItemHovered()) {
-          if (const char* tooltip = GetAboutPgoTooltip(pgo_mode); tooltip != nullptr) {
-            ImGui::BeginTooltip();
-            ImGui::TextUnformatted(tooltip);
-            ImGui::EndTooltip();
-          }
-        }
+        RenderPgoTooltipIfHovered(pgo_mode);
       }
       ImGui::Spacing();
       ImGui::TextColored(Theme::Colors::TextDim, "%s", GetAboutPlatformMonitoringLabel());

@@ -8,12 +8,14 @@ FileIndexMaintenance::FileIndexMaintenance(
     PathStorage& path_storage,
     std::shared_mutex& mutex,
     std::function<size_t()> get_alive_count,
+    std::function<void(uint64_t file_id, size_t index)> set_path_storage_index,
     std::atomic<size_t>& remove_not_in_index_count,
     std::atomic<size_t>& remove_duplicate_count,
     std::atomic<size_t>& remove_inconsistency_count)
     : path_storage_(path_storage),
       index_mutex_ref_(mutex),
       get_alive_count_(std::move(get_alive_count)),
+      set_path_storage_index_(std::move(set_path_storage_index)),
       remove_not_in_index_count_(remove_not_in_index_count),
       remove_duplicate_count_(remove_duplicate_count),
       remove_inconsistency_count_(remove_inconsistency_count) {}
@@ -88,7 +90,7 @@ void FileIndexMaintenance::RebuildPathBuffer() {
     return;
   }
 
-  path_storage_.RebuildPathBuffer();
+  path_storage_.RebuildPathBuffer(set_path_storage_index_);
 
   const auto end = std::chrono::high_resolution_clock::now();
   const double elapsed_ms{std::chrono::duration<double, std::milli>(end - start).count()};
