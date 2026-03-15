@@ -10,6 +10,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_set>
+#include <vector>
 
 #include "utils/HashMapAliases.h"
 
@@ -93,14 +94,16 @@ public:
   [[nodiscard]] bool HasPendingWork() const;
 
 private:
-  void WorkerThread();
-  uint64_t ComputeSize(std::string_view folder_path) const;
-
   struct Job {
     uint64_t folder_id;
     std::string folder_path;
     uint64_t generation;  // Matches generation_ at enqueue time; used to detect Reset().
   };
+
+  void WorkerThread();
+  // Compute sizes for all jobs in a single index scan (O(N_index × depth) instead of
+  // O(K × N_index) for K separate scans). Returns folder_id → total_size.
+  hash_map_t<uint64_t, uint64_t> ComputeSizeBatch(const std::vector<Job>& jobs) const;
 
   FileIndex& index_;                                     // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
 

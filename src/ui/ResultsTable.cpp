@@ -1170,9 +1170,6 @@ void ResultsTable::Render(
         // HandleTableSorting may invalidate displayed total (re-sort on new results).
         // Re-run total size computation so we make progress even when sort invalidates.
         UpdateDisplayedTotalSizeIfNeeded(state, file_index);
-
-        // Keep status bar informed while folder sizes are computing in the background.
-        state.computingFolderSizes = aggregator != nullptr && aggregator->HasPendingWork();
       }
 
       // Get display results AFTER sort/filter so we never hold a pointer that gets invalidated
@@ -1222,6 +1219,12 @@ void ResultsTable::Render(
                                                         drag_start_pos,
                                                         drag_started};
       RenderVisibleTableRows(visible_rows_params);
+
+      // Update status bar flag AFTER row rendering: per-row RenderResultsTableRow calls
+      // aggregator->Request() for each visible directory, so HasPendingWork() is only
+      // meaningful after all rows have been processed. Placed outside the resultsComplete
+      // guard so the flag clears immediately when CancelPending() is called on a new search.
+      state.computingFolderSizes = aggregator != nullptr && aggregator->HasPendingWork();
 
       // Evaluate drag gesture and start shell drag-drop if threshold exceeded
       HandleDragAndDrop(drag_candidate_active, drag_candidate_row, drag_start_pos, drag_started,
