@@ -19,6 +19,7 @@
 #include "utils/Logger.h"
 #include "utils/StringSearch.h"
 #include "utils/StringUtils.h"
+#include "utils/ThreadUtils.h"
 
 // Constructor - thread_pool_ initialized in initializer list
 // NOLINTNEXTLINE(readability-identifier-naming,cppcoreguidelines-pro-type-member-init,hicpp-member-init) - threadPool matches API; member-init: thread_pool_ set below
@@ -265,10 +266,7 @@ int ParallelSearchEngine::DetermineThreadCount(int thread_count, size_t total_by
     if (search_thread_pool_size_from_context > 0) {
       thread_count = search_thread_pool_size_from_context;
     } else {
-      thread_count = static_cast<int>(std::thread::hardware_concurrency());
-      if (thread_count == 0) {
-        thread_count = 2;
-      }
+      thread_count = static_cast<int>(GetLogicalProcessorCount());
     }
   }
 

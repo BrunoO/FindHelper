@@ -70,6 +70,7 @@
 #include "utils/Logger.h"
 #include "utils/PlatformTypes.h"  // For NativeWindowHandle definition
 #include "utils/ThreadPool.h"
+#include "utils/ThreadUtils.h"
 
 // Test engine: include header first so one definition (no ODR risk from inline/macros), then
 // forward-declare only what is not in this header. imgui_te_engine.h declares
@@ -250,11 +251,8 @@ Application::Application(AppBootstrapResultBase& bootstrap, const CommandLineArg
       deferred_index_build_start_(start_index_build_after_first_frame),
       index_build_state_(index_build_state) {
   // Create ThreadPool (owned by Application) for general-purpose async operations
-  // Use settings thread pool size if available, otherwise hardware concurrency
-  size_t thread_count =
-    std::thread::hardware_concurrency();
-                                          // from hardware_concurrency(), conditionally reassigned
-                                          // below
+  // Use settings thread pool size if available, otherwise logical processor count (Linux: sysconf fallback when hardware_concurrency() is 0)
+  size_t thread_count = GetLogicalProcessorCount();
   if (settings_ != nullptr && settings_->searchThreadPoolSize > 0) {
     thread_count = static_cast<size_t>(settings_->searchThreadPoolSize);
   }

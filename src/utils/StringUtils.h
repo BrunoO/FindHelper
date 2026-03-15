@@ -214,3 +214,18 @@ inline std::string FormatMemory(size_t bytes) {
 
   return oss.str();
 }
+
+/**
+ * @brief Format memory bytes for display, or "N/A" when zero/unavailable.
+ *
+ * Single place for "bytes to display string" used by status bar and Help About section.
+ *
+ * @param bytes Memory size in bytes (0 means unavailable)
+ * @return Formatted string (e.g. "15 MB") or "N/A"
+ */
+inline std::string FormatMemoryOrNa(size_t bytes) {
+  if (bytes > 0) {
+    return FormatMemory(bytes);
+  }
+  return "N/A";
+}

@@ -5,6 +5,7 @@
 
 #include "utils/ThreadUtils.h"
 
+#include <thread>
 #include <vector>
 
 #include <windows.h>  // NOSONAR(cpp:S3806) - Windows-only include, case doesn't matter on Windows filesystem
@@ -77,5 +78,10 @@ void SetThreadName(const char* thread_name) {  // NOLINT(readability-identifier-
     LOG_DEBUG_BUILD("SetThreadName: SetThreadDescription pointer is null; "
                     "thread_name=\"" << thread_name << "\"");
   }
+}
+
+size_t GetLogicalProcessorCount() {
+  const unsigned int n = std::thread::hardware_concurrency();
+  return (n != 0) ? static_cast<size_t>(n) : 2;
 }
 

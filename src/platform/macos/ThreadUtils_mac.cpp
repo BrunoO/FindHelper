@@ -7,6 +7,7 @@
 #include "utils/Logger.h"
 
 #include <pthread.h>
+#include <thread>
 
 void SetThreadName(const char* thread_name) {  // NOLINT(readability-identifier-naming) - macOS pthread_setname_np API
   if (thread_name == nullptr || *thread_name == '\0') {
@@ -25,5 +26,10 @@ void SetThreadName(const char* thread_name) {  // NOLINT(readability-identifier-
   } else {
     LOG_DEBUG_BUILD("SetThreadName: successfully set thread name to \"" << thread_name << "\"");
   }
+}
+
+size_t GetLogicalProcessorCount() {
+  const unsigned int n = std::thread::hardware_concurrency();
+  return (n != 0) ? static_cast<size_t>(n) : 2;
 }
 

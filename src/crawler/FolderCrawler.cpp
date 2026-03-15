@@ -43,9 +43,6 @@ namespace {
 
 constexpr std::chrono::milliseconds::rep kWaitPollIntervalMs = 10;
 constexpr size_t kDefaultDirEntryReserve = 100;
-// Fallback when std::thread::hardware_concurrency() returns 0 (e.g. Linux in Docker/cgroups).
-// Use at least 2 threads so crawling retains some parallelism; matches SearchThreadPool fallback.
-constexpr size_t kCrawlerMinThreadsWhenHardwareUnknown = 2;
 
 #ifndef _WIN32
 // Helper: translate an open()/opendir() errno into a log message and return code.
@@ -125,15 +122,10 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
             .count(),
         std::memory_order_relaxed);
 
-    // Determine thread count
+    // Determine thread count (Linux: GetLogicalProcessorCount uses sysconf when hardware_concurrency() is 0)
     size_t thread_count = config_.thread_count;
     if (thread_count == 0) {
-      thread_count = std::thread::hardware_concurrency();
-      if (thread_count == 0) {
-        thread_count = kCrawlerMinThreadsWhenHardwareUnknown;
-        LOG_WARNING_BUILD("hardware_concurrency() returned 0 (e.g. cgroups/Docker); using "
-                          << thread_count << " worker threads for crawling");
-      }
+      thread_count = GetLogicalProcessorCount();
     }
 
     LOG_INFO_BUILD("Using " << thread_count << " worker threads for crawling");
