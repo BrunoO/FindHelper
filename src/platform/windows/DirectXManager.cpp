@@ -1,5 +1,6 @@
 #include "DirectXManager.h"
 #include "utils/Logger.h"
+#include "utils/LoggingUtils.h"
 
 #include <array>
 #include <dxgi.h>
@@ -178,15 +179,19 @@ bool DirectXManager::CreateDeviceD3D(HWND h_wnd) {
 
   UINT create_device_flags = 0;
   D3D_FEATURE_LEVEL feature_level;
-  if (const std::array<D3D_FEATURE_LEVEL, direct_x_constants::kFeatureLevelCount> feature_level_array = {
-          D3D_FEATURE_LEVEL_11_0,
-          D3D_FEATURE_LEVEL_10_0,
-      };
-      D3D11CreateDeviceAndSwapChain(
-          nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, create_device_flags,
-          feature_level_array.data(), direct_x_constants::kFeatureLevelCount, D3D11_SDK_VERSION,
-          &swap_chain_desc, &p_swap_chain_, &pd3d_device_, &feature_level,
-          &pd3d_device_context_) != S_OK) {
+  const std::array<D3D_FEATURE_LEVEL, direct_x_constants::kFeatureLevelCount> feature_level_array = {
+      D3D_FEATURE_LEVEL_11_0,
+      D3D_FEATURE_LEVEL_10_0,
+  };
+  const HRESULT hr_create = D3D11CreateDeviceAndSwapChain(
+      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, create_device_flags,
+      feature_level_array.data(), direct_x_constants::kFeatureLevelCount, D3D11_SDK_VERSION,
+      &swap_chain_desc, &p_swap_chain_, &pd3d_device_, &feature_level,
+      &pd3d_device_context_);
+  if (FAILED(hr_create)) {
+    logging_utils::LogHResultError("D3D11CreateDeviceAndSwapChain",
+                                   "Direct3D 11 device and swap chain creation",
+                                   hr_create);
     return false;
   }
 

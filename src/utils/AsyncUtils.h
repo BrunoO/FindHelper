@@ -49,7 +49,7 @@ inline void SafeWaitFuture(std::future<T>& f) {
       f.wait();
     }
     f.get();
-  } catch (...) {  // NOLINT(bugprone-empty-catch) NOSONAR(cpp:S2738, cpp:S2486) - Drain on shutdown; must not propagate
+  } catch (...) {  // NOLINT(bugprone-empty-catch) NOSONAR(cpp:S2738, cpp:S2486) - Drain on shutdown; must not propagate. Do not log (Logger may be unavailable during shutdown).
   }
 }
 

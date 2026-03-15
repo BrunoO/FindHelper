@@ -739,7 +739,8 @@ if(MSVC)
             $<$<AND:$<CONFIG:Release>,$<BOOL:${ENABLE_PGO}>>:/LTCG /OPT:REF /OPT:ICF>
         )
     else()
-        # Standard optimized build (no PGO): /GL for whole-program optimization
+        # Standard optimized build (no PGO): /GL for whole-program optimization.
+        # /LTCG is set in the common link options below so it appears first on the link line and the linker does not restart when it sees /GL objects (e.g. FileIndex.obj).
         target_compile_options(find_helper PRIVATE
             $<$<CONFIG:Release>:/GL>
         )
@@ -753,8 +754,10 @@ if(MSVC)
     # Enable AVX2 for StringSearchAVX2.cpp only (file-specific)
     set_source_files_properties(src/utils/StringSearchAVX2.cpp PROPERTIES COMPILE_FLAGS "/arch:AVX2")
 
-    # Linker options (common to all builds)
+    # Linker options (common to all builds).
+    # Put /LTCG first for Release when not PGO so the linker sees it before /GL objects and does not restart (avoids "restarting link with /LTCG" warning for FileIndex.obj).
     target_link_options(find_helper PRIVATE
+        $<$<AND:$<CONFIG:Release>,$<NOT:$<BOOL:${ENABLE_PGO}>>>:/LTCG /OPT:REF /OPT:ICF>
         $<$<CONFIG:Debug>:/DEBUG>
         # Disable automatic manifest generation; we provide our own in resource.rc
         /MANIFEST:NO
@@ -763,13 +766,6 @@ if(MSVC)
         # Suppress LNK4098 warning about defaultlib 'MSVCRT' conflicts with pre-built libs
         /ignore:4098
     )
-
-    # Standard build linker options (only when PGO is disabled)
-    if(NOT ENABLE_PGO)
-        target_link_options(find_helper PRIVATE
-            $<$<CONFIG:Release>:/LTCG /OPT:REF /OPT:ICF>
-        )
-    endif()
 endif()
 
 endif() # BUILD_APPLICATION

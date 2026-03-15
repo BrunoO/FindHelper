@@ -26,7 +26,7 @@
  *
  * THREAD SAFETY:
  * - All methods are thread-safe (use shared_mutex from FileIndex)
- * - I/O operations happen without any locks held
+ * - I/O operations happen without any locks held (see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md)
  * - Double-check locking prevents redundant I/O
  */
 class LazyAttributeLoader {

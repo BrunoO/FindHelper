@@ -168,7 +168,8 @@ public:
       if (handle_ != INVALID_HANDLE_VALUE) {
         try {
           CloseHandle(handle_);
-        } catch (...) {  // NOSONAR(cpp:S2738, cpp:S2486) - Destructors should never throw. Log error but don't propagate exception.
+        } catch (...) {  // NOSONAR(cpp:S2738, cpp:S2486) - Move assignment must not throw; log and swallow to prevent std::terminate
+          LOG_ERROR("VolumeHandle: Unknown exception during CloseHandle in move assignment");
         }
       }
       handle_ = other.handle_;
@@ -355,6 +356,7 @@ public:
   // Push a buffer to the queue. Returns true if successful, false if queue is
   // full. When queue is full, the buffer is dropped and a warning is logged.
   bool Push(std::vector<char> buffer) {
+    // Critical section: queue and counters only; no I/O (see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
     std::scoped_lock lock(mutex_);
     if (queue_.size() >= max_size_) {
       // Queue full - drop buffer to prevent unbounded growth
@@ -405,7 +407,8 @@ public:
 
 private:
   std::queue<std::vector<char>> queue_;
-  mutable std::mutex mutex_;
+  // Guards queue_, stop_, dropped_count_; no I/O under this lock.
+  mutable std::mutex mutex_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
   std::condition_variable cv_;
   bool stop_ = false;
   size_t max_size_;
@@ -527,7 +530,8 @@ private:
   std::unique_ptr<UsnJournalQueue> queue_; // Queue (owned by class)
   std::thread reader_thread_;              // Reader thread
   std::thread processor_thread_;           // Processor thread
-  mutable std::mutex mutex_;               // Protects start/stop operations
+  // Protects start/stop state, volume_handle_, queue_; I/O (e.g. CloseHandle) done outside lock (see LOCK_ORDERING doc).
+  mutable std::mutex mutex_;               // NOLINT(readability-identifier-naming) - project convention
   HANDLE volume_handle_{INVALID_HANDLE_VALUE}; // Volume handle for I/O cancellation (protected by mutex_)
 
   // Initialization status communication

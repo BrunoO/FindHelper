@@ -47,6 +47,22 @@ static IRegressionTestHook* g_regression_hook = nullptr;  // NOSONAR(cpp:S5421) 
 // Main window title (UIRenderer); used for precondition checks in smoke and UI window tests.
 static constexpr const char* kMainWindowTitle = APP_DISPLAY_NAME_STR;  // NOLINT(readability-identifier-naming)
 
+// Settings window / toolbar button refs (shared by RunSelectFolderAndIndexTest and ui_windows/settings_window_open test).
+static constexpr const char* kSettingsWindowTitle = "Settings";  // SettingsWindow.cpp WindowGuard  // NOLINT(readability-identifier-naming)
+static constexpr const char* kSettingsButtonRef = ICON_FA_GEAR " Settings##toolbar_settings";  // NOLINT(readability-identifier-naming)
+static constexpr const char* kSettingsButtonPreconditionMsg =  // NOLINT(readability-identifier-naming)
+  "Precondition failed: Settings button not found. Ensure main window is visible.";
+static constexpr const char* kSettingsWindowOpenErrorMsg =  // NOLINT(readability-identifier-naming)
+  "Settings window did not open after clicking Settings button. Check toolbar_settings ref and window title.";
+
+// Forward declaration for RunSelectFolderAndIndexTest (defined below).
+static void AssertIndexReplacedAndClose(ImGuiTestContext* ctx,
+                                        ImGuiWindow* win,
+                                        size_t index_size_before,
+                                        size_t index_size_after,
+                                        const std::string& folder_path,
+                                        const char* case_id);
+
 static bool WaitForIndexReady(ImGuiTestContext* ctx, const IRegressionTestHook* hook, const char* case_id) {
   int waited = 0;
   while (!hook->IsIndexReady() && waited < kMaxWaitFrames) {
@@ -511,7 +527,7 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   // Try exact title first; fall back to //$FOCUSED when lookup by name fails (e.g. cross-viewport). Always validate win->Name so we never accept the wrong window.
   // Precondition: main window must exist and be visible; enforced at start of smoke and UI tests. See docs/analysis/2026-02-23_IMGUI_TEST_ENGINE_PRECONDITIONS.md
   static const char* kHelpWindowTitle = HELP_WINDOW_TITLE_STR;  // HelpWindow.cpp  // NOLINT(readability-identifier-naming)
-  static const char* kSettingsWindowTitle = "Settings";  // SettingsWindow.cpp WindowGuard  // NOLINT(readability-identifier-naming)
+  // kSettingsWindowTitle, kSettingsButtonRef, kSettingsButtonPreconditionMsg, kSettingsWindowOpenErrorMsg are at file scope (used by RunSelectFolderAndIndexTest)
   static const char* kSearchSyntaxGuideTitle = "Search Syntax Guide";  // SearchHelpWindow.cpp  // NOLINT(readability-identifier-naming)
   static const char* kMetricsWindowTitle = METRICS_WINDOW_TITLE_STR;  // MetricsWindow.cpp (only when app run with --show-metrics)  // NOLINT(readability-identifier-naming)
 
@@ -531,12 +547,7 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     CloseFloatingWindowAndYield(ctx, win);
   };
 
-  // Settings window: open via toolbar button (FilterPanel ##toolbar_settings).
-  static const char* kSettingsButtonRef = ICON_FA_GEAR " Settings##toolbar_settings";  // NOLINT(readability-identifier-naming)
-  static const char* kSettingsButtonPreconditionMsg =  // NOLINT(readability-identifier-naming)
-    "Precondition failed: Settings button not found. Ensure main window is visible.";
-  static const char* kSettingsWindowOpenErrorMsg =  // NOLINT(readability-identifier-naming)
-    "Settings window did not open after clicking Settings button. Check toolbar_settings ref and window title.";
+  // Settings window: open via toolbar button (FilterPanel ##toolbar_settings). Uses file-scope kSettings* constants.
   ImGuiTest* t_settings = IM_REGISTER_TEST(engine, "ui_windows", "settings_window_open");
   t_settings->TestFunc = [](ImGuiTestContext* ctx) {
     ctx->SetRef(kMainWindowTitle);

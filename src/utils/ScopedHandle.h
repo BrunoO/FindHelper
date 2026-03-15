@@ -99,7 +99,7 @@ public:
     if (handle_ != INVALID_HANDLE_VALUE && handle_ != nullptr) {
       try {
         CloseHandle(handle_);
-      } catch (...) {  // NOSONAR(cpp:S2738, cpp:S2486) - Destructors should never throw. Log error but don't propagate exception. This prevents std::terminate if destructor is called during stack unwinding.
+      } catch (...) {  // NOSONAR(cpp:S2738, cpp:S2486) - Destructors must not throw. Cannot log here (generic utility, Logger not included; preventing std::terminate is the only goal).
       }
       handle_ = INVALID_HANDLE_VALUE;
     }

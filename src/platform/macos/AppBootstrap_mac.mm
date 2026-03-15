@@ -276,7 +276,7 @@ AppBootstrapResultMac Initialize(const CommandLineArgs &cmd_args,
     LOG_ERROR_BUILD("Exception type: " << typeid(e).name());
     cleanup_on_exception();
     return result; // IsValid() will be false
-  } catch (...) {
+  } catch (...) {  // NOSONAR(cpp:S2738) - Catch-all needed for initialization: must handle all exceptions including non-standard ones
     LOG_ERROR(AppBootstrapCommon::GetUnknownExceptionMessage());
     cleanup_on_exception();
     return result; // IsValid() will be false

@@ -32,13 +32,32 @@ void IndexOperations::Insert(uint64_t id,
                             std::string_view name,
                             bool is_directory,
                             FILETIME modification_time) {
-  // Compute full path: use parent path from PathStorage when available (crawler path),
-  // or fall back to just the name as a placeholder for the USN out-of-order case.
-  // RecomputeAllPaths rebuilds all paths correctly after bulk insert completes.
+  // Compute full path. Three cases:
+  //   1. Parent path known (parent already inserted): join parent + name.
+  //   2. parent_id == 0 (true root parent, returned by DirectoryResolver for
+  //      an empty parent path on non-Windows): prepend "/" so root-level dirs
+  //      get "/home" instead of bare "home". Without this, stat() fails and
+  //      RecomputeAllPaths must do an O(N×depth) parent-chain walk to fix all
+  //      paths. On Windows this branch is skipped: drive letters like "C:" ARE
+  //      the root (not children of it), so JoinPath("C:\\","C:") = "C:\\C:" is
+  //      wrong. Children of "C:" build correct paths because JoinPath("C:","Users")
+  //      = "C:\\Users", so the Windows crawler path does not need this fix.
+  //   3. parent_id != 0 but path not yet in PathStorage (USN journal out-of-order
+  //      insertion or Windows root entry): store just the name as a placeholder;
+  //      RecomputeAllPaths will rebuild the correct full path once all entries
+  //      are present.
   const auto parent_path = path_operations_.GetPathView(parent_id);
-  const std::string full_path = parent_path.empty()
-      ? std::string(name)
-      : path_utils::JoinPath(parent_path, name);
+  std::string full_path;
+  if (!parent_path.empty()) {
+    full_path = path_utils::JoinPath(parent_path, name);
+#ifndef _WIN32
+  } else if (parent_id == 0) {
+    // Non-Windows root-level entry: prepend "/" to get "/home" not "home".
+    full_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), name);
+#endif  // _WIN32
+  } else {
+    full_path = std::string(name);  // USN out-of-order / Windows root placeholder
+  }
 
   // Extract extension for interning
   std::string extension;

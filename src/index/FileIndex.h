@@ -396,6 +396,8 @@ private:
   [[nodiscard]] PathComponentsView GetPathComponentsViewByIndexLocked(
       size_t idx) const; // By array index (for search loops)
 
+  // Protects path_storage_, storage_, path_to_id_*, operations_; shared_lock for reads,
+  // unique_lock for writes. No I/O or heavy work under this lock (see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
   mutable std::shared_mutex index_mutex_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention; clang-tidy flags multi-word with suffix
 
   // Core data storage (ID -> metadata, string pool, directory cache)

@@ -56,6 +56,7 @@ public:
     std::future<decltype(f())> result = task->get_future();
 
     {
+      // Critical section: queue + shutdown check only; no I/O (see LOCK_ORDERING doc).
       const std::scoped_lock lock(mutex_);
       if (shutdown_) {
         // Thread pool is shutting down, log warning and return invalid future
@@ -82,6 +83,7 @@ public:
    * Get the number of pending tasks in the queue.
    */
   [[nodiscard]] size_t GetPendingTaskCount() const {
+    // Lock scope: read queue size only; no I/O (see LOCK_ORDERING doc).
     const std::scoped_lock lock(mutex_);
     return tasks_.size();
   }
@@ -96,7 +98,8 @@ private:
   // Task queue
   std::queue<std::function<void()>> tasks_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
 
-  // Synchronization
+  // Synchronization: guards tasks_, shutdown_ only. No I/O or heavy work under lock
+  // (see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
   mutable std::mutex mutex_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
   std::condition_variable cv_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
   bool shutdown_ = false;  // NOLINT(readability-identifier-naming) - project convention: snake_case_

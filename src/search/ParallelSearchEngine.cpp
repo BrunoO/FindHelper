@@ -42,8 +42,8 @@ ParallelSearchEngine::SearchAsync(const ISearchableIndex& index,
   // CRITICAL: Acquire shared_lock to ensure:
   // 1. Vector sizes remain stable when calculating chunk ranges
   // 2. Proper memory visibility when creating futures
-  // 3. Note: Each worker thread will acquire its own shared_lock before
-  //    accessing arrays (see worker lambda implementations)
+  // 3. Each worker thread acquires its own shared_lock before accessing arrays.
+  // Do not perform I/O or heavy work while holding this lock (see LOCK_ORDERING doc).
   const std::shared_lock lock(index.GetMutex());
 
   std::vector<std::future<std::vector<uint64_t>>> futures;
@@ -167,11 +167,7 @@ ParallelSearchEngine::SearchAsyncWithData(const ISearchableIndex& index,
                                           const SearchContext& context,
                                           std::vector<ThreadTiming>* thread_timings,
                                           [[maybe_unused]] const std::atomic<bool>* cancel_flag) const {
-  // CRITICAL: Acquire shared_lock to ensure:
-  // 1. Vector sizes remain stable when calculating chunk ranges
-  // 2. Proper memory visibility when creating futures
-  // 3. Note: Each worker thread will acquire its own shared_lock before
-  //    accessing arrays (see worker lambda implementations)
+  // CRITICAL: Acquire shared_lock (same rules as SearchAsync); no I/O under lock (see LOCK_ORDERING doc).
   const std::shared_lock lock(index.GetMutex());
 
   std::vector<std::future<std::vector<SearchResultData>>> futures;
