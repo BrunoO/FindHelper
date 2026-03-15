@@ -627,15 +627,12 @@ execute_process(COMMAND ${CMAKE_COMMAND} -P "${VERSION_SCRIPT}")
 option(FAST_LIBS_BOOST "Use Boost unordered containers for faster hash maps (requires Boost 1.81+)" OFF)
 
 if(FAST_LIBS_BOOST)
-    # Prefer FindBoost module (honors BOOST_ROOT) over config mode when using extracted Boost source (e.g. CI).
-    set(CMAKE_FIND_PACKAGE_PREFER_CONFIG OFF)
+    # Use FindBoost module (honors BOOST_ROOT) for extracted Boost source (e.g. CI on Windows). MODULE forces
+    # use of FindBoost.cmake instead of BoostConfig.cmake (CMP0167 NEW would otherwise prefer config mode).
     if(POLICY CMP0144)
         cmake_policy(SET CMP0144 NEW)
     endif()
-    if(POLICY CMP0167)
-        cmake_policy(SET CMP0167 NEW)
-    endif()
-    find_package(Boost 1.81.0 REQUIRED)
+    find_package(Boost 1.81.0 REQUIRED MODULE)
     if(Boost_FOUND)
         target_compile_definitions(find_helper PRIVATE FAST_LIBS_BOOST)
         if(TARGET Boost::boost)
