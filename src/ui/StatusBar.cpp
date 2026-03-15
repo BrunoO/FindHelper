@@ -5,13 +5,13 @@
 
 #include "ui/StatusBar.h"
 
-#include "core/Version.h"
 #include "filters/SizeFilterUtils.h"
 #include "filters/TimeFilterUtils.h"
 #include "gui/GuiState.h"
 #include "index/FileIndex.h"
 #include "search/SearchResultUtils.h"
 #include "search/SearchWorker.h"
+#include "ui/AboutSectionHelpers.h"
 #include "ui/IconsFontAwesome.h"
 #include "ui/LayoutConstants.h"
 #include "ui/Theme.h"
@@ -24,10 +24,6 @@
 #include <string>
 #include <string_view>
 #include <tuple>
-
-#ifdef _WIN32
-#include <windows.h>  // NOSONAR(cpp:S3806) - Windows-only include; path case matches filesystem
-#endif  // _WIN32
 
 namespace ui {
 
@@ -67,44 +63,6 @@ static std::string GetStatusText(const GuiState& state, const SearchWorker& sear
     }
   }
   return "Status: Idle";
-}
-
-// Helper function to detect PGO mode (Windows only)
-// Returns 'G' for GENPROFILE (instrumented), 'U' for USEPROFILE (optimized), or '\0' for none
-static char GetPgoMode() {
-#ifdef _WIN32
-  // First, check if PGO runtime DLL is loaded (most reliable indicator)
-  // This works even if preprocessor defines aren't set (e.g., Debug builds with PGO flags)
-  // Use IIFE with init-statement pattern to ensure const correctness while handling fallback logic
-  if (const HMODULE pgort_handle = []() {  // NOSONAR(cpp:S5350) - HMODULE is a handle type (void*), const HMODULE is correct (const void*), variable is never modified after initialization
-    HMODULE handle = GetModuleHandleA("pgort140.dll");
-    if (handle == nullptr) {
-      handle = GetModuleHandleA("pgort.dll");
-    }
-    return handle;
-  }(); pgort_handle != nullptr) {  // NOSONAR(cpp:S6004) - Init-statement pattern already applied (variable declared in if condition)
-    // PGO runtime is loaded - determine mode from preprocessor defines if available
-    // Otherwise, default to 'G' (instrumented) as that's the most common case
-    #ifdef _GENPROFILE
-      return 'G';
-    #elif defined(_USEPROFILE)
-      return 'U';
-    #else
-      // Runtime loaded but preprocessor define not set (e.g., Debug build with PGO flags)
-      // Default to 'G' (instrumented) as that's the most common case
-      return 'G';
-    #endif  // _GENPROFILE
-  }
-
-  // If runtime not loaded, check preprocessor defines (for compile-time detection)
-  // This helps detect PGO even if runtime isn't loaded yet
-  #ifdef _GENPROFILE
-    return 'G';
-  #elif defined(_USEPROFILE)
-    return 'U';
-  #endif  // _GENPROFILE
-#endif  // _WIN32
-  return '\0';  // No PGO
 }
 
 // Forward declarations for helper functions
@@ -152,26 +110,17 @@ void StatusBar::Render(GuiState &state,
   // Get the status text that will be displayed
   const std::string status_text = GetStatusText(state, search_worker);
 
-  // Get the memory text that will be displayed
-  // Cache memory text formatting since memory_bytes_ only updates every 10 seconds
-  static uint64_t last_memory_bytes = 0;
+  // Get the memory text that will be displayed (same formatting as Help About section via FormatMemoryOrNa)
+  // Cache memory text since memory_bytes_ only updates every 10 seconds
+  static size_t last_memory_bytes = 0;
   static std::string cached_memory_text;
   std::string memory_text;
-  if (state.memory_bytes_ > 0) {
-    if (state.memory_bytes_ == last_memory_bytes && !cached_memory_text.empty()) {
-      memory_text = cached_memory_text;
-    } else {
-      memory_text = "Memory: " + FormatMemory(state.memory_bytes_);
-      cached_memory_text = memory_text;
-      last_memory_bytes = state.memory_bytes_;
-    }
+  if (state.memory_bytes_ == last_memory_bytes && !cached_memory_text.empty()) {
+    memory_text = cached_memory_text;
   } else {
-    memory_text = "Memory: N/A";
-    // Clear cache when memory is unavailable
-    if (last_memory_bytes != 0) {
-      cached_memory_text.clear();
-      last_memory_bytes = 0;
-    }
+    memory_text = "Memory: " + FormatMemoryOrNa(state.memory_bytes_);
+    cached_memory_text = memory_text;
+    last_memory_bytes = state.memory_bytes_;
   }
 
   // Calculate actual text widths using ImGui
@@ -216,39 +165,16 @@ void StatusBar::Render(GuiState &state,
 // Left group: Version, build type, monitoring status
 static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const FileIndex &file_index,
                            std::string_view monitored_volume) {
-  // Version and build type
-  ImGui::TextDisabled("v-%s", APP_VERSION);
+  // Version, build type, and PGO (shared with Help About section via AboutSectionHelpers)
+  ImGui::TextDisabled("v-%s", GetAboutAppVersion());
   ImGui::SameLine();
-#ifdef NDEBUG
-#ifdef FAST_LIBS_BOOST
-  ImGui::TextDisabled("(Release, Boost)");
-#else
-  ImGui::TextDisabled("(Release)");
-#endif  // FAST_LIBS_BOOST
-#else
-#ifdef FAST_LIBS_BOOST
-  ImGui::TextDisabled("(Debug, Boost)");
-#else
-  ImGui::TextDisabled("(Debug)");
-#endif  // FAST_LIBS_BOOST
-#endif  // NDEBUG
-
-  // PGO indicator (G for GENPROFILE, U for USEPROFILE)
-  // Note: PGO only works in Release builds. If you see D9002 warnings or no [G]/[U] label,
-  // ensure you're building with: cmake --build build --config Release
-  if (const char pgo_mode = GetPgoMode(); pgo_mode != '\0') {
+  ImGui::TextDisabled("%s", GetAboutBuildTypeLabel());
+  if (const char pgo_mode = GetAboutPgoMode(); pgo_mode != '\0') {
     ImGui::SameLine();
     ImGui::TextDisabled("[%c]", pgo_mode);
-    // Tooltip explaining PGO mode
-    if (ImGui::IsItemHovered()) {
+    if (ImGui::IsItemHovered() && GetAboutPgoTooltip(pgo_mode) != nullptr) {
       ImGui::BeginTooltip();
-      if (pgo_mode == 'G') {
-        ImGui::TextUnformatted("PGO: GENPROFILE (Instrumented build - collecting profile data)");
-        ImGui::TextUnformatted("Build: Release mode with ENABLE_PGO=ON");
-      } else if (pgo_mode == 'U') {
-        ImGui::TextUnformatted("PGO: USEPROFILE (Optimized build - using profile data)");
-        ImGui::TextUnformatted("Build: Release mode with ENABLE_PGO=ON");
-      }
+      ImGui::TextUnformatted(GetAboutPgoTooltip(pgo_mode));
       ImGui::EndTooltip();
     }
   }
@@ -306,18 +232,14 @@ static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const Fi
     }
 #endif  // _WIN32
   } else {
-    // No USN monitor: show platform-appropriate label (Windows without elevation uses folder crawl)
-#ifdef _WIN32
-    ImGui::TextColored(Theme::Colors::TextDim, "Windows (No Monitoring)");
+    // No USN monitor: show platform label (shared with Help About section)
+    ImGui::TextColored(Theme::Colors::TextDim, "%s", GetAboutPlatformMonitoringLabel());
     if (!monitored_volume.empty()) {
+#ifdef _WIN32
       ImGui::SameLine();
       ImGui::TextDisabled("(%.*s)", static_cast<int>(monitored_volume.size()), monitored_volume.data());
+#endif  // _WIN32
     }
-#elif defined(__APPLE__)
-    ImGui::TextColored(Theme::Colors::TextDim, "macOS (No Monitoring)");
-#else
-    ImGui::TextColored(Theme::Colors::TextDim, "Linux (No Monitoring)");
-#endif  // _WIN32 / __APPLE__
   }
 }
 

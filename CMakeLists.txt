@@ -217,6 +217,7 @@ set(COMMON_APP_SOURCES
     src/ui/SearchControls.cpp
     src/ui/SearchInputs.cpp
     src/ui/SearchInputsGeminiHelpers.cpp
+    src/ui/AboutSectionHelpers.cpp
     src/ui/HelpWindow.cpp
     src/ui/SearchHelpWindow.cpp
     src/ui/CenteredToolWindow.cpp

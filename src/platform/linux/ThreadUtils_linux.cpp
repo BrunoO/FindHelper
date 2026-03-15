@@ -6,6 +6,9 @@
 #include "utils/ThreadUtils.h"
 #include "utils/Logger.h"
 
+#include <thread>
+#include <unistd.h>
+
 void SetThreadName(const char* thread_name) {  // NOLINT(readability-identifier-naming) - snake_case for parameters
   if (thread_name == nullptr || *thread_name == '\0') {
     LOG_WARNING_BUILD("SetThreadName: called with null or empty threadName");
@@ -18,5 +21,18 @@ void SetThreadName(const char* thread_name) {  // NOLINT(readability-identifier-
   // Thread naming is primarily a debugging aid
   LOG_DEBUG_BUILD("SetThreadName: not supported on this platform; "
                   "threadName=\"" << thread_name << "\"");
+}
+
+size_t GetLogicalProcessorCount() {
+  unsigned int n = std::thread::hardware_concurrency();
+  if (n != 0) {
+    return static_cast<size_t>(n);
+  }
+  // Fallback when hardware_concurrency() returns 0 (e.g. cgroups/Docker)
+  const long nproc = sysconf(_SC_NPROCESSORS_ONLN);
+  if (nproc > 0) {
+    return static_cast<size_t>(nproc);
+  }
+  return 2;
 }
 

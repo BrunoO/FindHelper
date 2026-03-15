@@ -173,7 +173,7 @@ void UIRenderer::RenderFloatingWindows(const RenderFloatingWindowsContext& conte
     show_metrics.store(show_metrics_val);
   }
   if (state.showHelpWindow) {
-    HelpWindow::Render(&state.showHelpWindow);
+    HelpWindow::Render(&state.showHelpWindow, &state.memory_bytes_);
   }
   if (state.showSearchHelpWindow) {
     SearchHelpWindow::Render(&state.showSearchHelpWindow);

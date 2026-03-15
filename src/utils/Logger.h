@@ -1,9 +1,11 @@
 #pragma once
 
+#include <cctype>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -110,7 +112,7 @@ public:
 
   // Get current process private memory usage in bytes
   // Returns 0 if unable to retrieve (e.g., if API fails)
-  // Cross-platform: Supports Windows and macOS
+  // Cross-platform: Supports Windows, macOS, and Linux
   [[nodiscard]] size_t GetPrivateMemoryBytes() const {
 #ifdef LOGGING_ENABLED
 #ifdef _WIN32
@@ -130,7 +132,31 @@ public:
       // Return resident memory size (physical memory currently used)
       return task_info.resident_size;
     }
-#endif  // __APPLE__
+#elif defined(__linux__)
+    // Linux: Read VmRSS (resident set size) from /proc/self/status; value is in kB
+    std::ifstream status_file("/proc/self/status");
+    if (status_file.is_open()) {
+      std::string line;
+      while (std::getline(status_file, line)) {
+        if (line.compare(0, 6, "VmRSS:") == 0) {
+          size_t pos = 6;
+          while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t')) {
+            ++pos;
+          }
+          unsigned long value_kb = 0;
+          if (pos < line.size() && std::isdigit(static_cast<unsigned char>(line[pos])) != 0) {
+            const char* start = line.c_str() + pos;
+            char* end = nullptr;
+            value_kb = std::strtoul(start, &end, 10);
+            if (end != start && value_kb > 0) {
+              return static_cast<size_t>(value_kb) * 1024ULL;
+            }
+          }
+          break;
+        }
+      }
+    }
+#endif  // _WIN32 / __APPLE__ / __linux__
 #endif  // LOGGING_ENABLED
     return 0;
   }

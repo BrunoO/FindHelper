@@ -7,8 +7,8 @@
 
 #include "imgui.h"
 
-#include "core/Version.h"
 #include "gui/ShortcutRegistry.h"
+#include "ui/AboutSectionHelpers.h"
 #include "ui/CenteredToolWindow.h"
 #include "ui/Theme.h"
 #include "ui/UiStyleGuards.h"
@@ -42,14 +42,14 @@ void SectionHeader(const char* title) {
 
 }  // namespace
 
-void HelpWindow::Render(bool* p_open) {
+void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
   if (p_open == nullptr || !*p_open) {
     return;
   }
 
   const detail::StyleColorGuard window_bg_guard(ImGuiCol_WindowBg, Theme::Colors::WindowBg);
 
-  const char* window_title = HELP_WINDOW_TITLE_STR;
+  const char* window_title = GetAboutHelpWindowTitle();
 
   constexpr float kDefaultWidth = 450.0F;
   constexpr float kDefaultHeight = 500.0F;
@@ -60,6 +60,36 @@ void HelpWindow::Render(bool* p_open) {
 
   const detail::WindowGuard window_guard(window_title, p_open, ImGuiWindowFlags_None);
   if (window_guard.ShowContent()) {
+    // About — version, build info, and host system characteristics (same kind of info as status bar left group + system)
+    if (ImGui::CollapsingHeader("About", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::Text("%s", GetAboutAppDisplayName());
+      ImGui::Text("Version: v-%s", GetAboutAppVersion());
+      ImGui::SameLine();
+      ImGui::TextDisabled("%s", GetAboutBuildTypeLabel());
+      if (const char pgo_mode = GetAboutPgoMode(); pgo_mode != '\0') {
+        ImGui::SameLine();
+        ImGui::TextDisabled("[%c]", pgo_mode);
+        if (ImGui::IsItemHovered()) {
+          if (const char* tooltip = GetAboutPgoTooltip(pgo_mode); tooltip != nullptr) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(tooltip);
+            ImGui::EndTooltip();
+          }
+        }
+      }
+      ImGui::Spacing();
+      ImGui::TextColored(Theme::Colors::TextDim, "%s", GetAboutPlatformMonitoringLabel());
+      ImGui::Spacing();
+      ImGui::Text("System");
+      ImGui::Separator();
+      ImGui::Text("Logical processors: %zu", GetAboutLogicalProcessorCount());
+      const std::string memory_str = (memory_bytes_from_state != nullptr)
+                                         ? GetAboutProcessMemoryDisplayFromBytes(*memory_bytes_from_state)
+                                         : GetAboutProcessMemoryDisplay();
+      ImGui::Text("Process memory: %s", memory_str.c_str());
+      ImGui::Spacing();
+    }
+
     // What's new — high-level user-facing features (last calendar month; dates = git commit date; newest first)
     // Use BulletWrapped() because BulletText() does not wrap long lines
     if (ImGui::CollapsingHeader("What's new")) {
