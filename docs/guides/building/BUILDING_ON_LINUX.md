@@ -32,7 +32,7 @@ sudo apt-get install -y \
     libwayland-bin
 ```
 
-- **Note:** `wayland-utils` is optional and lives in the **universe** repo. If you need it: `sudo add-apt-repository universe && sudo apt-get update`, then `sudo apt-get install wayland-utils`. For building this project, `libwayland-bin` (above) is sufficient for GLFW’s Wayland support.
+- **Note:** `libwayland-bin` is **required** for the full application build (it provides `wayland-scanner` needed by GLFW 3.4). `wayland-utils` is optional and lives in the **universe** repo. If you need it: `sudo add-apt-repository universe && sudo apt-get update`, then `sudo apt-get install wayland-utils`.
 
 **Optional – Boost** (for `-DFAST_LIBS_BOOST=ON`): Install `libboost-dev`. Boost 1.80+ is required; Ubuntu 24.04 provides 1.83. On **Ubuntu 22.04** (default is 1.74), use either the PPA or build from source below.
 
@@ -328,9 +328,9 @@ See `FontUtils_linux.cpp` for complete font mapping.
 
 ## Additional Resources
 
-- **Main README**: See `README.md` for general project information
-- **Build System Details**: See `docs/LINUX_BUILD_SYSTEM_IMPLEMENTATION.md`
-- **Linux Preparation**: See `docs/LINUX_PREPARATION_REFACTORINGS.md`
+- **Main README**: See `../../../README.md` for general project information
+- **Build System Details**: See `../../platform/linux/LINUX_BUILD_SYSTEM_IMPLEMENTATION.md`
+- **Linux Preparation**: See `../../platform/linux/LINUX_PREPARATION_REFACTORINGS.md`
 
 ## Getting Help
 

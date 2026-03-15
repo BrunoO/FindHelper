@@ -26,7 +26,7 @@ jobs:
             artifact_name: FindHelper-Windows-x64
             artifact_path: build/Release/FindHelper.exe
             package_name: FindHelper-Windows-x64.zip
-            build_with_boost: false
+            build_with_boost: true
           - os: macos-latest
             config: Release
             artifact_name: FindHelper-macOS
@@ -52,37 +52,51 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Cache vcpkg (Windows, Boost)
-        id: vcpkg-cache-win
+      # Boost: header-only (unordered_*, lockfree). Source from boost.org — no build.
+      - name: Cache Boost source (Windows)
+        id: cache-boost-win
         uses: actions/cache@v4
         with:
-          path: vcpkg
-          key: vcpkg-win-boost-minimal-2
+          path: boost_1_90_0
+          key: boost-src-1.90.0-win
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true'
 
-      - name: Cache vcpkg (Linux, Boost)
-        id: vcpkg-cache-linux
+      - name: Download Boost source (Windows)
+        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true' && steps.cache-boost-win.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o boost.zip "https://archives.boost.io/release/1.90.0/source/boost_1_90_0.zip"
+          Expand-Archive -Path boost.zip -DestinationPath .
+          Remove-Item boost.zip
+
+      - name: Cache Boost source (Linux)
+        id: cache-boost-linux
         uses: actions/cache@v4
         with:
-          path: vcpkg
-          key: vcpkg-linux-boost-minimal-2
+          path: boost_1_90_0
+          key: boost-src-1.90.0-linux
         if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true'
 
-      - name: Install vcpkg and Boost (Windows, minimal)
-        if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true' && steps.vcpkg-cache-win.outputs.cache-hit != 'true'
+      - name: Download Boost source (Linux)
+        if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true' && steps.cache-boost-linux.outputs.cache-hit != 'true'
         run: |
-          git clone https://github.com/Microsoft/vcpkg.git vcpkg
-          .\vcpkg\bootstrap-vcpkg.bat
-          # Subset we use: headers (base) + unordered + regex + lockfree (only regex is built)
-          .\vcpkg\vcpkg install boost-headers boost-unordered boost-regex boost-lockfree
+          curl -sSL -o boost.tar.gz "https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.gz"
+          tar -xzf boost.tar.gz
+          rm boost.tar.gz
 
-      - name: Install vcpkg and Boost (Linux, minimal)
-        if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true' && steps.vcpkg-cache-linux.outputs.cache-hit != 'true'
+      - name: Cache Boost source (macOS)
+        id: cache-boost-mac
+        uses: actions/cache@v4
+        with:
+          path: boost_1_90_0
+          key: boost-src-1.90.0-mac
+        if: matrix.os == 'macos-latest' && env.BUILD_WITH_BOOST == 'true'
+
+      - name: Download Boost source (macOS)
+        if: matrix.os == 'macos-latest' && env.BUILD_WITH_BOOST == 'true' && steps.cache-boost-mac.outputs.cache-hit != 'true'
         run: |
-          git clone https://github.com/Microsoft/vcpkg.git vcpkg
-          ./vcpkg/bootstrap-vcpkg.sh
-          # Subset we use: headers (base) + unordered + regex + lockfree (only regex is built)
-          ./vcpkg/vcpkg install boost-headers boost-unordered boost-regex boost-lockfree
+          curl -sSL -o boost.tar.gz "https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.gz"
+          tar -xzf boost.tar.gz
+          rm boost.tar.gz
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-22.04'
@@ -91,13 +105,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y $PACKAGES
 
-      - name: Install macOS dependencies (Boost)
-        if: matrix.os == 'macos-latest' && env.BUILD_WITH_BOOST == 'true'
-        run: brew install boost
-
       - name: Configure (Windows, with Boost)
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true'
-        run: cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_MFT_METADATA_READING=ON -DFAST_LIBS_BOOST=ON -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+        run: |
+          $env:BOOST_ROOT = "${{ github.workspace }}/boost_1_90_0"
+          cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_MFT_METADATA_READING=ON -DFAST_LIBS_BOOST=ON
 
       - name: Configure (Windows, without Boost)
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST != 'true'
@@ -106,13 +118,15 @@ jobs:
       - name: Configure (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          EXTRA=""; [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON"
+          EXTRA=""
+          [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON -DBOOST_ROOT=${{ github.workspace }}/boost_1_90_0"
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA
 
       - name: Configure (Linux)
         if: matrix.os == 'ubuntu-22.04'
         run: |
-          EXTRA=""; [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          EXTRA=""
+          [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON -DBOOST_ROOT=${{ github.workspace }}/boost_1_90_0"
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON $EXTRA
 
       - name: Build (Windows)

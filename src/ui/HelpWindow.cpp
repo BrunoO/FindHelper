@@ -60,7 +60,7 @@ void HelpWindow::Render(bool* p_open) {
 
   const detail::WindowGuard window_guard(window_title, p_open, ImGuiWindowFlags_None);
   if (window_guard.ShowContent()) {
-    // What's new — high-level user-facing features (since 2026-01-20; dates = git commit date; newest first)
+    // What's new — high-level user-facing features (last calendar month; dates = git commit date; newest first)
     // Use BulletWrapped() because BulletText() does not wrap long lines
     if (ImGui::CollapsingHeader("What's new")) {
       BulletWrapped("2026-03-13: Fuzzy search for item name and path with 'fz:' prefix (subsequence matching, e.g. fz:fbr matches 'foobar', 'fiber', 'foo/bar'); Search Help updated with syntax and examples.");
@@ -79,17 +79,6 @@ void HelpWindow::Render(bool* p_open) {
       BulletWrapped("2026-02-15: Marking and bulk operations in results table; path hierarchy indentation (Phase 1).");
       BulletWrapped("2026-02-14: Export CSV (Downloads/Desktop); themes (Everforest, Dracula, Nord, One Dark, Gruvbox, Catppuccin Mocha).");
       BulletWrapped("2026-02-14: Total size in status bar for full-index searches; alternating row background; improved drag-and-drop feedback.");
-      BulletWrapped("2026-02-13: Export Search Results (CSV) feature added.");
-      BulletWrapped("2026-02-09: Multi-level UI mode toggle (Full, Simplified, Minimalistic).");
-      BulletWrapped("2026-02-02: Block search while index is building; 'Loading attributes...' for Size/Last Modified sort; Metrics hidden unless --show-metrics.");
-      BulletWrapped("2026-02-02: Windows: start without administrator privileges; elevation prompt when needed.");
-      BulletWrapped("2026-02-01: macOS shortcuts (Cmd+F, Cmd+C); Cmd+Enter in results table reveals in Finder; Ctrl+C copy name on all platforms; macOS drag-and-drop for results.");
-      BulletWrapped("2026-02-01: Improved Gemini search-config prompt (filter logic, path+name+extensions).");
-      BulletWrapped("2026-01-31: Streaming search results; Size/Last Modified sort order fixed; filter+streaming clear and filtered count.");
-      BulletWrapped("2026-01-31: Path pattern pp:**/ now matches against full path (e.g. pp:**/imgui/**).");
-      BulletWrapped("2026-01-26: Full Path column width calculation fixed after column reordering.");
-      BulletWrapped("2026-01-23: OneDrive file size handling (MFT/sentinel, lazy loading).");
-      BulletWrapped("2026-01-22: Simplified UI setting added.");
       ImGui::Spacing();
     }
 

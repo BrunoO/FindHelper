@@ -160,7 +160,7 @@ int RunApplication(int argc, char** argv) {  // NOLINT(google-objc-function-nami
 #ifdef FAST_LIBS_BOOST
   LOG_IMPORTANT_BUILD("=== IMPORTANT: Using boost libraries (FAST_LIBS_BOOST enabled) ===");
   LOG_IMPORTANT_BUILD("    Hash maps: boost::unordered_map (~2x faster lookups, ~60% less memory overhead)");
-  LOG_IMPORTANT_BUILD("    Regex: boost::regex (better performance than std::regex)");
+  LOG_IMPORTANT_BUILD("    Regex: boost::regex (header-only)");
 #else
   LOG_IMPORTANT_BUILD("=== Using standard library (default) ===");
   LOG_IMPORTANT_BUILD("    Hash maps: std::unordered_map");

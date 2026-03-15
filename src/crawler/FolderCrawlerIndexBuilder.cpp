@@ -73,13 +73,12 @@ public:
             // RecomputeAllPaths() is required on all platforms:
             // - On Windows: resets OneDrive cloud-placeholder sentinels so
             //   size/mtime are fetched via IShellItem2 rather than cached as zero.
-            // - On all platforms: corrects paths for synthetic parent directories
-            //   created by DirectoryResolver. IndexOperations::Insert builds paths
-            //   as parent_path + name, but GetPathView(0) returns "" for the root
-            //   parent (ID 0 is never inserted), so root-level directories get
-            //   paths like "Users/foo" instead of "/Users/foo". PathBuilder uses
-            //   GetDefaultVolumeRootPath() ("/") to prepend the correct prefix.
-            //   Without this call, stat() fails on relative paths → N/A in UI.
+            //   Also fixes Windows drive-root paths ("C:" → "C:\") which are left
+            //   as placeholders by IndexOperations::Insert.
+            // - On macOS/Linux: root-level paths are now built correctly at
+            //   insertion time by IndexOperations::Insert (parent_id == 0 →
+            //   prepend "/"), so the O(N×depth) parent-chain walk is a no-op
+            //   for the vast majority of crawler-inserted entries.
             // The finalizing flag blocks concurrent searches while PathStorage
             // is cleared and rebuilt.
             state->finalizing_population.store(true, std::memory_order_release);

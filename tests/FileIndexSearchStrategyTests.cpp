@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <future>
@@ -754,6 +755,64 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
   }  // TEST_SUITE("Pattern Matcher Setup")
+
+  // Concurrent read+write stress test: exercises FileIndex thread safety when
+  // multiple threads search while others Insert/Remove. Run with ENABLE_TSAN=ON
+  // to detect data races (see TEST_STRATEGY_REVIEW and BUILD_TESTS).
+  TEST_SUITE("FileIndex concurrent read+write stress") {
+    TEST_CASE("concurrent searches and Insert/Remove complete without crash") {
+      const test_helpers::TestSettingsFixture settings("dynamic");
+      test_helpers::TestFileIndexFixture index_fixture(2000);
+
+      FileIndex& index = index_fixture.GetIndex();
+      constexpr int kWriterIterations = 150;
+      constexpr int kReaderIterations = 50;
+      constexpr uint64_t kChurnIdBase = 500000;  // High ID range to avoid clashing with fixture data (1..2001)
+      constexpr int kChurnSlotCount = 100;
+
+      std::atomic<bool> writer_error{false};
+      std::atomic<bool> reader_error{false};
+
+      auto writer_task = [&index, &writer_error]() {
+        for (int i = 0; i < kWriterIterations && !writer_error.load(std::memory_order_relaxed); ++i) {
+          const uint64_t id = kChurnIdBase + static_cast<uint64_t>(i % kChurnSlotCount);
+          const std::string name = "stress_" + std::to_string(id) + ".txt";
+          index.Insert(id, 1, name, false, kFileTimeNotLoaded);
+          index.Remove(id);
+        }
+      };
+
+      auto reader_task = [&index, &reader_error]() {
+        for (int i = 0; i < kReaderIterations && !reader_error.load(std::memory_order_relaxed); ++i) {
+          try {
+            auto futures = index.SearchAsyncWithData("file_", 2, nullptr, "", nullptr, false, false, nullptr);
+            for (auto& f : futures) {
+              (void)f.get();
+            }
+          } catch (...) {
+            reader_error.store(true, std::memory_order_relaxed);
+          }
+        }
+      };
+
+      std::thread w1(writer_task);
+      std::thread w2(writer_task);
+      std::thread r1(reader_task);
+      std::thread r2(reader_task);
+      std::thread r3(reader_task);
+      std::thread r4(reader_task);
+
+      w1.join();
+      w2.join();
+      r1.join();
+      r2.join();
+      r3.join();
+      r4.join();
+
+      REQUIRE_FALSE(writer_error.load(std::memory_order_relaxed));
+      REQUIRE_FALSE(reader_error.load(std::memory_order_relaxed));
+    }
+  }  // TEST_SUITE("FileIndex concurrent read+write stress")
 
 }  // TEST_SUITE("FileIndex Search Strategies")
 

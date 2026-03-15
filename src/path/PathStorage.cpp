@@ -46,7 +46,7 @@ void PathStorage::InsertPath(uint64_t id, const std::string &path,
     if (const size_t old_len = std::strlen(&path_storage_[old_offset]);  // NOSONAR(cpp:S1081) - Safe: path_storage_ entries are null-terminated (see AppendString)
         new_len <= old_len) {
       // New path fits in the existing slot: overwrite in-place (zero growth in path_storage_).
-      // Critical for RecomputeAllPaths which re-inserts identical paths for every entry.
+      // Used when a DirectoryResolver synthetic entry is later overwritten by the real entry.
       std::memcpy(&path_storage_[old_offset], path.c_str(), new_len + 1);
       filename_start_[idx] = filename_start_offset;
       extension_start_[idx] = extension_start_offset;

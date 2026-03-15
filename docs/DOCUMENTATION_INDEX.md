@@ -1,7 +1,13 @@
 # Documentation Index (public)
 
-**Last Updated:** 2026-03-07
+**Last Updated:** 2026-03-15
 **Purpose:** Index of contributor-facing documentation in `docs/`. Internal-only material (analyses, prompt templates, task notes, plans) lives in `internal-docs/`.
+
+---
+
+## Dated reviews (maintainer-only)
+
+Comprehensive review bundles (tech debt, architecture, security, error handling, performance, testing, documentation, UX, feature exploration, clang-tidy) are maintainer-only and live under **`internal-docs/review/`**. For example, the 2026-03-15 review is in `internal-docs/review/2026-03-15/` (summary: `COMPREHENSIVE_REVIEW_SUMMARY_2026-03-15.md`).
 
 ---
 
@@ -28,6 +34,7 @@
 - **`design/`** – Current architecture and design
   - IMGUI_IMMEDIATE_MODE_PARADIGM, STRING_POOL_DESIGN, PARALLEL_SEARCH_ENGINE_DESIGN, ISEARCHABLE_INDEX_DESIGN, LAZY_ATTRIBUTE_LOADER_DESIGN, STREAMING_SEARCH_RESULTS_DESIGN, INTERLEAVED_LOAD_BALANCING_STRATEGY, DIRECTORY_MANAGER_DESIGN, ARCHITECTURE_COMPONENT_BASED
   - 2026-02-18_RESULTS_TABLE_KEYBOARD_SHORTCUTS – Results table mark/unmark and navigation shortcuts
+  - 2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS – Lock ordering and rule: no I/O or heavy work inside critical sections
 
 - **`standards/`** – Coding standards
   - CXX17_NAMING_CONVENTIONS, 2026-02-02_MULTIPLATFORM_COHERENCE_CHECKLIST
