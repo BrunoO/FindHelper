@@ -73,20 +73,22 @@ void UIRenderer::RenderMainWindow(const RenderMainWindowContext& context) {
 
   // Reserve space at the bottom for the non-scrollable footer area:
   // - Saved Searches row (label + combo + buttons)
-  // - Status bar row (including top border and busy progress bar when visible)
+  // - Status bar row
   // Using a child window with a negative height keeps this footer area always visible
   // even when a vertical scrollbar appears for the main content.
-  const float footer_content_height =
+  const float footer_reserved_height =
     (settings.uiMode == AppSettings::UIMode::Minimalistic)
       ? ImGui::GetFrameHeightWithSpacing() * LayoutConstants::kFooterHeightMultiplierStatusOnly
       : ImGui::GetFrameHeightWithSpacing() * LayoutConstants::kFooterHeightMultiplierWithSavedSearches;
-  const float footer_reserved_height =
-    footer_content_height + LayoutConstants::kStatusBarTopBorderHeight +
-    LayoutConstants::kStatusBarBusyBarHeight;
   ImGui::BeginChild("MainContentRegion", ImVec2(0.0F, -footer_reserved_height),
                     ImGuiChildFlags_None, ImGuiWindowFlags_None);
 
+  // Gap between toolbar and first section; when busy, draw progress bar overlapping this space.
+  const ImVec2 gap_min = ImGui::GetCursorScreenPos();
+  const float gap_w = ImGui::GetWindowSize().x;
   ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kSectionSpacing));
+  const ImVec2 gap_max(gap_min.x + gap_w, gap_min.y + LayoutConstants::kSectionSpacing);
+  StatusBar::RenderBusyProgressBarInRect(state, search_worker, gap_min, gap_max);
 
   if (settings.uiMode == AppSettings::UIMode::Minimalistic) {
     // MINIMALISTIC UI: Only path search input

@@ -21,6 +21,7 @@
 #include "imgui.h"
 
 #include <chrono>
+#include <cmath>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -75,17 +76,40 @@ static bool IsStatusBarBusy(const GuiState& state, const SearchWorker& search_wo
          state.computingFolderSizes;
 }
 
-// Renders the themed indeterminate progress bar when the app is busy. Uses Theme::Colors for track and fill.
-static void RenderBusyProgressBar(const GuiState& state, const SearchWorker& search_worker) {
+// Draws the indeterminate progress bar in the given rect (same animation as ImGui::ProgressBar with fraction < 0).
+// Does not affect layout; use to overlay an already-reserved area.
+static void DrawIndeterminateProgressBarInRect(ImDrawList* draw_list,
+                                                const ImVec2& rect_min,
+                                                const ImVec2& rect_max) {
+  constexpr float kFillWidthN = 0.2F;
+  const float fraction = (-1.0F) * static_cast<float>(ImGui::GetTime());
+  float fill_n0 = (static_cast<float>(std::fmod(-fraction, 1.0)) * (1.0F + kFillWidthN)) - kFillWidthN;
+  if (fill_n0 < 0.0F) { fill_n0 = 0.0F; } else if (fill_n0 > 1.0F) { fill_n0 = 1.0F; }
+  float fill_n1 = fill_n0 + kFillWidthN;
+  if (fill_n1 < 0.0F) { fill_n1 = 0.0F; } else if (fill_n1 > 1.0F) { fill_n1 = 1.0F; }
+  const float bar_w = rect_max.x - rect_min.x;
+  const float fill_x0 = rect_min.x + (bar_w * fill_n0);
+  const float fill_x1 = rect_min.x + (bar_w * fill_n1);
+  const ImU32 track_col = ImGui::ColorConvertFloat4ToU32(Theme::Colors::Border);
+  const ImU32 fill_col = ImGui::ColorConvertFloat4ToU32(Theme::Colors::Accent);
+  draw_list->AddRectFilled(rect_min, rect_max, track_col);
+  if (fill_x0 < fill_x1) {
+    draw_list->AddRectFilled(ImVec2(fill_x0, rect_min.y), ImVec2(fill_x1, rect_max.y), fill_col);
+  }
+}
+
+void StatusBar::RenderBusyProgressBarInRect(const GuiState& state,
+                                            const SearchWorker& search_worker,
+                                            const ImVec2& rect_min,
+                                            const ImVec2& rect_max) {
   if (!IsStatusBarBusy(state, search_worker)) {
     return;
   }
-  constexpr int kProgressBarStyleColorCount = 2;  // FrameBg + PlotHistogram
-  ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::Colors::Border);
-  ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Theme::Colors::Accent);
-  ImGui::ProgressBar(-1.0F * static_cast<float>(ImGui::GetTime()),
-                     ImVec2(-1.0F, LayoutConstants::kStatusBarBusyBarHeight), nullptr);
-  ImGui::PopStyleColor(kProgressBarStyleColorCount);
+  ImDrawList* const draw_list = ImGui::GetWindowDrawList();
+  if (draw_list == nullptr) {
+    return;
+  }
+  DrawIndeterminateProgressBarInRect(draw_list, rect_min, rect_max);
 }
 
 // Forward declarations for helper functions
@@ -111,8 +135,6 @@ void StatusBar::Render(GuiState &state,
   ImGui::GetWindowDrawList()->AddRectFilled(border_min, border_max,
                                             ImGui::ColorConvertFloat4ToU32(Theme::Colors::Border));
   ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kStatusBarTopBorderHeight));
-
-  RenderBusyProgressBar(state, search_worker);
 
   ImGui::Separator();
 
@@ -406,7 +428,7 @@ static void RenderRightGroup(const GuiState &state, const SearchWorker &search_w
   const ImVec4* status_color = nullptr;
   if (const bool is_loading_attributes =
           !state.attributeLoadingFutures.empty() || state.loadingAttributes;
-      state.index_build_in_progress || is_loading_attributes) {
+      state.index_build_in_progress || is_loading_attributes || state.computingFolderSizes) {
     status_color = &Theme::Colors::Warning;
   } else if (state.index_build_failed) {
     status_color = &Theme::Colors::Error;

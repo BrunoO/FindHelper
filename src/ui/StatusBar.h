@@ -17,6 +17,8 @@
 
 #include <string_view>
 
+#include "imgui.h"
+
 // Forward declarations
 class GuiState;
 class SearchWorker;
@@ -78,6 +80,19 @@ public:
                      const UsnMonitor *monitor,
                      const FileIndex &file_index,
                      std::string_view monitored_volume = {});
+
+  /**
+   * @brief Draws the themed indeterminate progress bar in the given rect when the app is busy.
+   * Does not consume layout space; call from a position after reserving the rect (e.g. overlap a Dummy).
+   * @param state GUI state
+   * @param search_worker Search worker for busy state
+   * @param rect_min Top-left of the bar (screen space)
+   * @param rect_max Bottom-right of the bar (screen space)
+   */
+  static void RenderBusyProgressBarInRect(const GuiState& state,
+                                          const SearchWorker& search_worker,
+                                          const ImVec2& rect_min,
+                                          const ImVec2& rect_max);
 };
 
 } // namespace ui
