@@ -208,11 +208,6 @@ void EnsureDisplayStringsPopulated(const SearchResult& result, const FileIndex& 
                                   bool allow_sync_load) {
   // Early return optimization: if everything is already populated, skip all checks
   // This avoids repeated checks every frame for already-loaded results
-  if (result.isDirectory) {
-    // Directories don't need loading - they already have size=0 and time={0,0}
-    return;
-  }
-
   // Check if both display strings are already populated (fastest path)
   if (!result.fileSizeDisplay.empty() && !result.lastModificationDisplay.empty()) {
     return;  // Everything already loaded and formatted
@@ -225,8 +220,8 @@ void EnsureDisplayStringsPopulated(const SearchResult& result, const FileIndex& 
     return;  // Size/date columns will show "..." until search completes
   }
 
-  // Load size if not yet loaded
-  if (result.fileSize == kFileSizeNotLoaded) {
+  // Load size if not yet loaded (files only; directories use FolderSizeAggregator)
+  if (!result.isDirectory && result.fileSize == kFileSizeNotLoaded) {
     result.fileSize = file_index.GetFileSizeById(result.fileId);
   }
 
@@ -237,6 +232,17 @@ void EnsureDisplayStringsPopulated(const SearchResult& result, const FileIndex& 
       result.fileSizeDisplay.empty()) {
     result.fileSizeDisplay = FormatFileSize(result.fileSize);
   }
+  // For directories whose aggregate size hasn't been computed yet, provide a
+  // placeholder so callers (e.g. CSV export) never see an empty fileSizeDisplay.
+  if (result.isDirectory && result.fileSize == kFileSizeNotLoaded &&
+      result.fileSizeDisplay.empty()) {
+    result.fileSizeDisplay = "...";
+  }
+
+  // Invariant: "..." must only appear when the size is still unknown.
+  // If fileSizeDisplay is "..." but fileSize has a real value, the per-row
+  // code failed to overwrite the placeholder when the aggregator result arrived.
+  assert(result.fileSizeDisplay != "..." || result.fileSize == kFileSizeNotLoaded);  // NOSONAR(cpp:S2583) - Intentional debug invariant; Sonar sees the preceding if as making this trivially true, but this assertion catches cross-call violations where a previous invocation set "..." and a subsequent code path wrote a real size without updating the display
 
   // Load modification time if not yet loaded
   if (IsSentinelTime(result.lastModificationTime)) {
@@ -253,7 +259,7 @@ void EnsureDisplayStringsPopulated(const SearchResult& result, const FileIndex& 
 }
 
 void EnsureModTimeLoaded(const SearchResult& result, const FileIndex& file_index) {
-  if (!result.isDirectory && IsSentinelTime(result.lastModificationTime)) {
+  if (IsSentinelTime(result.lastModificationTime)) {
     result.lastModificationTime = file_index.GetFileModificationTimeById(result.fileId);
   }
 }
@@ -340,11 +346,6 @@ static std::vector<SearchResult> ApplyTimeFilter(const std::vector<SearchResult>
   std::vector<uint64_t> cloud_files_to_load;
 
   for (const auto& result : results) {
-    // Skip directories
-    if (result.isDirectory) {
-      continue;
-    }
-
     // Check if modification time is already loaded
     bool time_loaded =
       !IsSentinelTime(result.lastModificationTime) && !IsFailedTime(result.lastModificationTime);
@@ -784,10 +785,7 @@ static std::vector<std::future<void>> StartAttributeLoadingAsync(
   // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by results.size() in outer loop; lambdas re-validate via ValidateIndexAndCancellation before accessing results[i]
   for (size_t i = 0; i < results.size(); ++i) {
     const auto& result = results[i];
-    if (result.isDirectory) {
-      continue;
-    }
-    if (result.fileSize == kFileSizeNotLoaded) {
+    if (!result.isDirectory && result.fileSize == kFileSizeNotLoaded) {
       futures.emplace_back(thread_pool.enqueue([i, &results, &file_index, &token] {
         auto& r = results[i];
         r.fileSize = ValidateIndexAndCancellation(token, results, i)
@@ -823,17 +821,15 @@ static std::vector<std::future<void>> StartAttributeLoadingAsync(
  */
 static void FormatDisplayStrings(std::vector<SearchResult>& results) {
   for (auto& result : results) {
-    if (!result.isDirectory) {
-      // Format size display string if needed.
-      if (result.fileSize != kFileSizeNotLoaded && result.fileSize != kFileSizeFailed &&
-          result.fileSizeDisplay.empty()) {
-        result.fileSizeDisplay = FormatFileSize(result.fileSize);
-      }
-      // Format modification time display string if needed.
-      if (!IsSentinelTime(result.lastModificationTime) &&
-          !IsFailedTime(result.lastModificationTime) && result.lastModificationDisplay.empty()) {
-        result.lastModificationDisplay = FormatFileTime(result.lastModificationTime);
-      }
+    // Format size display string if needed (files only — directories show "Folder" in the UI).
+    if (!result.isDirectory && result.fileSize != kFileSizeNotLoaded &&
+        result.fileSize != kFileSizeFailed && result.fileSizeDisplay.empty()) {
+      result.fileSizeDisplay = FormatFileSize(result.fileSize);
+    }
+    // Format modification time display string if needed (files and directories).
+    if (!IsSentinelTime(result.lastModificationTime) &&
+        !IsFailedTime(result.lastModificationTime) && result.lastModificationDisplay.empty()) {
+      result.lastModificationDisplay = FormatFileTime(result.lastModificationTime);
     }
   }
 }

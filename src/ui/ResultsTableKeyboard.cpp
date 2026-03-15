@@ -115,23 +115,234 @@ void UnmarkCurrentAndMoveDown(GuiState& state,
 // Debounce interval for mark/unmark key actions (absorbs macOS synthetic key repeats).
 constexpr auto kDebounceMs = std::chrono::milliseconds(50);
 
-// Wraps the repeated debounce pattern for the M / T / U mark keys.
-// Calls action() on the first key-down event; suppresses repeats until kDebounceMs after release.
+// State for one-press-per-hold handling of M/T/U. See HandleDebouncedMarkKey.
 struct KeyHoldState {
   bool handled = false;
   std::chrono::steady_clock::time_point release_time;
 };
 
+// --- Shortcut implementation rules (regression prevention) ---
+// 1. One physical press = one action: never trigger on raw IsKeyDown(key) alone.
+// 2. One-shot shortcuts: use KeyPressedOnce(key) [= ImGui::IsKeyPressed(key, false)] only.
+// 3. M/T/U: use HandleDebouncedMarkKey only (trigger on IsKeyPressed(key, false) + 50ms cooldown after release).
+// See docs/design/2026-02-18_RESULTS_TABLE_KEYBOARD_SHORTCUTS.md.
+
+// Escape a single CSV field using standard rules: wrap in double quotes if it contains
+// a comma, quote, or newline, and double any embedded quotes.
+std::string EscapeCsvField(std::string_view value) {
+  bool needs_quotes = false;
+  for (const char c : value) {
+    if (c == ',' || c == '"' || c == '\n' || c == '\r') {
+      needs_quotes = true;
+      break;
+    }
+  }
+
+  if (!needs_quotes) {
+    return std::string(value);
+  }
+
+  std::string escaped;
+  escaped.reserve(value.size() + 2U);
+  escaped.push_back('"');
+  for (const char c : value) {
+    if (c == '"') {
+      escaped.push_back('"');
+    }
+    escaped.push_back(c);
+  }
+  escaped.push_back('"');
+  return escaped;
+}
+
+// Build the list of row indices to export as CSV: all marked rows (in visual order) when
+// any marks exist; otherwise, the single selected row (if any).
+std::vector<int> BuildCsvRowIndexList(const GuiState& state,
+                                      const std::vector<SearchResult>& display_results) {
+  std::vector<int> row_indices;
+  row_indices.reserve(display_results.size());
+
+  if (!state.markedFileIds.empty()) {
+    const auto row_count = static_cast<int>(display_results.size());
+    for (int row = 0; row < row_count; ++row) {
+      const auto it = state.markedFileIds.find(
+        display_results[static_cast<size_t>(row)].fileId);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - row bounded by row_count
+      if (it != state.markedFileIds.end()) {
+        row_indices.push_back(row);
+      }
+    }
+  } else if (state.selectedRow >= 0 &&
+             state.selectedRow < static_cast<int>(display_results.size())) {
+    row_indices.push_back(state.selectedRow);
+  }
+
+  return row_indices;
+}
+
+struct CsvColumnVisibility {
+  bool name = true;
+  bool size = true;
+  bool mod_time = true;
+  bool full_path = true;
+  bool extension = true;
+  bool matched_files = false;
+  bool matched_size = false;
+};
+
+void AppendCsvHeaderRow(std::string& csv, const CsvColumnVisibility& vis) {
+  bool first = true;
+  auto sep = [&csv, &first]() {
+    if (!first) {
+      csv.push_back(',');
+    }
+    first = false;
+  };
+  if (vis.name) {
+    sep();
+    csv.append(EscapeCsvField("Name"));
+  }
+  if (vis.size) {
+    sep();
+    csv.append(EscapeCsvField("Size"));
+  }
+  if (vis.mod_time) {
+    sep();
+    csv.append(EscapeCsvField("Last Modified"));
+  }
+  if (vis.full_path) {
+    sep();
+    csv.append(EscapeCsvField("Full Path"));
+  }
+  if (vis.extension) {
+    sep();
+    csv.append(EscapeCsvField("Extension"));
+  }
+  if (vis.matched_files) {
+    sep();
+    csv.append(EscapeCsvField("Matched Files"));
+  }
+  if (vis.matched_size) {
+    sep();
+    csv.append(EscapeCsvField("Matched Size (bytes)"));
+  }
+  csv.push_back('\n');
+}
+
+void AppendCsvDataRow(std::string& csv,
+                            const SearchResult& result,
+                            const GuiState& state,
+                            const CsvColumnVisibility& vis) {
+  bool first = true;
+  auto sep = [&csv, &first]() {
+    if (!first) {
+      csv.push_back(',');
+    }
+    first = false;
+  };
+  if (vis.name) {
+    sep();
+    std::string name_field;
+    const std::string_view base_name = result.GetFilename();
+    const std::string_view ext = result.GetExtension();
+    if (!base_name.empty()) {
+      name_field.assign(base_name.begin(), base_name.end());
+      if (!ext.empty()) {
+        name_field.push_back('.');
+        name_field.append(ext.begin(), ext.end());
+      }
+    }
+    csv.append(EscapeCsvField(name_field));
+  }
+  if (vis.size) {
+    sep();
+    csv.append(EscapeCsvField(ResultsTable::GetSizeDisplayText(result)));
+  }
+  if (vis.mod_time) {
+    sep();
+    csv.append(EscapeCsvField(ResultsTable::GetModTimeDisplayText(result)));
+  }
+  if (vis.full_path) {
+    sep();
+    csv.append(EscapeCsvField(result.fullPath));
+  }
+  if (vis.extension) {
+    sep();
+    csv.append(EscapeCsvField(result.GetExtension()));
+  }
+  if (vis.matched_files || vis.matched_size) {
+    size_t folder_file_count = 0;
+    uint64_t folder_total_size_bytes = 0;
+    if (result.isDirectory) {
+      const auto it = state.folderStatsByPath.find(std::string(result.fullPath));
+      if (it != state.folderStatsByPath.end()) {
+        folder_file_count = it->second.fileCount;
+        folder_total_size_bytes = it->second.totalSizeBytes;
+      }
+    }
+    if (vis.matched_files) {
+      sep();
+      csv.append(EscapeCsvField(std::to_string(folder_file_count)));
+    }
+    if (vis.matched_size) {
+      sep();
+      csv.append(EscapeCsvField(std::to_string(folder_total_size_bytes)));
+    }
+  }
+  csv.push_back('\n');
+}
+
+// Build CSV for all marked rows (if any) or the currently selected row (if none marked).
+void CopySelectedOrMarkedRowsAsCsv(const GuiState& state,
+                                   const std::vector<SearchResult>& display_results,
+                                   GLFWwindow* glfw_window) {
+  if (glfw_window == nullptr || display_results.empty()) {
+    return;
+  }
+
+  const std::vector<int> row_indices = BuildCsvRowIndexList(state, display_results);
+  if (row_indices.empty()) {
+    return;
+  }
+
+  CsvColumnVisibility vis;
+  vis.matched_files = state.showFolderStatsColumns;
+  vis.matched_size = state.showFolderStatsColumns;
+  if (!vis.name && !vis.size && !vis.mod_time && !vis.full_path &&
+      !vis.extension && !vis.matched_files && !vis.matched_size) {
+    return;
+  }
+
+  std::string csv;  // NOLINT(misc-const-correctness) - built incrementally
+  AppendCsvHeaderRow(csv, vis);
+
+  const auto row_count = static_cast<int>(display_results.size());
+  for (const auto row : row_indices) {
+    if (row < 0 || row >= row_count) {
+      continue;
+    }
+    const SearchResult& result =
+      display_results[static_cast<size_t>(row)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by row range check above
+    AppendCsvDataRow(csv, result, state, vis);
+  }
+
+  if (!csv.empty()) {
+    clipboard_utils::SetClipboardText(glfw_window, csv);
+  }
+}
+
+// Trigger only on the key-down transition (IsKeyPressed(key, false)) so one physical
+// press yields one action; 50ms cooldown after release absorbs OS key-repeat Down events.
 template<typename Action>
 void HandleDebouncedMarkKey(ImGuiKey key,
                             KeyHoldState& key_state,
                             std::chrono::steady_clock::time_point time_now,
                             const Action& action) {
-  if (ImGui::IsKeyDown(key) && !key_state.handled) {
+  if (ImGui::IsKeyPressed(key, false) && !key_state.handled) {
     action();
     key_state.handled = true;
     key_state.release_time = time_now;
-  } else if (ImGui::IsKeyDown(key)) {
+  }
+  if (ImGui::IsKeyDown(key)) {
     key_state.release_time = time_now;
   } else if (key_state.handled && time_now - key_state.release_time > kDebounceMs) {
     key_state.handled = false;
@@ -204,7 +415,7 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
     return;
   }
 
-  // Ignore key repeat so one physical press = one action (avoid marking multiple rows when key is held).
+  // One physical press = one action: use IsKeyPressed(key, false) only (see rules above).
   const auto KeyPressedOnce = [](ImGuiKey key) { return ImGui::IsKeyPressed(key, false); };
 
   // --- Incremental search activation / deactivation ---
@@ -295,6 +506,11 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
     } else {
       CopyMarkedPathsToClipboard(state, glfw_window, file_index);
     }
+  }
+
+  // Ctrl+Shift+X - Copy selected or marked rows as CSV (visible columns only).
+  if (IsPrimaryShortcutModifierDown(io) && shift && KeyPressedOnce(ImGuiKey_X)) {
+    CopySelectedOrMarkedRowsAsCsv(state, display_results, glfw_window);
   }
 
   // Shift+D - Bulk delete marked files (opens confirmation popup)

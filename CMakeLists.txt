@@ -198,6 +198,7 @@ set(COMMON_APP_SOURCES
     src/search/SearchResultUtils.cpp
     src/search/SearchResultsService.cpp
     src/search/ExportSearchResultsService.cpp
+    src/search/FolderSizeAggregator.cpp
     src/search/SearchWorker.cpp
     src/search/StreamingResultsCollector.cpp
     src/search/SearchController.cpp
@@ -1228,6 +1229,12 @@ if(BUILD_TESTS)
         endif()
         message(STATUS "  Benchmark executable: search_benchmark")
 
+        # Benchmark smoke tests (run to completion, exit 0; no timing assertion)
+        add_test(NAME PathPatternBenchmarkSmoke COMMAND path_pattern_benchmark)
+        add_test(NAME SearchBenchmarkSmoke COMMAND search_benchmark
+            --index ${CMAKE_SOURCE_DIR}/tests/benchmark_index_sample.txt
+            --config ${CMAKE_SOURCE_DIR}/tests/benchmark_config_sample.json)
+
         # PathPatternMatcher integration tests
         add_executable(path_pattern_integration_tests
             tests/path_pattern_integration_test.cpp
@@ -1394,6 +1401,7 @@ if(BUILD_TESTS)
             src/search/SearchResultUtils.cpp
             src/filters/TimeFilterUtils.cpp
             src/filters/SizeFilterUtils.cpp
+            src/search/FolderSizeAggregator.cpp
             src/search/SearchWorker.cpp
             src/search/StreamingResultsCollector.cpp
             ${SHARED_UTIL_SOURCES_FOR_TESTS}
@@ -1681,6 +1689,23 @@ if(BUILD_TESTS)
         add_test(NAME IncrementalSearchStateTests COMMAND incremental_search_state_tests)
         message(STATUS "  Test executable: incremental_search_state_tests")
 
+        # FolderSizeAggregator tests
+        add_executable(folder_size_aggregator_tests
+            tests/FolderSizeAggregatorTests.cpp
+            src/search/FolderSizeAggregator.cpp
+            ${PLATFORM_THREAD_UTILS_SRC}
+            $<TARGET_OBJECTS:test_search_obj>
+            $<TARGET_OBJECTS:test_utils_obj>
+            $<TARGET_OBJECTS:test_fileindex_obj>
+            $<TARGET_OBJECTS:test_path_obj>
+            $<TARGET_OBJECTS:test_string_utils_obj>
+            $<TARGET_OBJECTS:test_core_obj>
+        )
+        configure_test_target(folder_size_aggregator_tests)
+        configure_msvc_ltcg(folder_size_aggregator_tests)
+        add_test(NAME FolderSizeAggregatorTests COMMAND folder_size_aggregator_tests)
+        message(STATUS "  Test executable: folder_size_aggregator_tests")
+
         # Comprehensive coverage test executable
         option(ENABLE_COVERAGE_ALL_SOURCES "Include all source files in coverage report" OFF)
 
@@ -1748,17 +1773,20 @@ if(BUILD_TESTS)
             message(STATUS "  Test executable: coverage_all_sources (comprehensive coverage)")
         endif()
 
-        # Set timeout for Windows tests
+        # Set timeout for Windows tests (must match all add_test(NAME ...) above)
         if(WIN32)
             set(WINDOWS_TESTS
-                StringSearchTests CpuFeaturesTests StringSearchAVX2Tests StringSearchNEONTests
+                StringSearchTests FuzzySearchTests CpuFeaturesTests StringSearchAVX2Tests StringSearchNEONTests
                 PathUtilsTests PathPatternMatcherTests PathPatternIntegrationTests
-                SimpleRegexTests StringUtilsTests FileSystemUtilsTests
+                SimpleRegexTests SearchPatternUtilsTests ExportSearchResultsServiceTests RegexGeneratorUtilsTests
+                StringUtilsTests FileSystemUtilsTests
                 LazyAttributeLoaderTests ParallelSearchEngineTests TimeFilterUtilsTests
-                GuiStateTests FileIndexSearchStrategyTests GeminiApiUtilsTests
+                GuiStateTests FileIndexSearchStrategyTests StreamingResultsCollectorTests GeminiApiUtilsTests
                 SettingsTests SearchContextTests IndexOperationsTests
                 PathOperationsTests DirectoryResolverTests FileIndexMaintenanceTests
-                StdRegexUtilsTests
+                StdRegexUtilsTests SearchResultSortTests TotalSizeComputationTests IncrementalSearchStateTests
+                FolderSizeAggregatorTests
+                PathPatternBenchmarkSmoke SearchBenchmarkSmoke
             )
             set(EXISTING_TESTS)
             foreach(test ${WINDOWS_TESTS})
@@ -1818,6 +1846,8 @@ if(BUILD_TESTS)
             path_operations_tests directory_resolver_tests file_index_maintenance_tests
             std_regex_utils_tests search_result_sort_tests total_size_computation_tests
             incremental_search_state_tests
+            folder_size_aggregator_tests
+            path_pattern_benchmark search_benchmark
         )
         set(TEST_DEPENDENCIES "")
         foreach(t ${TEST_TARGETS})

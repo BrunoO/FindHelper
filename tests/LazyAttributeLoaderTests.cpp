@@ -8,44 +8,41 @@
 #include <windows.h>  // NOSONAR(cpp:S3806) - Windows-only include, case doesn't matter on Windows filesystem
 #endif  // _WIN32
 
-#include <atomic>
-#include <chrono>
-#include <cstdio>
-#include <fstream>
 #include <shared_mutex>
-#include <stdexcept>
 #include <string>
-#include <thread>
-#include <vector>
+
+#if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
+#include <filesystem>
+#else
+#include <experimental/filesystem>
+#endif  // __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
+
 #include "TestHelpers.h"
 #include "index/FileIndexStorage.h"
 #include "index/LazyAttributeLoader.h"
 #include "path/PathStorage.h"
-#include "path/PathUtils.h"
 #include "utils/FileTimeTypes.h"
 
 #if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
-#include <filesystem>
-namespace fs = std::filesystem;
+namespace fs = std::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: inside TEST_CASE lambdas
 #else
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
+namespace fs = std::experimental::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: inside TEST_CASE lambdas
 #endif  // __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
 
 TEST_SUITE("LazyAttributeLoader - Static I/O Methods") {
   TEST_CASE("LoadAttributes - returns correct file size") {
-    test_helpers::TempFileFixture fixture;
+    const test_helpers::TempFileFixture fixture;
 
-    FileAttributes attrs = LazyAttributeLoader::LoadAttributes(fixture.path);
+    const FileAttributes attrs = LazyAttributeLoader::LoadAttributes(fixture.path);
 
     CHECK(attrs.success == true);
     CHECK(attrs.fileSize == fixture.expectedSize);
   }
 
   TEST_CASE("LoadAttributes - returns correct modification time") {
-    test_helpers::TempFileFixture fixture;
+    const test_helpers::TempFileFixture fixture;
 
-    FileAttributes attrs = LazyAttributeLoader::LoadAttributes(fixture.path);
+    const FileAttributes attrs = LazyAttributeLoader::LoadAttributes(fixture.path);
 
     CHECK(attrs.success == true);
     // Modification time should be valid (not sentinel)
@@ -53,9 +50,9 @@ TEST_SUITE("LazyAttributeLoader - Static I/O Methods") {
   }
 
   TEST_CASE("LoadAttributes - handles non-existent file") {
-    std::string nonExistentPath = "/nonexistent/path/file.txt";
+    const std::string nonExistentPath = "/nonexistent/path/file.txt";
 
-    FileAttributes attrs = LazyAttributeLoader::LoadAttributes(nonExistentPath);
+    const FileAttributes attrs = LazyAttributeLoader::LoadAttributes(nonExistentPath);
 
     CHECK(attrs.success == false);
     CHECK(attrs.fileSize == kFileSizeFailed);
@@ -66,33 +63,33 @@ TEST_SUITE("LazyAttributeLoader - Static I/O Methods") {
   }
 
   TEST_CASE("GetFileSize - returns correct size") {
-    test_helpers::TempFileFixture fixture;
+    const test_helpers::TempFileFixture fixture;
 
-    uint64_t size = LazyAttributeLoader::GetFileSize(fixture.path);
+    const uint64_t size = LazyAttributeLoader::GetFileSize(fixture.path);
 
     CHECK(size == fixture.expectedSize);
   }
 
   TEST_CASE("GetFileSize - returns failure sentinel for non-existent file") {
-    std::string nonExistentPath = "/nonexistent/path/file.txt";
+    const std::string nonExistentPath = "/nonexistent/path/file.txt";
 
-    uint64_t size = LazyAttributeLoader::GetFileSize(nonExistentPath);
+    const uint64_t size = LazyAttributeLoader::GetFileSize(nonExistentPath);
 
     CHECK(size == kFileSizeFailed);
   }
 
   TEST_CASE("GetFileModificationTime - returns valid time") {
-    test_helpers::TempFileFixture fixture;
+    const test_helpers::TempFileFixture fixture;
 
-    FILETIME time = LazyAttributeLoader::GetFileModificationTime(fixture.path);
+    const FILETIME time = LazyAttributeLoader::GetFileModificationTime(fixture.path);
 
     CHECK(IsValidTime(time));
   }
 
   TEST_CASE("GetFileModificationTime - returns failed time for non-existent file") {
-    std::string nonExistentPath = "/nonexistent/path/file.txt";
+    const std::string nonExistentPath = "/nonexistent/path/file.txt";
 
-    FILETIME time = LazyAttributeLoader::GetFileModificationTime(nonExistentPath);
+    const FILETIME time = LazyAttributeLoader::GetFileModificationTime(nonExistentPath);
 
     // GetFileModificationTime should return kFileTimeFailed for non-existent files
     // On some platforms, the return value may vary (sentinel, failed, or even valid-looking time)
@@ -102,9 +99,9 @@ TEST_SUITE("LazyAttributeLoader - Static I/O Methods") {
   }
 
   TEST_CASE("LoadAttributes - loads both size and time in one call") {
-    test_helpers::TempFileFixture fixture;
+    const test_helpers::TempFileFixture fixture;
 
-    FileAttributes attrs = LazyAttributeLoader::LoadAttributes(fixture.path);
+    const FileAttributes attrs = LazyAttributeLoader::LoadAttributes(fixture.path);
 
     // Verify both attributes are loaded
     CHECK(attrs.success == true);
@@ -114,9 +111,9 @@ TEST_SUITE("LazyAttributeLoader - Static I/O Methods") {
 
   TEST_CASE("GetFileSize - handles zero-byte file") {
     // Create zero-byte file using shared helper
-    std::string zeroBytePath = test_helpers::CreateTempFile("lazy_loader_zero_");
+    const std::string zeroBytePath = test_helpers::CreateTempFile("lazy_loader_zero_");
 
-    uint64_t size = LazyAttributeLoader::GetFileSize(zeroBytePath);
+    const uint64_t size = LazyAttributeLoader::GetFileSize(zeroBytePath);
 
     CHECK(size == 0);
 
@@ -127,12 +124,12 @@ TEST_SUITE("LazyAttributeLoader - Static I/O Methods") {
   TEST_CASE("GetFileSize - zero-byte file loads and storage caches 0") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
-    std::string zeroBytePath = test_helpers::CreateTempFile("lazy_loader_zero_");
+    const std::string zeroBytePath = test_helpers::CreateTempFile("lazy_loader_zero_");
     const size_t idx = fixture.GetPathStorage().InsertPath(
         fixture.GetFileId(), zeroBytePath, false, std::nullopt);
     fixture.GetStorage().SetPathStorageIndex(fixture.GetFileId(), idx);
 
-    uint64_t size = fixture.GetLoader().GetFileSize(fixture.GetFileId());
+    const uint64_t size = fixture.GetLoader().GetFileSize(fixture.GetFileId());
 
     CHECK(size == 0);
     // Regression: storage must have loaded value 0, not failed or not-loaded
@@ -149,7 +146,7 @@ TEST_SUITE("LazyAttributeLoader - Constructor") {
     FileIndexStorage storage(mutex);
     PathStorage pathStorage;
 
-    LazyAttributeLoader loader(storage, pathStorage, mutex);
+    const LazyAttributeLoader loader(storage, pathStorage, mutex);
 
     // Constructor should not throw
     CHECK(true);
@@ -161,7 +158,7 @@ TEST_SUITE("LazyAttributeLoader - Manual Loading Methods") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
     // Load size
-    bool loaded = fixture.GetLoader().LoadFileSize(fixture.GetFileId());
+    const bool loaded = fixture.GetLoader().LoadFileSize(fixture.GetFileId());
     test_helpers::lazy_loader_test_helpers::VerifyLoadResult(loaded, true);
 
     // Verify size was loaded
@@ -173,11 +170,11 @@ TEST_SUITE("LazyAttributeLoader - Manual Loading Methods") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
     // Load size first time
-    bool loaded1 = fixture.GetLoader().LoadFileSize(fixture.GetFileId());
+    const bool loaded1 = fixture.GetLoader().LoadFileSize(fixture.GetFileId());
     CHECK(loaded1 == true);
 
     // Try to load again (should return false)
-    bool loaded2 = fixture.GetLoader().LoadFileSize(fixture.GetFileId());
+    const bool loaded2 = fixture.GetLoader().LoadFileSize(fixture.GetFileId());
     CHECK(loaded2 == false);
   }
 
@@ -185,7 +182,7 @@ TEST_SUITE("LazyAttributeLoader - Manual Loading Methods") {
     test_helpers::lazy_loader_test_helpers::MinimalLoaderSetup setup;
     test_helpers::lazy_loader_test_helpers::CreateLoaderSetupWithDirectory(setup);
 
-    bool loaded = setup.loader.LoadFileSize(1);
+    const bool loaded = setup.loader.LoadFileSize(1);
     CHECK(loaded == false);
   }
 
@@ -193,7 +190,7 @@ TEST_SUITE("LazyAttributeLoader - Manual Loading Methods") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
     // Load modification time
-    bool loaded = fixture.GetLoader().LoadModificationTime(fixture.GetFileId());
+    const bool loaded = fixture.GetLoader().LoadModificationTime(fixture.GetFileId());
     test_helpers::lazy_loader_test_helpers::VerifyLoadResult(loaded, true);
 
     // Verify time was loaded
@@ -205,27 +202,32 @@ TEST_SUITE("LazyAttributeLoader - Manual Loading Methods") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
     // Load time first time
-    bool loaded1 = fixture.GetLoader().LoadModificationTime(fixture.GetFileId());
+    const bool loaded1 = fixture.GetLoader().LoadModificationTime(fixture.GetFileId());
     CHECK(loaded1 == true);
 
     // Try to load again (should return false)
-    bool loaded2 = fixture.GetLoader().LoadModificationTime(fixture.GetFileId());
+    const bool loaded2 = fixture.GetLoader().LoadModificationTime(fixture.GetFileId());
     CHECK(loaded2 == false);
   }
 
-  TEST_CASE("LoadModificationTime - returns false for directory") {
+  TEST_CASE("LoadModificationTime - loads time for directory") {
     test_helpers::lazy_loader_test_helpers::MinimalLoaderSetup setup;
     test_helpers::lazy_loader_test_helpers::CreateLoaderSetupWithDirectory(setup);
 
-    bool loaded = setup.loader.LoadModificationTime(1);
-    CHECK(loaded == false);
+    const bool loaded = setup.loader.LoadModificationTime(1);
+    CHECK(loaded == true);
+
+    // Verify time was loaded and is a real (non-sentinel) value
+    const FILETIME time = setup.loader.GetModificationTime(1);
+    CHECK_FALSE(IsSentinelTime(time));
+    CHECK_FALSE(IsFailedTime(time));
   }
 }
 
 TEST_SUITE("LazyAttributeLoader - Concurrent Access") {
   TEST_CASE("GetFileSize - concurrent access with double-check locking") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
-    uint64_t expectedSize = fixture.GetTempFile().expectedSize;
+    const uint64_t expectedSize = fixture.GetTempFile().expectedSize;
 
     test_helpers::lazy_loader_test_helpers::TestConcurrentAccess<uint64_t>(
       fixture.GetLoader(), fixture.GetFileId(),
@@ -264,7 +266,7 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
     // Delete the temp file
-    std::string deletedPath = fixture.GetTempFile().path;
+    const std::string deletedPath = fixture.GetTempFile().path;
     fs::remove(deletedPath);
 
     // Update path storage to point to deleted file
@@ -281,7 +283,7 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
     // Delete the temp file
-    std::string deletedPath = fixture.GetTempFile().path;
+    const std::string deletedPath = fixture.GetTempFile().path;
     fs::remove(deletedPath);
 
     // Update path storage to point to deleted file
@@ -297,7 +299,7 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
   TEST_CASE("GetFileSize - handles non-existent file path") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
-    std::string nonExistentPath = "/nonexistent/path/file.txt";
+    const std::string nonExistentPath = "/nonexistent/path/file.txt";
 
     // Update path storage to point to non-existent file
     const size_t path_idx = fixture.GetPathStorage().InsertPath(
@@ -312,7 +314,7 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
   TEST_CASE("GetFileSize - failed load marks storage as failed (not cached 0)") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
-    std::string nonExistentPath = "/nonexistent/path/file.txt";
+    const std::string nonExistentPath = "/nonexistent/path/file.txt";
     const size_t path_idx = fixture.GetPathStorage().InsertPath(
         fixture.GetFileId(), nonExistentPath, false, std::nullopt);
     fixture.GetStorage().SetPathStorageIndex(fixture.GetFileId(), path_idx);
@@ -327,7 +329,7 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
   TEST_CASE("GetModificationTime - handles non-existent file path") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
-    std::string nonExistentPath = "/nonexistent/path/file.txt";
+    const std::string nonExistentPath = "/nonexistent/path/file.txt";
 
     // Update path storage to point to non-existent file
     const size_t path_idx = fixture.GetPathStorage().InsertPath(

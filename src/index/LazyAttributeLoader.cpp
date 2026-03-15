@@ -65,7 +65,6 @@ struct ModTimeCheckResult {
   bool needs_loading = false;
   bool need_size = false;
   bool has_cached_time = false;  // time already loaded; return cached_time
-  bool is_directory = false;     // true if directory (caller returns zero FILETIME)
   FILETIME cached_time{};        // NOLINT(readability-redundant-member-init) - FILETIME is a C struct; {} required to guarantee zero-init
   std::string path;              // populated only when needs_loading is true
 };
@@ -103,16 +102,13 @@ ModTimeCheckResult CheckModificationTimeNeedsLoading(
     return {};
   }
   if (!entry->lastModificationTime.IsNotLoaded()) {
-    return {false, false, true, false, entry->lastModificationTime.GetValue(), {}};
-  }
-  if (entry->isDirectory) {
-    return {false, false, false, true, {}, {}};
+    return {false, false, true, entry->lastModificationTime.GetValue(), {}};
   }
   const bool need_size = entry->fileSize.IsNotLoaded();
   if (entry->path_storage_index == static_cast<size_t>(-1)) {
-    return {true, need_size, false, false, {}, {}};
+    return {true, need_size, false, {}, {}};
   }
-  return {true, need_size, false, false, {},
+  return {true, need_size, false, {},
           std::string(path_storage.GetPathByIndex(entry->path_storage_index))};
 }
 
@@ -330,15 +326,12 @@ FILETIME LazyAttributeLoader::GetModificationTime(
                         // reduce complexity while maintaining performance
   // 1. Check with shared lock first (fast, allows concurrent readers).
   //    Path is retrieved under the same lock to avoid a second lock acquisition.
-  const auto [needs_loading, need_size, has_cached_time, is_directory, cached_time, path] =
+  const auto [needs_loading, need_size, has_cached_time, cached_time, path] =
       CheckModificationTimeNeedsLoading(storage_, path_storage_, index_mutex_ref_, id);
   if (!needs_loading) {
     if (has_cached_time) {
       g_already_loaded_count++;
       return cached_time;
-    }
-    if (is_directory) {
-      return {0, 0};
     }
     return kFileTimeNotLoaded;
   }
@@ -410,7 +403,7 @@ bool LazyAttributeLoader::LoadModificationTime(uint64_t id) {
   {
     const std::shared_lock lock(index_mutex_ref_);
     const FileEntry* const entry = storage_.GetEntry(id);
-    if (entry == nullptr || entry->isDirectory || !entry->lastModificationTime.IsNotLoaded()) {
+    if (entry == nullptr || !entry->lastModificationTime.IsNotLoaded()) {
       return false;
     }
     if (entry->path_storage_index != static_cast<size_t>(-1)) {
@@ -429,9 +422,9 @@ bool LazyAttributeLoader::LoadModificationTime(uint64_t id) {
   // Phase 3: Write result under unique lock with double-check.
   const std::unique_lock lock(index_mutex_ref_);
   if (const FileEntry* const entry = storage_.GetEntry(id);
-      entry == nullptr || entry->isDirectory || !entry->lastModificationTime.IsNotLoaded()) {
-    return (entry != nullptr && !entry->isDirectory) ? !entry->lastModificationTime.IsFailed() : false;
-    // Another thread loaded (or failed): true if loaded, false if failed; null/directory -> false.
+      entry == nullptr || !entry->lastModificationTime.IsNotLoaded()) {
+    return (entry != nullptr) ? !entry->lastModificationTime.IsFailed() : false;
+    // Another thread loaded (or failed): true if loaded, false if failed; null -> false.
   }
   if (success) {
     storage_.UpdateModificationTime(id, mod_time);

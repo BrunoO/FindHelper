@@ -245,6 +245,9 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
   bool loadingAttributes =
     false;  // True when file attributes are being loaded (e.g., during sorting)
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
+  bool computingFolderSizes =
+    false;  // True when FolderSizeAggregator has pending background work
+  // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   bool sortDataReady =
     false;  // True when all data is already loaded and sort can happen immediately
   std::vector<std::future<void>>

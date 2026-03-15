@@ -1138,8 +1138,8 @@ void TestWithDynamicSettings(int chunk_size, size_t file_count, TestFunc test_fu
  */
 std::vector<std::string> GenerateTestPaths(
     size_t count,
-    const std::string& base_path = "C:\\Test",
-    const std::string& prefix = "file_");
+    std::string_view base_path = "C:\\Test",
+    std::string_view prefix = "file_");
 
 /**
  * Generate a vector of test extensions.

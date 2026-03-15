@@ -23,6 +23,8 @@ struct LayoutConstants {
   static constexpr int kEmptyStatePanelSpacingCount = 1;
   /** Height in pixels of the status bar top border (1 px line above status bar). */
   static constexpr float kStatusBarTopBorderHeight = 1.0F;
+  /** Height in pixels of the animated busy progress bar shown when indexing/searching/loading. */
+  static constexpr float kStatusBarBusyBarHeight = 4.0F;
   /** Horizontal gap between example search pills in empty state. */
   static constexpr float kExampleButtonSpacing = 6.0F;
   /** Horizontal gap between empty state left panel (examples) and right panel (recent). */

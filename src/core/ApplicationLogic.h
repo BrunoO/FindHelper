@@ -21,6 +21,7 @@ class SearchController;
 class SearchWorker;
 class FileIndex;
 class UsnMonitor;
+class FolderSizeAggregator;
 class Application;
 struct AppSettings;
 
@@ -52,6 +53,7 @@ namespace application_logic {
   void Update(GuiState &state,
               const SearchController &search_controller,
               SearchWorker &search_worker,
+              FolderSizeAggregator* folder_aggregator,
               FileIndex &file_index,
               const UsnMonitor *monitor,
               bool is_index_building,
@@ -100,6 +102,7 @@ namespace application_logic {
   void HandleKeyboardShortcuts(GuiState &state,
                                const SearchController &search_controller,
                                SearchWorker &search_worker,
+                               FolderSizeAggregator* folder_aggregator,
                                bool is_index_building,
                                Application &application,
                                AppSettings &settings);

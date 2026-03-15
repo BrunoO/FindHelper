@@ -1,0 +1,55 @@
+---
+description: C++17 style — braced return, scoped_lock, explicit constructors, nodiscard (Sonar/clang-tidy)
+globs: "**/*.cpp,**/*.h,**/*.hpp"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+---
+
+# C++17 style (tool-friendly)
+
+When editing C++, apply these so Sonar and clang-tidy stay clean with minimal rework.
+
+## Braced return
+
+Use braced initializer in `return` so the type comes from the declaration (no duplicate type name). Satisfies `modernize-return-braced-init-list`.
+
+```cpp
+// ❌ return std::string(...);  → ✅ return { ... };  or  return {};
+std::string GetApiKey() {
+  if (const char* k = std::getenv("API_KEY"); k) return {k};
+  return {};
+}
+```
+
+## scoped_lock, not lock_guard
+
+Use `std::scoped_lock` with CTAD (no template args). Sonar S5997/S6012.
+
+```cpp
+// ❌ std::lock_guard<std::mutex> lock(mutex_);
+// ✅
+std::scoped_lock lock(mutex_);
+```
+
+## explicit single-arg constructors
+
+Mark single-argument (or only-one-non-default) constructors and conversion operators `explicit` to prevent implicit conversions. Sonar S1709.
+
+```cpp
+explicit StreamingResultsCollector(size_t batch_size = 500, uint32_t interval_ms = 50);
+explicit operator bool() const;
+```
+
+## [[nodiscard]] for important returns
+
+Use `[[nodiscard]]` on functions whose return value must not be ignored (e.g. success flags, handles, validation results).
+
+```cpp
+[[nodiscard]] bool SaveFile(const std::string& path);
+[[nodiscard]] bool ValidatePath(std::string_view path);
+```
+
+**Reference:** AGENTS.md § Modern C++ Practices (braced return, scoped_lock, explicit, nodiscard).

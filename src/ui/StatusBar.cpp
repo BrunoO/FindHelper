@@ -54,6 +54,9 @@ static std::string GetStatusText(const GuiState& state, const SearchWorker& sear
   if (!state.attributeLoadingFutures.empty() || state.loadingAttributes) {
     return "Status: Loading attributes...";
   }
+  if (state.computingFolderSizes) {
+    return "Status: Computing folder sizes...";
+  }
   if (IsExportNotificationActive(state)) {
     if (!state.exportErrorMessage.empty()) {
       return "Error: " + state.exportErrorMessage;
@@ -63,6 +66,26 @@ static std::string GetStatusText(const GuiState& state, const SearchWorker& sear
     }
   }
   return "Status: Idle";
+}
+
+// Returns true when the status bar should show the animated busy progress bar (indexing, searching, loading attributes, computing folder sizes).
+static bool IsStatusBarBusy(const GuiState& state, const SearchWorker& search_worker) {
+  return state.index_build_in_progress || search_worker.IsBusy() ||
+         !state.attributeLoadingFutures.empty() || state.loadingAttributes ||
+         state.computingFolderSizes;
+}
+
+// Renders the themed indeterminate progress bar when the app is busy. Uses Theme::Colors for track and fill.
+static void RenderBusyProgressBar(const GuiState& state, const SearchWorker& search_worker) {
+  if (!IsStatusBarBusy(state, search_worker)) {
+    return;
+  }
+  constexpr int kProgressBarStyleColorCount = 2;  // FrameBg + PlotHistogram
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, Theme::Colors::Border);
+  ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Theme::Colors::Accent);
+  ImGui::ProgressBar(-1.0F * static_cast<float>(ImGui::GetTime()),
+                     ImVec2(-1.0F, LayoutConstants::kStatusBarBusyBarHeight), nullptr);
+  ImGui::PopStyleColor(kProgressBarStyleColorCount);
 }
 
 // Forward declarations for helper functions
@@ -88,6 +111,8 @@ void StatusBar::Render(GuiState &state,
   ImGui::GetWindowDrawList()->AddRectFilled(border_min, border_max,
                                             ImGui::ColorConvertFloat4ToU32(Theme::Colors::Border));
   ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kStatusBarTopBorderHeight));
+
+  RenderBusyProgressBar(state, search_worker);
 
   ImGui::Separator();
 

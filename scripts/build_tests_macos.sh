@@ -199,6 +199,8 @@ TEST_TARGETS=(
     "search_result_sort_tests"
     "total_size_computation_tests"
     "incremental_search_state_tests"
+    "path_pattern_benchmark"
+    "search_benchmark"
 )
 
 # Configure CMake if needed
@@ -251,9 +253,11 @@ TEST_FAILURES=0
 
 # Helper function to run a test with coverage support
 # Skips if executable is missing (e.g. gemini_api_utils_tests when CURL not found)
+# Optional third argument: extra CLI args (e.g. for search_benchmark --index ... --config ...)
 run_test_with_coverage() {
     local test_name=$1
     local test_exe=$2
+    local extra_args=${3:-}
 
     if [[ ! -f "./$test_exe" ]]; then
         echo "Skipping $test_name (executable not built, e.g. optional dependency)"
@@ -263,14 +267,14 @@ run_test_with_coverage() {
     echo "Running $test_name..."
     if [[ "$ENABLE_COVERAGE" == "ON" ]]; then
         # Set unique profile file for each test to avoid overwriting
-        if LLVM_PROFILE_FILE="${test_name}.profraw" ./"$test_exe"; then
+        if LLVM_PROFILE_FILE="${test_name}.profraw" ./"$test_exe" $extra_args; then
             return 0
         else
             TEST_FAILURES=$((TEST_FAILURES + 1))
             return 1
         fi
     else
-        if ./"$test_exe"; then
+        if ./"$test_exe" $extra_args; then
             return 0
         else
             TEST_FAILURES=$((TEST_FAILURES + 1))
@@ -281,7 +285,12 @@ run_test_with_coverage() {
 
 # Run all tests using the TEST_TARGETS array
 for target in "${TEST_TARGETS[@]}"; do
-    run_test_with_coverage "$target" "$target"
+    if [[ "$target" == "search_benchmark" ]]; then
+        run_test_with_coverage "$target" "$target" \
+            "--index $PROJECT_ROOT/tests/benchmark_index_sample.txt --config $PROJECT_ROOT/tests/benchmark_config_sample.json"
+    else
+        run_test_with_coverage "$target" "$target"
+    fi
     echo ""
 done
 

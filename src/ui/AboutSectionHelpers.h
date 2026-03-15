@@ -51,4 +51,11 @@ namespace ui {
  */
 [[nodiscard]] std::string GetAboutProcessMemoryDisplayFromBytes(size_t memory_bytes);
 
+/**
+ * Regex engine(s) used for pattern matching (literal/simple/complex paths).
+ * E.g. "String search, SimpleRegex, std::regex" or "String search, SimpleRegex, Boost.Regex".
+ * Updated when RE2 is integrated (RE2, then Boost, then std::regex).
+ */
+[[nodiscard]] std::string GetAboutRegexEnginesLabel();
+
 }  // namespace ui

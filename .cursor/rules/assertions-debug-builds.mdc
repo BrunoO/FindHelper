@@ -1,0 +1,33 @@
+---
+description: Add assertions for preconditions, loop invariants, postconditions, and state transitions
+globs: "**/*.cpp,**/*.h,**/*.hpp"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+---
+
+# Assertions for debug builds
+
+**Always** add assertions to document and verify invariants. Use `assert(...)` or `#ifndef NDEBUG` checks so they run in Debug and are compiled out in Release.
+
+## What to assert
+
+1. **Preconditions** — Check inputs at function entry (e.g. non-null, valid range, state allows this call).
+2. **Loop invariants** — Assert at top or bottom of loops (e.g. bounds, sum parity, indices in range).
+3. **Postconditions** — Verify outputs or state after a mutation (e.g. size increased, state == expected).
+4. **State transitions** — Before/after changing state: assert pre-state allows the transition, then assert post-state and invariants.
+
+```cpp
+void ProcessRange(size_t start, size_t end) {
+  assert(start <= end && "Precondition: valid range");
+  assert(state_ == State::Ready && "Precondition: only when Ready");
+  // ... work ...
+  assert(processed_ <= total_ && "Loop invariant");
+}
+```
+
+For **state machines and transitions**, use TLA+-style thinking and the same assertions; see `.cursor/rules/tla-plus-states-assertions.mdc`.
+
+**Reference:** AGENTS.md § Add Assertions for Debug Builds; `docs/design/STREAMING_SEARCH_RESULTS_DESIGN.md` (State Invariants).

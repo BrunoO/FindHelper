@@ -1,0 +1,34 @@
+---
+description: Results table keyboard shortcuts — regression prevention (one press = one action)
+globs: "**/ui/ResultsTable*.cpp,**/ui/**/ResultsTable*Keyboard*.cpp"
+alwaysApply: false
+paths:
+  - "**/ui/ResultsTable*.cpp"
+  - "**/ui/**/ResultsTable*Keyboard*.cpp"
+---
+
+# Results table keyboard shortcuts (regression prevention)
+
+When editing shortcut handling in the results table, ensure **one physical key press = one action**. Violations cause “one press marks many rows” regressions.
+
+## Rules
+
+1. **Never trigger an action from `ImGui::IsKeyDown(key)` alone.** It is true every frame while the key is held (including OS key repeat).
+2. **One-shot shortcuts:** Use `ImGui::IsKeyPressed(key, false)` or the in-handler `KeyPressedOnce(key)` helper (they ignore repeat).
+3. **M / T / U only:** Use `HandleDebouncedMarkKey(key, key_state, time_now, action)`. It uses key-down transition plus a 50ms cooldown after release. Do not replace it with a plain `KeyPressedOnce(ImGuiKey_M)` without the cooldown unless that is intentional and documented.
+4. **Exception:** Backspace in incremental search may use `IsKeyPressed(ImGuiKey_Backspace, true)` so repeat is allowed while typing.
+
+## Example
+
+```cpp
+// ❌ BAD — can fire every frame, multiple actions per press
+if (ImGui::IsKeyDown(ImGuiKey_M)) { MarkRow(); }
+
+// ✅ GOOD — one action per press
+if (KeyPressedOnce(ImGuiKey_M)) { MarkRow(); }
+// For M/T/U use HandleDebouncedMarkKey(...)
+```
+
+Keep the in-file comment block “Shortcut implementation rules (regression prevention)” in sync when changing behavior.
+
+**Reference:** `docs/design/2026-02-18_RESULTS_TABLE_KEYBOARD_SHORTCUTS.md` (§ Regression prevention).

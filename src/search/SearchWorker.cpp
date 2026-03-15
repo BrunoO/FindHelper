@@ -295,8 +295,8 @@ std::vector<SearchResult> MergeAndConvertToSearchResults(  // NOLINT(cppcoreguid
         (datum.extension_start == SIZE_MAX) ? std::string_view::npos : datum.extension_start;
 
     if (datum.isDirectory) {
-      result.fileSize = 0;
-      result.lastModificationTime = FILETIME{0, 0};
+      result.fileSize = kFileSizeNotLoaded;
+      result.lastModificationTime = kFileTimeNotLoaded;
     } else {
       const FileEntry* entry = file_index.GetEntry(datum.id);
       if (entry == nullptr) {

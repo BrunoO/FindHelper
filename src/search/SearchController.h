@@ -9,6 +9,7 @@
 
 // Forward declarations
 class UsnMonitor;
+class FolderSizeAggregator;
 struct AppSettings;
 
 // Search Controller class
@@ -36,14 +37,14 @@ public:
   // monitor: Optional pointer used to query current index size and population state.
   // is_index_building: True if index is building or finalizing (prevents search race condition).
   // file_index: Used to convert SearchResultData to SearchResult with path pool.
-  void Update(GuiState &state, SearchWorker &search_worker, const UsnMonitor* monitor, bool is_index_building, const AppSettings& settings, const FileIndex& file_index) const;
+  void Update(GuiState &state, SearchWorker &search_worker, FolderSizeAggregator* folder_aggregator, const UsnMonitor* monitor, bool is_index_building, const AppSettings& settings, const FileIndex& file_index) const;
 
   // Trigger a manual search immediately (bypasses debounce).
   // Called directly from UI event handlers when the user:
   // - Clicks the "Search" button
   // - Presses Enter in a search input field
   // Uses current values from GuiState to build SearchParams and start the worker.
-  void TriggerManualSearch(GuiState &state, SearchWorker &search_worker, const AppSettings& settings) const;
+  void TriggerManualSearch(GuiState &state, SearchWorker &search_worker, FolderSizeAggregator* folder_aggregator, const AppSettings& settings) const;
 
   // Handle auto-refresh when the underlying index changes.
   // Called from Update() once per frame, after we know the current index size.
@@ -54,7 +55,7 @@ public:
 
   // Poll the SearchWorker for newly completed results and update GuiState.
   // Called from Update() once per frame. Uses file_index for path-pool conversion.
-  void PollResults(GuiState &state, SearchWorker &search_worker, const FileIndex& file_index) const;
+  void PollResults(GuiState &state, SearchWorker &search_worker, FolderSizeAggregator* folder_aggregator, const FileIndex& file_index) const;
 
 private:
   // Decide whether a debounced "instant search" should be triggered this frame.

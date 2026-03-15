@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -29,6 +30,7 @@
 #include "index/FileIndex.h"
 #include "path/PathUtils.h"
 #include "platform/FileOperations.h"  // Common interface header (platform-agnostic)
+#include "search/FolderSizeAggregator.h"
 #include "search/SearchResultUtils.h"
 #include "search/SearchResultsService.h"
 #include "ui/IconsFontAwesome.h"
@@ -180,6 +182,7 @@ struct RenderRowParams {
   bool has_pending_deletions = false;
   bool show_path_hierarchy_indentation = true;
   const FolderStatsMap* folder_stats = nullptr;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  FolderSizeAggregator* folder_aggregator = nullptr;
   bool& drag_candidate_active;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   int& drag_candidate_row;      // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   ImVec2& drag_start_pos;       // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -199,6 +202,7 @@ struct RenderVisibleRowsParams {
   bool has_pending_deletions = false;
   bool show_path_hierarchy_indentation = true;
   const FolderStatsMap* folder_stats = nullptr;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  FolderSizeAggregator* folder_aggregator = nullptr;
   bool& drag_candidate_active;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   int& drag_candidate_row;      // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   ImVec2& drag_start_pos;       // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -236,6 +240,7 @@ inline void RenderVisibleTableRows(const RenderVisibleRowsParams& params) {
                                        params.has_pending_deletions,
                                        params.show_path_hierarchy_indentation,
                                        params.folder_stats,
+                                       params.folder_aggregator,
                                        params.drag_candidate_active,
                                        params.drag_candidate_row,
                                        params.drag_start_pos,
@@ -377,6 +382,24 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   // During streaming, skip sync disk I/O to keep UI responsive (cloud files can block 100-500ms each).
   EnsureDisplayStringsPopulated(params.result, params.file_index,
                                !params.state.showingPartialResults);
+
+  // For directories with no size yet, request calculation from aggregator.
+  if (params.result.isDirectory && params.result.fileSize == kFileSizeNotLoaded &&
+      params.folder_aggregator != nullptr) {
+    params.folder_aggregator->Request(params.result.fileId, params.result.fullPath);
+    if (const auto size = params.folder_aggregator->GetResult(params.result.fileId);
+        size.has_value()) {
+      params.result.fileSize = *size;
+      // Always reformat: fileSizeDisplay may hold the "..." placeholder set by
+      // EnsureDisplayStringsPopulated, and must be replaced with the real value.
+      params.result.fileSizeDisplay = FormatFileSize(params.result.fileSize);
+    }
+  }
+  // Post-condition: if we wrote a real size, the placeholder must be gone.
+  assert(!(params.result.isDirectory && params.result.fileSize != kFileSizeNotLoaded &&  // NOSONAR(cpp:S2583) - Intentional debug invariant; Sonar path analysis sees the preceding write as making this trivially true, but this assertion catches cases where the display string was not refreshed after an earlier size write
+           params.result.fileSize != kFileSizeFailed &&
+           params.result.fileSizeDisplay == "...") &&
+         "ResultsTable: directory has real size but display still shows placeholder");
 
   ImGui::PushID(row);
   ImGui::TableNextRow();
@@ -845,10 +868,6 @@ bool ResultsTable::RenderPathColumnWithEllipsis(const SearchResult& result, bool
 }
 
 const char* ResultsTable::GetSizeDisplayText(const SearchResult& result) {
-  if (result.isDirectory) {
-    return "Folder";
-  }
-
   if (result.fileSize == kFileSizeNotLoaded) {
     return "...";  // Loading indicator (not stored in cache)
   }
@@ -869,10 +888,6 @@ const char* ResultsTable::GetSizeDisplayText(const SearchResult& result) {
 }
 
 const char* ResultsTable::GetModTimeDisplayText(const SearchResult& result) {
-  if (result.isDirectory) {
-    return "Folder";
-  }
-
   if (IsSentinelTime(result.lastModificationTime)) {
     return "...";  // Loading indicator (not stored in cache)
   }
@@ -1035,12 +1050,51 @@ void RenderResultsTableHeaderArea(const IncrementalSearchState& incremental_sear
   ImGui::Spacing();
 }
 
+// Pre-sort flush: write aggregator-computed folder sizes into searchResults and trigger
+// re-sort when all directory sizes are confirmed. Keeps nesting in Render at most 3 levels.
+void FlushAggregatorSizesAndTriggerSortIfReady(GuiState& state,
+                                               FolderSizeAggregator* aggregator) {
+  if (aggregator == nullptr || state.lastSortColumn != ResultColumn::Size) {
+    return;
+  }
+  const auto kIsUnsizedDir = [](const SearchResult& r) {
+    return r.isDirectory && r.fileSize == kFileSizeNotLoaded;
+  };
+  const auto pending_before = std::count_if(  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+      state.searchResults.begin(), state.searchResults.end(), kIsUnsizedDir);
+
+  for (auto& result : state.searchResults) {
+    if (!(result.isDirectory && result.fileSize == kFileSizeNotLoaded)) {
+      continue;
+    }
+    aggregator->Request(result.fileId, result.fullPath);
+    const auto size = aggregator->GetResult(result.fileId);
+    if (!size.has_value()) {
+      continue;
+    }
+    result.fileSize = *size;
+    result.fileSizeDisplay = FormatFileSize(result.fileSize);
+  }
+
+  const auto pending_after = std::count_if(  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+      state.searchResults.begin(), state.searchResults.end(), kIsUnsizedDir);
+  if (pending_before > pending_after && pending_after == 0) {
+    assert(std::none_of(state.searchResults.begin(), state.searchResults.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+                        [](const SearchResult& r) {
+                          return r.isDirectory && r.fileSize == kFileSizeNotLoaded;
+                        }) &&
+           "ResultsTable: sort triggered before all directory sizes are confirmed");
+    state.resultsUpdated = true;
+  }
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex but cohesive UI rendering; splitting further would harm locality and clarity
 void ResultsTable::Render(
   GuiState& state,
   NativeWindowHandle
     native_window,
   GLFWwindow* glfw_window, ThreadPool& thread_pool, FileIndex& file_index,
+  FolderSizeAggregator* aggregator,
   bool show_path_hierarchy_indentation) {
   // Drag-and-drop gesture tracking (per-frame static state).
   // These variables persist across frames to track drag gestures.
@@ -1111,10 +1165,14 @@ void ResultsTable::Render(
       // HandleTableSorting may rebuild filter caches (filteredResults/sizeFilteredResults).
       // If we took display_results before this, that pointer would be invalidated after rebuild.
       if (state.resultsComplete) {
+        FlushAggregatorSizesAndTriggerSortIfReady(state, aggregator);
         search::SearchResultsService::HandleTableSorting(state, file_index, thread_pool);
         // HandleTableSorting may invalidate displayed total (re-sort on new results).
         // Re-run total size computation so we make progress even when sort invalidates.
         UpdateDisplayedTotalSizeIfNeeded(state, file_index);
+
+        // Keep status bar informed while folder sizes are computing in the background.
+        state.computingFolderSizes = aggregator != nullptr && aggregator->HasPendingWork();
       }
 
       // Get display results AFTER sort/filter so we never hold a pointer that gets invalidated
@@ -1158,6 +1216,7 @@ void ResultsTable::Render(
                                                         has_pending_deletions,
                                                         show_path_hierarchy_indentation,
                                                         &state.folderStatsByPath,
+                                                        aggregator,
                                                         drag_candidate_active,
                                                         drag_candidate_row,
                                                         drag_start_pos,
