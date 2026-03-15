@@ -30,6 +30,7 @@
 class GuiState;
 class FileIndex;
 class ThreadPool;
+class FolderSizeAggregator;
 struct GLFWwindow;
 
 namespace ui {
@@ -76,6 +77,7 @@ class ResultsTable {
    */
   static void Render(GuiState& state, [[maybe_unused]] NativeWindowHandle native_window,
                      GLFWwindow* glfw_window, ThreadPool& thread_pool, FileIndex& file_index,
+                     FolderSizeAggregator* aggregator = nullptr,
                      bool show_path_hierarchy_indentation = true);
 
   /**

@@ -113,4 +113,15 @@ std::string GetAboutProcessMemoryDisplayFromBytes(size_t memory_bytes) {
   return FormatMemoryOrNa(memory_bytes);
 }
 
+std::string GetAboutRegexEnginesLabel() {
+  // Literal and simple patterns are always handled by string search and SimpleRegex.
+  // Complex patterns use either Boost.Regex (FAST_LIBS_BOOST) or std::regex.
+  // When RE2 is integrated, prepend "RE2, " for the primary engine and adjust fallbacks here.
+#ifdef FAST_LIBS_BOOST
+  return "String search, SimpleRegex, Boost.Regex";
+#else
+  return "String search, SimpleRegex, std::regex";
+#endif  // FAST_LIBS_BOOST
+}
+
 }  // namespace ui

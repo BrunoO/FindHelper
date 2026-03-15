@@ -19,6 +19,7 @@ class FileIndex;
 class ThreadPool;
 class UsnMonitor;
 class SearchWorker;
+class FolderSizeAggregator;
 struct GLFWwindow;
 
 namespace ui {
@@ -48,6 +49,7 @@ struct RenderMainWindowContext {
   ThreadPool& thread_pool;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members) - Reference member for context passing
   UsnMonitor* monitor;
   SearchWorker& search_worker;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members) - Reference member for context passing
+  FolderSizeAggregator* aggregator;
   NativeWindowHandle native_window;
   GLFWwindow* glfw_window;
   std::atomic<bool>& show_settings;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members) - Reference member for context passing

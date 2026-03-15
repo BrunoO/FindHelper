@@ -19,6 +19,7 @@
 #include "gui/GuiState.h"
 #include "index/FileIndex.h"
 #include "search/SearchTypes.h"
+#include "utils/FileAttributeConstants.h"
 #include "utils/FileTimeTypes.h"
 #include "utils/StringUtils.h"
 
@@ -127,10 +128,20 @@ inline int CompareByColumn(const SearchResult& a,
     return a.fullPath.substr(a.filename_offset).compare(
       b.fullPath.substr(b.filename_offset));
   case ResultColumn::Size: { // tie-break by path so equal sizes order deterministically
-    if (a.fileSize < b.fileSize) {
+    // Treat sentinels (not-loaded / failed) as smaller than any real size so they
+    // sort last in both ascending and descending order via CreateSearchResultComparator.
+    // Without this, kFileSizeNotLoaded == UINT64_MAX would appear at the top of a
+    // descending sort (e.g. uncomputed folder sizes above large files).
+    const uint64_t a_size = (a.fileSize == kFileSizeNotLoaded || a.fileSize == kFileSizeFailed)
+                                ? 0
+                                : a.fileSize;
+    const uint64_t b_size = (b.fileSize == kFileSizeNotLoaded || b.fileSize == kFileSizeFailed)
+                                ? 0
+                                : b.fileSize;
+    if (a_size < b_size) {
       return -1;
     }
-    if (a.fileSize > b.fileSize) {
+    if (a_size > b_size) {
       return 1;
     }
     return a.fullPath.compare(b.fullPath);

@@ -72,18 +72,6 @@ cmake --build build --config Release
 build/FindHelper.app/Contents/MacOS/FindHelper --index-from-file=tests/data/std-linux-filesystem.txt
 ```
 
-## Key CMake Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `BUILD_TESTS` | `ON` | Build unit tests |
-| `ENABLE_ASAN` | `ON` | Address Sanitizer for tests (GCC/Clang; memory bugs) |
-| `ENABLE_TSAN` | `OFF` | Thread Sanitizer for tests (macOS/Linux only; data races; mutually exclusive with ASAN) |
-| `ENABLE_IMGUI_TEST_ENGINE` | `OFF` | In-process UI tests (macOS) |
-| `FAST_LIBS_BOOST` | `OFF` | Use Boost (unordered_map, regex, lockfree) |
-| `ENABLE_MFT_METADATA_READING` | `OFF` | Read size/mod time from MFT on initial populate (Windows) |
-| `ENABLE_PGO` | `OFF` | Profile-Guided Optimization (Windows) |
-
 ## Code Quality Tools
 
 ```bash
@@ -105,52 +93,9 @@ scripts/run_sonar_scanner.sh
 
 A pre-commit hook runs clang-tidy automatically; see `scripts/README_PRE_COMMIT.md`.
 
-## Architecture
+## Critical Coding Rules
 
-### Source Layout (`src/`)
-
-| Directory | Responsibility |
-|-----------|---------------|
-| `core/` | App bootstrap, `Application`, `ApplicationLogic`, `Settings`, CLI args |
-| `index/` | `FileIndex` (facade), `FileIndexStorage`, `PathStorage`, `LazyAttributeLoader`, `InitialIndexPopulator`, `FileIndexMaintenance` |
-| `search/` | `ParallelSearchEngine`, `SearchController`, `SearchWorker`, `StreamingResultsCollector`, search context/filters |
-| `usn/` | Windows USN journal monitor (`UsnMonitor`, `UsnRecordUtils`) and `WindowsIndexBuilder` |
-| `crawler/` | Cross-platform directory crawl for initial index population |
-| `ui/` | All ImGui UI panels: `UIRenderer`, `ResultsTable`, `FilterPanel`, `SearchInputs`, `SettingsWindow`, etc. |
-| `gui/` | `GuiState`, `RendererInterface`, `UIActions` (state shared between UI and logic) |
-| `filters/` | Size and time filter types and utilities |
-| `path/` | Path utilities, pattern matcher, regex, string search |
-| `utils/` | `StringUtils`, `FileSystemUtils`, logging, etc. |
-| `api/` | Gemini API integration (`GeminiApiUtils`) |
-| `platform/` | Per-platform implementations: `windows/`, `macos/`, `linux/`; embedded fonts; `FileOperations.h` |
-
-### FileIndex Component Architecture
-
-`FileIndex` is a facade coordinating:
-- **`PathStorage`** — Structure of Arrays (SoA) for path data; zero-copy access
-- **`FileIndexStorage`** — `FileEntry` storage, string pool, directory cache
-- **`PathBuilder`** — Stateless path computation
-- **`LazyAttributeLoader`** — On-demand file size/mod-time I/O with caching
-- **`ParallelSearchEngine`** — Multi-threaded search orchestration and load balancing
-
-All components interact with `FileIndex` through the `ISearchableIndex` interface (no `friend` classes).
-
-### Search Data Flow
-
-1. User types in `SearchInputs` → `SearchController` builds a `SearchContext`
-2. `ParallelSearchEngine` distributes work across `SearchWorker` threads
-3. Workers stream results into `StreamingResultsCollector`
-4. `GuiState` holds the current results; `ResultsTable` renders them
-5. On Windows, `UsnMonitor` pushes real-time file-system changes to `FileIndexMaintenance`
-
-### Threading Model
-
-- **Main thread:** ImGui render loop + GUI state updates
-- **Search thread pool:** `SearchThreadPool` / `SearchThreadPoolManager` coordinate workers
-- `FileIndex` operations are protected; reads are designed for high concurrency
-- `UsnMonitor` runs its own reader/processor threads (Windows only)
-
-## Critical Coding Rules (from AGENTS.md)
+See `AGENTS.md` for full rule text, code examples, and the complete AI-agent guidelines (including `.cursor/rules/` context).
 
 ### Platform guards
 - Never modify code inside `#ifdef _WIN32` / `#ifdef __APPLE__` / `#ifdef __linux__` to make it cross-platform. Refactor to a platform-agnostic abstraction with separate per-platform implementations instead.
@@ -175,6 +120,9 @@ All components interact with `FileIndex` through the `ISearchableIndex` interfac
 - Never create a `std::string_view` from a ternary where one branch produces a temporary `std::string` — the view dangles immediately. Use a named `static` (or `static thread_local`) fallback string instead.
 - Do not declare `static` local variables inside loop bodies (SonarQube S3010); declare them before the loop.
 - This project targets **C++17**. The clang-tidy `llvm-use-ranges` check recommends `std::ranges::` algorithms which require C++20 — suppress with `// NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20` rather than applying the suggestion.
+- Use `std::scoped_lock lock(mutex_)` (CTAD, C++17) instead of `std::lock_guard<std::mutex> lock(mutex_)`. Sonar S5997/S6012.
+- Mark functions returning error codes, status, or resource handles `[[nodiscard]]` so discarding the return value produces a compiler warning.
+- Mark single-argument constructors (and constructors where all but one param have defaults) `explicit` to prevent implicit conversions. Same for `operator bool()`. Sonar S1709.
 
 ### Naming conventions
 - Types (classes, structs, enums, type aliases): `PascalCase`

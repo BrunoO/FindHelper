@@ -180,6 +180,8 @@ if [[ "$COMPILER_ID" == "Clang" ]]; then
         "$BUILD_DIR/search_result_sort_tests"
         "$BUILD_DIR/total_size_computation_tests"
         "$BUILD_DIR/incremental_search_state_tests"
+        "$BUILD_DIR/path_pattern_benchmark"
+        "$BUILD_DIR/search_benchmark"
     )
     
     # Add comprehensive coverage executable if it exists

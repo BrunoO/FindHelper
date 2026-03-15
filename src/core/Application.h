@@ -29,6 +29,7 @@
 #include "core/IndexBuildState.h"
 #include "gui/GuiState.h"
 #include "gui/UIActions.h"
+#include "search/FolderSizeAggregator.h"
 #include "search/SearchController.h"
 #include "search/SearchWorker.h"
 #include "usn/UsnMonitor.h"
@@ -253,6 +254,7 @@ private:
   std::unique_ptr<UsnMonitor> monitor_{nullptr}; // Owned by Application (from bootstrap, moved in constructor)
   std::unique_ptr<IIndexBuilder> index_builder_{nullptr}; // Owned by Application (runtime index building, moved in constructor)
   SearchWorker search_worker_;          // Owned by Application
+  std::unique_ptr<FolderSizeAggregator> folder_size_aggregator_{nullptr}; // Owned by Application
   GuiState state_;                      // Owned by Application
   SearchController search_controller_;  // Owned by Application
   AppSettings* settings_;               // Owned by AppBootstrap (pointer to external)

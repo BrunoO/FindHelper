@@ -2,6 +2,8 @@
 
 This document lists common patterns that compile on GCC/Clang (and macOS/Linux) but can fail or behave differently on Windows with MSVC. Use it when adding or refactoring code that will be built on Windows.
 
+**Cursor rule:** `.cursor/rules/windows-msvc-cpp.mdc` encodes these pitfalls for AI agents; when editing C++ that is built on Windows, that rule applies.
+
 ## 1. Iterator vs pointer type deduction
 
 **Problem:** MSVC cannot deduce `const auto*` or `auto*` from an iterator (e.g. `std::string_view::const_iterator`). Using `.begin()` or `.end()` and assigning to a pointer-typed variable causes C3535 / C2440.

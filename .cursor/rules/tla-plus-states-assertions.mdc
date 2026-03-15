@@ -1,0 +1,43 @@
+---
+description: Apply TLA+ thinking for state and transitions; implement as assertions in code
+globs: "**/*.cpp,**/*.h,**/*.hpp"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+---
+
+# TLA+-style state and transitions → assertions
+
+When editing code that has **states and transitions** (state machines, status enums, lifecycle phases, mode flags), use TLA+-style thinking and implement the result as **assertions** in the code.
+
+## When to apply
+
+- State variables or enums (e.g. `State state_`, `enum class Phase`, `bool is_initialized_`)
+- Clear lifecycle or mode transitions (start → run → stop; idle → loading → ready)
+- Code that mutates shared or persistent state in a structured way
+
+## TLA+ checklist
+
+1. **States:** Name the possible values (enum, or document in a comment).
+2. **Initial state:** What is the state before the first transition?
+3. **Transitions:** Which actions (functions, events) change state, and to what? (e.g. “only Idle → Running on Start()”).
+4. **Invariants:** Properties that must always hold (e.g. “if Running then handle_ != nullptr”, “showingPartialResults && resultsComplete is false”).
+
+## Implement as assertions
+
+- **Before a transition:** Assert preconditions (e.g. current state allows this action).
+- **After a transition:** Assert postconditions (e.g. state == expected, invariants hold).
+- **At stable points:** Assert invariants (e.g. at end of public methods, or at loop/entry of a key function).
+- Use `assert(...)` (or `#ifndef NDEBUG` checks) so they are active in Debug and compiled out in Release. Document invariants in comments where an assert is not enough.
+
+```cpp
+// Example: state enum and transition
+enum class WorkerState { Idle, Running, Stopping };
+assert(state_ == WorkerState::Idle && "Start() only from Idle");
+state_ = WorkerState::Running;
+assert(handle_ != nullptr && "invariant: Running implies handle valid");
+```
+
+**Reference:** AGENTS.md § Add Assertions for Debug Builds (preconditions, loop invariants, postconditions, state transitions); `docs/design/STREAMING_SEARCH_RESULTS_DESIGN.md` (State Invariants).

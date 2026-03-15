@@ -285,6 +285,7 @@ Application::Application(AppBootstrapResultBase& bootstrap, const CommandLineArg
   last_crawl_completion_time_ = std::chrono::steady_clock::now();
   recrawl_enabled_ = false;
   last_interaction_time_ = std::chrono::steady_clock::now();
+  folder_size_aggregator_ = std::make_unique<FolderSizeAggregator>(*file_index_);
 
 #ifdef ENABLE_IMGUI_TEST_ENGINE
   imgui_test_engine_ = bootstrap.imgui_test_engine;
@@ -637,6 +638,7 @@ void Application::ProcessFrame() {
   NativeWindowHandle native_window = GetNativeWindowHandle();
   ui::UIRenderer::RenderMainWindow(
     {state_, this, *settings_, *file_index_, *thread_pool_, monitor_.get(), search_worker_,
+     folder_size_aggregator_.get(),
      native_window, window_, show_settings_, show_metrics_, is_index_building, metrics_available_,
 #ifdef ENABLE_IMGUI_TEST_ENGINE
      (imgui_test_engine_ != nullptr ? &show_test_engine_window_ : nullptr)
@@ -747,7 +749,7 @@ void Application::UpdateSearchState(bool is_index_building) {
     last_search_params_ = state_.BuildCurrentSearchParams();
   }
 
-  application_logic::Update(state_, search_controller_, search_worker_, *file_index_,
+  application_logic::Update(state_, search_controller_, search_worker_, folder_size_aggregator_.get(), *file_index_,
                             monitor_.get(), is_index_building, *this, *settings_,
                             last_interaction_time_);
 
@@ -866,7 +868,7 @@ void Application::TriggerManualSearch(const GuiState& state) {
   state_.sizeFilter = state.sizeFilter;
 
   if (settings_ != nullptr) {
-    search_controller_.TriggerManualSearch(state_, search_worker_, *settings_);
+    search_controller_.TriggerManualSearch(state_, search_worker_, folder_size_aggregator_.get(), *settings_);
   }
 }
 
@@ -953,7 +955,7 @@ void Application::TriggerManualSearchForRegressionTest() {
     return;
   }
   state_.searchWasManual = true;
-  search_controller_.TriggerManualSearch(state_, search_worker_, *settings_);
+  search_controller_.TriggerManualSearch(state_, search_worker_, folder_size_aggregator_.get(), *settings_);
 }
 
 bool Application::IsSearchCompleteForRegressionTest() const {

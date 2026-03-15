@@ -1,0 +1,41 @@
+---
+description: No I/O or heavy work inside critical sections; never nest locks across FileIndex/SearchThreadPool/UsnMonitor
+globs: "**/index/**/*.cpp,**/search/**/*.cpp,**/usn/**/*.cpp,**/gui/**/*.cpp"
+alwaysApply: false
+paths:
+  - "**/index/**/*.cpp"
+  - "**/search/**/*.cpp"
+  - "**/usn/**/*.cpp"
+  - "**/gui/**/*.cpp"
+---
+
+# Lock ordering and critical sections
+
+When editing code that holds a mutex (`shared_lock`, `unique_lock`, or raw lock guard), follow these rules to avoid contention and deadlock.
+
+## No I/O or heavy work under lock
+
+**Do not** perform I/O or heavy computation while holding any lock:
+
+- No file system, network, or blocking I/O: no `stat()`, `GetFileAttributes`, `ReadFile`, etc.
+- No heavy computation — only in-memory reads/writes, simple condition checks, and short bookkeeping.
+
+**Rationale:** Holding a lock across I/O blocks other threads and can cause latency spikes or deadlock. FileIndex uses a single `shared_mutex`; long-held locks serialize all readers and block writers.
+
+## Lock ordering
+
+**Never acquire more than one of these mutexes at a time** in the same thread (unless explicitly documented):
+
+- **FileIndex** (`index_mutex_`)
+- **SearchThreadPool** (`mutex_`)
+- **UsnMonitor** (`mutex_`)
+- **UsnJournalQueue** (`mutex_`)
+
+Do not take SearchThreadPool’s or UsnMonitor’s mutex while holding FileIndex’s mutex. I/O and handle close (e.g. in UsnMonitor) must happen **outside** the lock.
+
+## Pattern
+
+- **3-phase when I/O is needed:** read path (or minimal data) under shared/unique lock → release lock → do I/O → re-acquire lock and update (e.g. LazyAttributeLoader, UpdateSize).
+- Add a brief comment when non-obvious: “No I/O under this lock – see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md”.
+
+**Reference:** `docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md`; `docs/design/LAZY_ATTRIBUTE_LOADER_DESIGN.md` (§ Never hold lock during I/O).

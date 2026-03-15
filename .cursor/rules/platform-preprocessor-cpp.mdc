@@ -1,0 +1,35 @@
+---
+description: Platform #ifdef blocks and #endif comments (no cross-platform edits inside)
+globs: "**/*.cpp,**/*.h,**/*.hpp"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+---
+
+# Platform preprocessor and #endif comments
+
+When editing code with `#ifdef _WIN32` / `#ifdef __APPLE__` / `#ifdef __linux__`:
+
+## Do not change platform code for “cross-platform”
+
+Do **not** modify code inside platform blocks to make it cross-platform (e.g. do not change `\\` to `/` inside `#ifdef _WIN32`). To make behavior cross-platform, refactor to a platform-agnostic abstraction with separate implementations per platform.
+
+## Always comment #endif
+
+Add a **matching comment** after **every** `#endif` (for any `#if`, `#ifdef`, or `#ifndef`). Two spaces before `//`. The comment should repeat the condition (e.g. `#endif  // _WIN32`, `#endif  // NOMINMAX`).
+
+```cpp
+// ❌ WRONG
+#endif
+
+// ✅ CORRECT
+#endif  // _WIN32
+#endif  // LOGGING_ENABLED
+#endif  // NOMINMAX
+```
+
+For **#define** usage (when to use macros vs constexpr, how to comment macros), see `.cursor/rules/preprocessor-macros-define.mdc`.
+
+Full details: AGENTS.md § Platform-Specific Code Blocks.

@@ -4,8 +4,11 @@
 
 ### Added
 
+- **Status bar progress bar:** When the app is busy (indexing, searching, loading attributes, or computing folder sizes), a themed indeterminate progress bar appears in the status bar. Track and fill use theme colors (Border, Accent). Footer layout reserves space so the status bar stays visible.
+- **Folder attributes:** Folder rows in the results table now display last modified time and aggregate size instead of placeholder \"Folder\" values. **NEEDS MORE TESTING**
 - **Linux:** Status bar now shows process memory (VmRSS from `/proc/self/status`), matching Windows and macOS. Thread count uses a cgroup-aware fallback when `std::thread::hardware_concurrency()` returns 0 (e.g. in containers).
 - **Documentation:** Lock ordering and critical-sections design note (`docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md`) — rules for no I/O under locks and per-component mutex usage.
+- **Results shortcuts:** New Ctrl/Cmd+Shift+X shortcut copies selected or marked rows from the results table to the clipboard as CSV (header row plus one line per row, visible columns only).
 
 
 ### Changed

@@ -60,6 +60,7 @@
 
 #include "core/Settings.h"
 #include "index/FileIndex.h"
+#include "search/FolderSizeAggregator.h"
 
 // CompareFileTime is now in FileTimeTypes.h
 #ifndef _WIN32
@@ -278,8 +279,8 @@ void ConsumePendingStreamingBatches(GuiState& state,
   // other frame: without this, reserve_target = size + 2*batch gives exactly one batch of headroom,
   // so the check fires again next frame at O(N) cost.
   const size_t reserve_target =
-      std::max(state.searchResultPathPool.size() + (pool_bytes_needed * 2),
-               (state.searchResultPathPool.capacity() * 2));
+      (std::max)(state.searchResultPathPool.size() + (pool_bytes_needed * 2),
+                 (state.searchResultPathPool.capacity() * 2));
   if (std::vector<char>& pool = state.searchResultPathPool;
       !pool.empty() && pool.capacity() < pool.size() + pool_bytes_needed) {
     const char* old_data = pool.data();
@@ -303,34 +304,39 @@ void ConsumePendingStreamingBatches(GuiState& state,
   state.resultsUpdated = true;
 }
 
-void FinalizeStreamingSearchComplete(GuiState& state, const FileIndex& file_index) {  // NOLINT(readability-function-cognitive-complexity) - Inherently complex state machine: attribute refresh, pool invariants, and result promotion cannot be split without obscuring the logic
+void RefreshStaleAttributesForResult(SearchResult& r, const FileIndex& file_index) {
+  if (r.isDirectory) {
+    return;
+  }
+  const bool size_stale = (r.fileSize == kFileSizeNotLoaded);
+  const bool time_stale = IsSentinelTime(r.lastModificationTime);
+  if (!size_stale && !time_stale) {
+    return;
+  }
+  const FileEntry* const entry = file_index.GetEntry(r.fileId);
+  if (entry == nullptr) {
+    return;
+  }
+  if (size_stale) {
+    r.fileSize = entry->fileSize.IsNotLoaded() ? kFileSizeNotLoaded
+                                               : entry->fileSize.GetValue();
+  }
+  if (time_stale) {
+    r.lastModificationTime = entry->lastModificationTime.IsNotLoaded()
+                                 ? kFileTimeNotLoaded
+                                 : entry->lastModificationTime.GetValue();
+  }
+}
+
+void FinalizeStreamingSearchComplete(GuiState& state, const FileIndex& file_index) {
   // All async attribute loading must complete before we read final values below.
   WaitForAllAttributeLoadingFutures(state);
 
   if (!state.partialResults.empty()) {
     // Refresh attributes that were sentinel (not yet loaded) when each batch was first
     // converted during streaming. Async loading is now complete after the Wait above.
-    // Only touches entries whose fileSize/lastModificationTime are still sentinel — no
-    // string copies, no pool rebuild; O(N) reads against FileEntry only.
     for (SearchResult& r : state.partialResults) {
-      if (!r.isDirectory) {
-        const bool size_stale = (r.fileSize == kFileSizeNotLoaded);
-        const bool time_stale = IsSentinelTime(r.lastModificationTime);
-        if (size_stale || time_stale) {
-          const FileEntry* const entry = file_index.GetEntry(r.fileId);
-          if (entry != nullptr) {
-            if (size_stale) {
-              r.fileSize = entry->fileSize.IsNotLoaded() ? kFileSizeNotLoaded
-                                                         : entry->fileSize.GetValue();
-            }
-            if (time_stale) {
-              r.lastModificationTime = entry->lastModificationTime.IsNotLoaded()
-                                           ? kFileTimeNotLoaded
-                                           : entry->lastModificationTime.GetValue();
-            }
-          }
-        }
-      }
+      RefreshStaleAttributesForResult(r, file_index);
     }
     // Promote partialResults → searchResults directly. The searchResultPathPool is already
     // fully built during streaming (ConsumePendingStreamingBatches appended every batch);
@@ -377,7 +383,7 @@ void FinalizeStreamingSearchComplete(GuiState& state, const FileIndex& file_inde
  * @param state GUI state to update
  * @param reason Reason for clearing (for logging)
  */
-void ClearSearchResults(GuiState& state, [[maybe_unused]] std::string_view reason) {
+void ClearSearchResults(GuiState& state, FolderSizeAggregator* folder_aggregator, [[maybe_unused]] std::string_view reason) {
   WaitForAllAttributeLoadingFutures(state);
   // Clear result vectors BEFORE clearing the pool so no SearchResult.fullPath
   // (string_view into the pool) is left dangling. See path pool lifecycle in file header.
@@ -385,6 +391,9 @@ void ClearSearchResults(GuiState& state, [[maybe_unused]] std::string_view reaso
   state.partialResults.clear();
   InvalidateFilterCaches(state);
   state.InvalidateFolderStats();
+  if (folder_aggregator != nullptr) {
+    folder_aggregator->CancelPending();
+  }
   state.searchResultPathPool.clear();
   // Clear marks for new searches (ClearSearchResults is called when a new search starts)
   state.markedFileIds.clear();
@@ -412,7 +421,7 @@ void ApplyNonStreamingSearchResults(GuiState& state,
     return;
   }
   if (is_complete && new_results.empty() && !state.searchResults.empty()) {
-    ClearSearchResults(state, "new search completed with 0 results (early return)");
+    ClearSearchResults(state, nullptr, "new search completed with 0 results (early return)");
     return;
   }
   if (const bool should_update = ShouldUpdateResults(is_complete, new_results, state.searchResults);
@@ -426,7 +435,7 @@ void ApplyNonStreamingSearchResults(GuiState& state,
   }
   if (is_complete) {
     if (new_results.empty() && !state.searchResults.empty()) {
-      ClearSearchResults(state, "search complete with 0 results (via else-if path)");
+      ClearSearchResults(state, nullptr, "search complete with 0 results (via else-if path)");
     } else {
       state.resultsUpdated = true;
       LOG_INFO("Search complete, results unchanged (" +
@@ -440,6 +449,7 @@ void ApplyNonStreamingSearchResults(GuiState& state,
 SearchController::SearchController() = default;
 
 void SearchController::Update(GuiState &state, SearchWorker &search_worker,  // NOLINT(readability-identifier-naming) - Parameter name follows project convention
+                              FolderSizeAggregator* folder_aggregator,
                               const UsnMonitor *monitor, bool is_index_building,
                               const AppSettings& settings, const FileIndex& file_index) const {
   // When user explicitly clears (Clear All or Escape), discard worker's cached results
@@ -459,13 +469,13 @@ void SearchController::Update(GuiState &state, SearchWorker &search_worker,  // 
   // This prevents race condition where search uses offsets that become invalid
   // when FinalizeInitialPopulation() clears and rebuilds path_storage_
   if (is_index_building || (monitor != nullptr && monitor->IsPopulatingIndex())) {
-    PollResults(state, search_worker, file_index);
+    PollResults(state, search_worker, folder_aggregator, file_index);
     return;
   }
 
   // Handle debounced instant search (search-as-you-type)
   if (ShouldTriggerDebouncedSearch(state, search_worker)) {
-    ClearSearchResults(state, "debounced search started");
+    ClearSearchResults(state, folder_aggregator, "debounced search started");
     assert(state.searchResults.empty());
     state.inputChanged = false;
     state.searchActive = true;
@@ -482,11 +492,12 @@ void SearchController::Update(GuiState &state, SearchWorker &search_worker,  // 
   HandleAutoRefresh(state, search_worker, current_index_size, settings);
 
   // Poll for results
-  PollResults(state, search_worker, file_index);
+  PollResults(state, search_worker, folder_aggregator, file_index);
 }
 
 void SearchController::TriggerManualSearch(GuiState &state,
                                            SearchWorker &search_worker,
+                                           FolderSizeAggregator* folder_aggregator,
                                            const AppSettings& settings) const {  // NOLINT(readability-identifier-naming) - Parameter name follows project convention
   // Don't allow manual search if index is still being built
   // (This is a safety check - the UI should disable the button, but this
@@ -497,7 +508,7 @@ void SearchController::TriggerManualSearch(GuiState &state,
   // Clear previous results and filter caches so we don't show stale count
   // (otherwise with a filter active the UI shows old filtered N, then "drops" to
   // first partial batch size when streaming starts)
-  ClearSearchResults(state, "manual search started");
+  ClearSearchResults(state, folder_aggregator, "manual search started");
   assert(state.searchResults.empty());
   state.inputChanged = false; // Reset debounce state when manually searching
   state.searchActive = true;
@@ -676,6 +687,7 @@ static bool CompareSearchResults(const std::vector<SearchResult> &current_result
 
 void SearchController::PollResults(GuiState &state,  // NOLINT(readability-function-cognitive-complexity) - Streaming vs non-streaming dispatch with error/clear guards; extraction would require many shared parameters
                                     SearchWorker &search_worker,  // NOLINT(readability-identifier-naming) - Parameter name follows project convention
+                                    [[maybe_unused]] FolderSizeAggregator* folder_aggregator,
                                     const FileIndex &file_index) const {
   // Check for streaming results first
   if (auto* collector = search_worker.GetStreamingCollector()) {

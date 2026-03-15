@@ -1,0 +1,34 @@
+---
+description: Avoid introducing new SonarQube (and clang-tidy) issues in C++ code
+globs: "**/*.cpp,**/*.h,**/*.hpp"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+---
+
+# Do not introduce Sonar / clang-tidy issues
+
+When adding or modifying C++ code, follow project rules so new SonarQube and clang-tidy issues are not introduced.
+
+## Before committing
+
+- Run **`scripts/fetch_sonar_results.sh --open-only`** for current open issues; avoid adding the same rule types.
+- Run **clang-tidy** on changed files (e.g. `scripts/pre-commit-clang-tidy.sh` or `scripts/run_clang_tidy.sh`).
+
+## Reference
+
+- **Full Sonar/quality rules:** `docs/standards/SONAR_CPP_RULES_REFERENCE.md`
+- **Quick checklist:** AGENTS.md § Quick Reference
+- **Const / init-statement:** `.cursor/rules/const-correctness-cpp.mdc`, `.cursor/rules/cxx17-init-statement.mdc`
+
+## Critical patterns
+
+1. **Nesting (cpp:S134):** Max 3 levels. Use early returns and extracted functions; no deep `if`/`for` chains.
+2. **Exceptions (cpp:S2486):** No empty `catch` blocks. Log and/or rethrow.
+3. **Const:** Use `const T&` for read-only parameters; mark non-mutating members `const` (Sonar S995/S5350, clang-tidy `readability-non-const-parameter`).
+4. **Parameters (cpp:S107):** ≤7 parameters; group into structs if more.
+5. **Arrays:** Prefer `std::array` / `std::vector` over C-style arrays (cpp:S5945).
+
+When in doubt, open the reference doc or AGENTS.md Quick Reference and apply the rule that matches your change.

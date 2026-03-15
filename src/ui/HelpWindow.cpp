@@ -93,28 +93,30 @@ void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
                                          ? GetAboutProcessMemoryDisplayFromBytes(*memory_bytes_from_state)
                                          : GetAboutProcessMemoryDisplay();
       ImGui::Text("Process memory: %s", memory_str.c_str());
+      ImGui::Text("Regex engines: %s", GetAboutRegexEnginesLabel().c_str());
       ImGui::Spacing();
     }
 
-    // What's new — high-level user-facing features (last calendar month; dates = git commit date; newest first)
+    // What's new — high-level user-facing features (from RELEASE_NOTES.md; newest first)
     // Use BulletWrapped() because BulletText() does not wrap long lines
     if (ImGui::CollapsingHeader("What's new")) {
-      BulletWrapped("2026-03-13: Fuzzy search for item name and path with 'fz:' prefix (subsequence matching, e.g. fz:fbr matches 'foobar', 'fiber', 'foo/bar'); Search Help updated with syntax and examples.");
+      BulletWrapped("2026-03-15: Status bar progress bar when the app is busy (indexing, searching, loading attributes, or computing folder sizes).");
+      BulletWrapped("2026-03-15: Folder rows show last modified time and aggregate size instead of placeholder \"Folder\" values.");
+      BulletWrapped("2026-03-15: Linux: status bar shows process memory (VmRSS) and uses cgroup-aware thread count when in containers.");
+      BulletWrapped("2026-03-15: Ctrl+Shift+X (Cmd+Shift+X on macOS) copies selected or marked rows as CSV (header plus visible columns).");
+      BulletWrapped("2026-03-15: Thread pool sizing respects Linux cgroup/container limits when the runtime reports 0 cores.");
+      BulletWrapped("2026-03-15: About section and Help window refinements (regex engine label, build type, platform).");
+      BulletWrapped("2026-03-14: Fuzzy search with 'fz:' prefix (typo-tolerant, abbreviation-friendly); documented in Search Help.");
+      BulletWrapped("2026-03-14: Improved indexing progress display and feedback while the initial index is built.");
+      BulletWrapped("2026-03-14: Windows: when USN initial population failed, the UI no longer stays stuck on \"Indexing\"; you can choose another folder or retry.");
+      BulletWrapped("2026-03-14: Search worker catches exceptions so a bad query or index state is less likely to crash the app.");
       BulletWrapped("2026-03-07: Windows: in-app elevation prompt restored so UAC can run when user chooses restart as administrator.");
-      BulletWrapped("2026-03-05: Faster initial index build: reduced allocations and lock contention when crawling; larger MFT buffer on Windows; bulk directory read (getattrlistbulk) on macOS.");
+      BulletWrapped("2026-03-05: Faster initial index build: reduced allocations and lock contention; larger MFT buffer on Windows; bulk directory read on macOS.");
       BulletWrapped("2026-02-21: Results table shortcuts: Enter (open), Ctrl+Enter (reveal), Ctrl+Shift+C (copy path), Tab (focus search); Pin to Quick Access more robust.");
       BulletWrapped("2026-02-21: Settings: Auto button for font size and UI scale from monitor DPI.");
-      BulletWrapped("2026-02-21: Ctrl+Shift+P shortcut under Windows to pin selected file or folder to Quick Access.");
-      BulletWrapped("2026-02-21: ImGui Test Engine (optional) for regression tests and code coverage.");
-      BulletWrapped("2026-02-20: Help window is a normal window (ALT+TAB); Export CSV moved; Ctrl+E / Ctrl+S shortcuts.");
-      BulletWrapped("2026-02-20: Settings stored in HOME/.FindHelper with legacy path fallback.");
-      BulletWrapped("2026-02-20: Empty state: example click starts search; clearer labels, 50 recent searches, scrollable panel.");
-      BulletWrapped("2026-02-18: Folder statistics columns in results table; sort by folder stats; status bar 'file size' label.");
-      BulletWrapped("2026-02-18: M/T/U shortcuts: one press (Shift for global)");
-      BulletWrapped("2026-02-16: Extended mark-mode (dired-style) shortcuts for marked results; help and keyboard popup updated.");
-      BulletWrapped("2026-02-15: Marking and bulk operations in results table; path hierarchy indentation (Phase 1).");
-      BulletWrapped("2026-02-14: Export CSV (Downloads/Desktop); themes (Everforest, Dracula, Nord, One Dark, Gruvbox, Catppuccin Mocha).");
-      BulletWrapped("2026-02-14: Total size in status bar for full-index searches; alternating row background; improved drag-and-drop feedback.");
+      BulletWrapped("2026-02-20: Help window is a normal window (Alt+Tab); Export CSV moved; Ctrl+E / Ctrl+S shortcuts; settings in HOME/.FindHelper.");
+      BulletWrapped("2026-02-18: Folder statistics columns; sort by folder stats; M/T/U shortcuts (one press, Shift for global).");
+      BulletWrapped("2026-02-14: Export CSV; themes (Everforest, Dracula, Nord, One Dark, Gruvbox, Catppuccin Mocha); total size in status bar.");
       ImGui::Spacing();
     }
 
@@ -156,9 +158,11 @@ void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
 #ifdef __APPLE__
     ShortcutBullet("Cmd+Enter - Reveal in Explorer (open parent folder, select file)");
     ShortcutBullet("Cmd+Shift+C - Copy full path of selected row");
+    ShortcutBullet("Cmd+Shift+X - Copy selected / marked rows as CSV (visible columns)");
 #else
     ShortcutBullet("Ctrl+Enter - Reveal in Explorer (open parent folder, select file)");
     ShortcutBullet("Ctrl+Shift+C - Copy full path of selected row");
+    ShortcutBullet("Ctrl+Shift+X - Copy selected / marked rows as CSV (visible columns)");
 #endif  // __APPLE__
     ShortcutBullet("Tab - Focus name search (from results table)");
     RenderShortcutBullet(FindShortcut(ShortcutAction::ToggleFolderStats));

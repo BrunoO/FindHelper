@@ -1,0 +1,28 @@
+---
+description: C++ naming conventions — PascalCase types, snake_case_ members, kPascalCase constants
+globs: "**/*.cpp,**/*.h,**/*.hpp"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+---
+
+# Naming conventions (C++)
+
+Follow **`docs/standards/CXX17_NAMING_CONVENTIONS.md`**. Before submitting, verify all identifiers match.
+
+## Quick reference
+
+| Kind | Convention | Example |
+|------|------------|---------|
+| Classes / structs / enums | `PascalCase` | `FileIndex`, `SearchResult` |
+| Functions / methods | `PascalCase` | `GetSize()`, `StartMonitoring()` |
+| Local variables / parameters | `snake_case` | `buffer_size`, `offset` |
+| Member variables | `snake_case_` (trailing underscore) | `file_index_`, `mutex_` |
+| Global variables | `g_snake_case` | `g_file_index` |
+| Constants / constexpr | `kPascalCase` | `kBufferSize`, `kMaxQueueSize` |
+| Namespaces | `snake_case` | `find_helper`, `file_operations` |
+| Macros | `UPPER_SNAKE_CASE` | `NOMINMAX`, `APP_VERSION` |
+
+**Action:** Before committing, check that new and touched identifiers follow these rules. Full details and examples: `docs/standards/CXX17_NAMING_CONVENTIONS.md`.

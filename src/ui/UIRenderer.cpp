@@ -73,13 +73,16 @@ void UIRenderer::RenderMainWindow(const RenderMainWindowContext& context) {
 
   // Reserve space at the bottom for the non-scrollable footer area:
   // - Saved Searches row (label + combo + buttons)
-  // - Status bar row
+  // - Status bar row (including top border and busy progress bar when visible)
   // Using a child window with a negative height keeps this footer area always visible
   // even when a vertical scrollbar appears for the main content.
-  const float footer_reserved_height =
+  const float footer_content_height =
     (settings.uiMode == AppSettings::UIMode::Minimalistic)
       ? ImGui::GetFrameHeightWithSpacing() * LayoutConstants::kFooterHeightMultiplierStatusOnly
       : ImGui::GetFrameHeightWithSpacing() * LayoutConstants::kFooterHeightMultiplierWithSavedSearches;
+  const float footer_reserved_height =
+    footer_content_height + LayoutConstants::kStatusBarTopBorderHeight +
+    LayoutConstants::kStatusBarBusyBarHeight;
   ImGui::BeginChild("MainContentRegion", ImVec2(0.0F, -footer_reserved_height),
                     ImGuiChildFlags_None, ImGuiWindowFlags_None);
 
@@ -116,6 +119,7 @@ void UIRenderer::RenderMainWindow(const RenderMainWindowContext& context) {
   } else {
     // Always call ResultsTable::Render - it handles its own conditions internally
     ResultsTable::Render(state, native_window, glfw_window, thread_pool, file_index,
+                         context.aggregator,
                          settings.showPathHierarchyIndentation);
   }
 

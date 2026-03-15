@@ -27,7 +27,7 @@ class Benchmark {
     std::cout << std::left << std::setw(40) << name << ": " << std::right << std::setw(10)
               << duration << " us total"
               << ", " << std::setw(10) << std::fixed << std::setprecision(3) << avg_us << " us/op"
-              << ", " << std::scientific << std::setprecision(2) << ops_sec << " ops/sec"
+              << ", " << std::fixed << std::setprecision(2) << ops_sec << " ops/sec"
               << std::defaultfloat << std::endl;
   }
 };

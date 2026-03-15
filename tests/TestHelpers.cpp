@@ -17,14 +17,6 @@
 #include <thread>
 #include <vector>
 
-#if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
-#include <filesystem>
-namespace fs = std::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: in SafeRemoveFile
-#else
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: in SafeRemoveFile
-#endif  // __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
-
 #ifdef _WIN32
 #include <direct.h>   // NOSONAR(cpp:S954) - Platform block; must follow #ifdef
 #include <windows.h>  // NOSONAR(cpp:S3806,cpp:S954) - Windows-only include
@@ -41,6 +33,14 @@ namespace fs = std::experimental::filesystem;  // NOLINT(misc-unused-alias-decls
 #include "utils/FileTimeTypes.h"
 #include "utils/Logger.h"
 #include "utils/StringUtils.h"
+
+#if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
+#include <filesystem>
+namespace fs = std::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: in SafeRemoveFile
+#else
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: in SafeRemoveFile
+#endif  // __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
 
 namespace test_helpers {
 
@@ -371,8 +371,8 @@ TestFileIndexFixture::TestFileIndexFixture(size_t file_count, const std::string&
   }
 }
 
-std::vector<std::string> GenerateTestPaths(size_t count, const std::string& base_path,
-                                           const std::string& prefix) {
+std::vector<std::string> GenerateTestPaths(size_t count, std::string_view base_path,
+                                           std::string_view prefix) {
   std::vector<std::string> paths;
   paths.reserve(count);
 
@@ -385,7 +385,7 @@ std::vector<std::string> GenerateTestPaths(size_t count, const std::string& base
     filename += ext;
 
     // Build full path
-    std::string full_path = base_path;
+    std::string full_path(base_path);
     if (!full_path.empty() && full_path.back() != '\\' && full_path.back() != '/') {
       full_path += "\\";
     }

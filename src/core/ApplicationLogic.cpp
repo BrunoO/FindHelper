@@ -35,11 +35,12 @@ namespace application_logic {
 
 // Executes the action for a triggered global shortcut. All preconditions
 // (UI mode, index state, streaming state) are evaluated here, not in the registry.
-void DispatchGlobalShortcut(ShortcutAction action,
+void DispatchGlobalShortcut(ShortcutAction action,  // NOSONAR(cpp:S107) - Central shortcut dispatcher intentionally aggregates 8 parameters; refactoring into a context struct would not reduce conceptual complexity
                             GuiState& state,
                             AppSettings& settings,
                             const SearchController& search_controller,
                             SearchWorker& search_worker,
+                            FolderSizeAggregator* folder_aggregator,
                             bool is_index_building,
                             Application& application) {
   switch (action) {
@@ -50,7 +51,7 @@ void DispatchGlobalShortcut(ShortcutAction action,
       break;
     case ShortcutAction::RefreshSearch:
       if (!is_index_building) {
-        search_controller.TriggerManualSearch(state, search_worker, settings);
+        search_controller.TriggerManualSearch(state, search_worker, folder_aggregator, settings);
       }
       break;
     case ShortcutAction::ClearFilters:
@@ -84,6 +85,7 @@ void DispatchGlobalShortcut(ShortcutAction action,
 void HandleKeyboardShortcuts(GuiState &state,
                              const SearchController &search_controller,
                              SearchWorker &search_worker,
+                             FolderSizeAggregator* folder_aggregator,
                              bool is_index_building,
                              Application &application,
                              AppSettings &settings) {
@@ -102,13 +104,14 @@ void HandleKeyboardShortcuts(GuiState &state,
       continue;
     }
     DispatchGlobalShortcut(def.action, state, settings, search_controller,
-                           search_worker, is_index_building, application);
+                           search_worker, folder_aggregator, is_index_building, application);
   }
 }
 
-void Update(GuiState &state,  // NOSONAR(cpp:S107) - Function has 9 parameters: Application update function requires multiple dependencies (GuiState, SearchController, SearchWorker, UsnMonitor, FileIndex, AppSettings, Application, GLFWwindow, ImGuiIO). Refactoring would require creating a context struct, increasing complexity
+void Update(GuiState &state,  // NOSONAR(cpp:S107) - Function has 10 parameters: Application update function requires multiple dependencies (GuiState, SearchController, SearchWorker, UsnMonitor, FileIndex, AppSettings, Application, GLFWwindow, ImGuiIO). Refactoring would require creating a context struct, increasing complexity
             const SearchController &search_controller,
             SearchWorker &search_worker,
+            FolderSizeAggregator* folder_aggregator,
             FileIndex &file_index,
             const UsnMonitor *monitor,
             bool is_index_building,
@@ -116,7 +119,7 @@ void Update(GuiState &state,  // NOSONAR(cpp:S107) - Function has 9 parameters: 
             AppSettings &settings,
             const std::chrono::steady_clock::time_point &last_interaction_time) {
   // Handle keyboard shortcuts
-  HandleKeyboardShortcuts(state, search_controller, search_worker, is_index_building, application, settings);
+  HandleKeyboardShortcuts(state, search_controller, search_worker, folder_aggregator, is_index_building, application, settings);
 
   // Update memory usage every 10 seconds (to avoid costly system calls every frame)
   // Also update immediately if not yet initialized (memory_bytes_ == 0)
@@ -136,12 +139,12 @@ void Update(GuiState &state,  // NOSONAR(cpp:S107) - Function has 9 parameters: 
     // Crawl just completed - trigger search to refresh UI with new index
     // Only trigger if we have search parameters (user has entered something or has previous search)
     LOG_INFO_BUILD("Crawl completed - triggering search to refresh UI");
-    search_controller.TriggerManualSearch(state, search_worker, settings);
+    search_controller.TriggerManualSearch(state, search_worker, folder_aggregator, settings);
   }
 
   // Update search controller (handles debounced auto-search, auto-refresh,
   // and polling) Pass is_index_building to prevent search during finalization
-  search_controller.Update(state, search_worker, monitor, is_index_building, settings, file_index);
+  search_controller.Update(state, search_worker, folder_aggregator, monitor, is_index_building, settings, file_index);
 
   // Periodic maintenance: Rebuild path buffer during idle time
   // Only perform maintenance if search is not active and index is ready

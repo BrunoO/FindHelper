@@ -1,0 +1,55 @@
+---
+description: Avoid duplication; apply DRY by extracting helpers and shared constants, even small ones
+globs: "**/*.cpp,**/*.h,**/*.hpp"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+---
+
+# DRY: extract helpers and avoid duplication
+
+Eliminate duplication. One source of truth per concept. **Extract helpers even when small** — if the same logic or value appears in more than one place, pull it out.
+
+## Repeated code → extract a helper
+
+- **Second occurrence:** If you are about to copy a few lines (or the same condition + block) to another branch or function, extract a small helper or shared function instead.
+- **Same validation in multiple places:** One function, called from all call sites.
+- **Near-identical blocks:** Parameterize the difference and use a single function.
+
+```cpp
+// ❌ Duplicated
+if (index >= 0 && index < static_cast<int>(list.size()) && list[index].active) { ... }
+// ... later ...
+if (index >= 0 && index < static_cast<int>(list.size()) && list[index].active) { ... }
+
+// ✅ Single helper
+static bool IsValidEntry(const List& list, int index) { ... }
+if (IsValidEntry(list, index)) { ... }
+```
+
+## Repeated values → one constant
+
+- **Same literal in two places:** Define a named constant (file or namespace scope) and use it everywhere. Search the repo first; if the value or concept already exists, reuse it.
+- **Shared constants:** Use project locations (e.g. `settings_defaults` in `core/Settings.h`, `file_time_constants` in `utils/FileTimeTypes.h`) for app-wide values; one constant per purpose.
+
+```cpp
+// ❌ Same meaning, two literals
+if (interval < 1) interval = 1;
+if (interval > 60) interval = 60;
+// ... elsewhere ...
+if (val < 1) val = 1;
+if (val > 60) val = 60;
+
+// ✅ One constant (or reuse from settings_defaults)
+constexpr int kMinRecrawlMinutes = 1, kMaxRecrawlMinutes = 60;
+```
+
+## Also avoid
+
+- Duplicated string literals (labels, errors, tooltips): centralize or use one constant.
+- Duplicated documentation: one canonical place and reference it.
+- Second type alias for the same type: use the existing alias.
+
+**Reference:** AGENTS.md § DRY; `docs/analysis/2026-02-20_DRY_CONSTANTS_ANALYSIS.md`.
