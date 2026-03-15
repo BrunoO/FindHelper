@@ -12,20 +12,23 @@
 namespace streaming_results_collector_constants {
 constexpr size_t kDefaultBatchSize = 500;
 constexpr uint32_t kDefaultNotificationIntervalMs = 50;
-/** Max results to process per UI frame during streaming; keeps UI responsive when many batches arrive. */
-constexpr size_t kMaxResultsPerFrame = 200;
+/** Max results to process per UI frame during streaming; keeps UI responsive when many batches arrive.
+ *  Set high enough that drain after search completion finishes in a few frames even for large result
+ *  sets (100k / 5000 = 20 frames ≈ 330ms). Per-frame work (MergeAndConvertToSearchResults) is
+ *  O(batch_size) path-string copies — well within a 16ms frame budget at this size. */
+constexpr size_t kMaxResultsPerFrame = 5000;
 }  // namespace streaming_results_collector_constants
 
 /**
  * StreamingResultsCollector - Buffers and batches search results for the UI
  *
- * This class collects SearchResult objects from producer threads (via SearchWorker)
+ * This class collects SearchResultData from producer threads (via SearchWorker)
  * and provides them to the consumer (UI thread) in batches.
  *
- * It uses a dual-buffer approach for thread-safe collection:
- * 1. all_results_: Holds every result found (for final full result set)
- * 2. current_batch_: Collects results until batch_size or notification_interval_ms reached
- * 3. pending_batches_: Buffer of batches ready for UI consumption
+ * Thread-safe collection: results are pushed into current_batch_; when batch_size or
+ * notification_interval_ms is reached, current_batch_ is flushed into pending_batches_
+ * for UI consumption via GetAllPendingBatches / GetPendingBatchesUpTo. The controller
+ * accumulates consumed batches for finalization (no duplicate full copy in the collector).
  */
 class StreamingResultsCollector {
 public:
@@ -66,9 +69,6 @@ public:
    */
   std::vector<SearchResultData> GetPendingBatchesUpTo(size_t max_results);
 
-  /** Returns every result data collected since start (final full result set). */
-  [[nodiscard]] const std::vector<SearchResultData>& GetAllResults() const;
-
   /** True when the producer has called MarkSearchComplete(). */
   [[nodiscard]] bool IsSearchComplete() const;
   /** True if SetError() was called. */
@@ -84,7 +84,6 @@ private:
   std::chrono::milliseconds notification_interval_;  // NOLINT(readability-identifier-naming)
 
   mutable std::mutex mutex_;  // NOLINT(readability-identifier-naming) - project uses snake_case_ for members
-  std::vector<SearchResultData> all_results_;  // NOLINT(readability-identifier-naming)
   std::vector<SearchResultData> current_batch_;  // NOLINT(readability-identifier-naming)
   std::vector<SearchResultData> pending_batches_;  // NOLINT(readability-identifier-naming)
 

@@ -4,12 +4,18 @@
 InheritParentConfig: true
 
 Checks: >-
+  -bugprone-empty-catch,
+  -bugprone-exception-escape,
   -bugprone-implicit-widening-of-multiplication-result,
   -bugprone-throwing-static-initialization,
   -cert-err33-c,
   -cert-err58-cpp,
+  -concurrency-mt-unsafe,
   -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
   -hicpp-signed-bitwise,
+  -llvm-use-ranges,
   -modernize-raw-string-literal,
   -readability-function-cognitive-complexity,
   -readability-identifier-naming,
@@ -55,3 +61,28 @@ Checks: >-
 #   Test infrastructure (fixtures, mocks) follows the same snake_case_ member
 #   convention as production code. The identifier-naming check conflicts with
 #   some test-specific patterns (e.g. mutable members in mock classes).
+#
+# bugprone-empty-catch:
+#   Test helpers (e.g. SetEnvironmentVariable, SafeRemoveFile) intentionally
+#   catch all exceptions to preserve noexcept or prevent test cleanup from
+#   failing. Suppressing at directory level avoids NOLINT in every such block.
+#
+# bugprone-exception-escape:
+#   Fixture destructors and teardown paths catch all exceptions and log; the
+#   analyzer still flags possible throw paths through Logger/std::string. Test
+#   code is not required to be fully no-throw in destructors when catch-all
+#   is used for robustness.
+#
+# concurrency-mt-unsafe:
+#   getenv/setenv/unsetenv are used only in test setup/teardown (e.g.
+#   TestGeminiApiKeyFixture). Tests are single-threaded for these helpers.
+#
+# cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+# cppcoreguidelines-pro-bounds-constant-array-index:
+#   Test data builders and helpers use guarded indices (e.g. i % 7 for fixed
+#   arrays, loop bounds). Using .at() or range-for everywhere would add noise
+#   in test code with little benefit.
+#
+# llvm-use-ranges:
+#   Project targets C++17; the check suggests std::ranges algorithms (C++20).
+#   Disabling in tests avoids NOLINT on every loop that could be a range algo.

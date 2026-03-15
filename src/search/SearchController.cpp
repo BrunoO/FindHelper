@@ -258,6 +258,11 @@ void ConsumePendingStreamingBatches(GuiState& state,
     state.showingPartialResults = true;
     state.resultsComplete = false;
     state.searchError = "";
+    // Pre-reserve a reasonable number of slots to avoid repeated reallocation as partialResults
+    // grows. kInitialPartialResultsReserve (100k) covers most searches without over-allocating.
+    constexpr size_t kInitialPartialResultsReserve =
+        streaming_results_collector_constants::kMaxResultsPerFrame * 20;  // NOLINT(readability-magic-numbers) - 20 × 5000 = 100k; documented inline
+    state.partialResults.reserve(kInitialPartialResultsReserve);
   }
 
   // Compute bytes needed for the new batch (same formula as MergeAndConvertToSearchResults).
@@ -269,8 +274,12 @@ void ConsumePendingStreamingBatches(GuiState& state,
 
   // If appending would reallocate the pool, existing partialResults[].fullPath would become
   // dangling (they point into the current buffer). Migrate to a new pool so we never invalidate.
-  // Reserve aggressively (2x current batch) to reduce migration frequency for large result sets.
-  const size_t reserve_target = state.searchResultPathPool.size() + (pool_bytes_needed * 2);
+  // Use exponential doubling (max of 2x capacity vs current+2x batch) to prevent migrations every
+  // other frame: without this, reserve_target = size + 2*batch gives exactly one batch of headroom,
+  // so the check fires again next frame at O(N) cost.
+  const size_t reserve_target =
+      std::max(state.searchResultPathPool.size() + (pool_bytes_needed * 2),
+               (state.searchResultPathPool.capacity() * 2));
   if (std::vector<char>& pool = state.searchResultPathPool;
       !pool.empty() && pool.capacity() < pool.size() + pool_bytes_needed) {
     const char* old_data = pool.data();
@@ -294,22 +303,41 @@ void ConsumePendingStreamingBatches(GuiState& state,
   state.resultsUpdated = true;
 }
 
-void FinalizeStreamingSearchComplete(GuiState& state,
-                                    const StreamingResultsCollector& collector,
-                                    const FileIndex& file_index) {
-  // Use collector's GetAllResults() as canonical source (same as worker uses).
-  // Accumulated partialResults can miss batches due to timing; GetAllResults is authoritative.
-  if (const std::vector<SearchResultData>& all_data = collector.GetAllResults(); !all_data.empty()) {  // NOSONAR(cpp:S6004) - Init-statement used; Sonar may attach to this line
-    WaitForAllAttributeLoadingFutures(state);
-    // Clear result vectors and caches BEFORE clearing the pool (path pool lifecycle).
-    state.searchResults.clear();
-    state.partialResults.clear();
-    InvalidateFilterCaches(state);
-    state.searchResultPathPool.clear();
+void FinalizeStreamingSearchComplete(GuiState& state, const FileIndex& file_index) {  // NOLINT(readability-function-cognitive-complexity) - Inherently complex state machine: attribute refresh, pool invariants, and result promotion cannot be split without obscuring the logic
+  // All async attribute loading must complete before we read final values below.
+  WaitForAllAttributeLoadingFutures(state);
 
-    std::vector<SearchResult> new_results =
-        MergeAndConvertToSearchResults(state.searchResultPathPool, all_data, file_index);
-    UpdateSearchResults(state, std::move(new_results), true);
+  if (!state.partialResults.empty()) {
+    // Refresh attributes that were sentinel (not yet loaded) when each batch was first
+    // converted during streaming. Async loading is now complete after the Wait above.
+    // Only touches entries whose fileSize/lastModificationTime are still sentinel — no
+    // string copies, no pool rebuild; O(N) reads against FileEntry only.
+    for (SearchResult& r : state.partialResults) {
+      if (!r.isDirectory) {
+        const bool size_stale = (r.fileSize == kFileSizeNotLoaded);
+        const bool time_stale = IsSentinelTime(r.lastModificationTime);
+        if (size_stale || time_stale) {
+          const FileEntry* const entry = file_index.GetEntry(r.fileId);
+          if (entry != nullptr) {
+            if (size_stale) {
+              r.fileSize = entry->fileSize.IsNotLoaded() ? kFileSizeNotLoaded
+                                                         : entry->fileSize.GetValue();
+            }
+            if (time_stale) {
+              r.lastModificationTime = entry->lastModificationTime.IsNotLoaded()
+                                           ? kFileTimeNotLoaded
+                                           : entry->lastModificationTime.GetValue();
+            }
+          }
+        }
+      }
+    }
+    // Promote partialResults → searchResults directly. The searchResultPathPool is already
+    // fully built during streaming (ConsumePendingStreamingBatches appended every batch);
+    // all string_views in partialResults remain valid. This avoids re-running
+    // MergeAndConvertToSearchResults (O(N) string copies + pool rebuild) at finalization.
+    UpdateSearchResults(state, std::move(state.partialResults), true);
+    state.partialResults.clear();
     // Debug invariant: every SearchResult.fullPath must point into the current pool.
     if (!state.searchResultPathPool.empty()) {
       const auto pool_size = state.searchResultPathPool.size();
@@ -324,7 +352,6 @@ void FinalizeStreamingSearchComplete(GuiState& state,
     LOG_INFO("Streaming search complete, total results: " +
              std::to_string(state.searchResults.size()));
   } else if (!state.resultsComplete) {
-    WaitForAllAttributeLoadingFutures(state);
     state.searchResults.clear();
     state.partialResults.clear();
     InvalidateFilterCaches(state);
@@ -647,7 +674,7 @@ static bool CompareSearchResults(const std::vector<SearchResult> &current_result
   return false; // Results are identical (or compatible)
 }
 
-void SearchController::PollResults(GuiState &state,
+void SearchController::PollResults(GuiState &state,  // NOLINT(readability-function-cognitive-complexity) - Streaming vs non-streaming dispatch with error/clear guards; extraction would require many shared parameters
                                     SearchWorker &search_worker,  // NOLINT(readability-identifier-naming) - Parameter name follows project convention
                                     const FileIndex &file_index) const {
   // Check for streaming results first
@@ -670,13 +697,20 @@ void SearchController::PollResults(GuiState &state,
       }
       return;
     }
-    ConsumePendingStreamingBatches(state, *collector, file_index);
     if (collector->IsSearchComplete()) {
-      FinalizeStreamingSearchComplete(state, *collector, file_index);
+      // Search is done — drain all remaining batches this frame so results appear immediately.
+      // The per-frame cap (kMaxResultsPerFrame) exists to keep the UI responsive while the
+      // search is still running. Once complete there is no benefit to spreading across frames;
+      // draining in a loop gives the same total O(N) work but collapses the 20-frame wait
+      // (100k results at 5000/frame) into a single frame.
+      while (collector->HasNewBatch()) {
+        ConsumePendingStreamingBatches(state, *collector, file_index);
+      }
+      FinalizeStreamingSearchComplete(state, file_index);
       // Discard collector so we don't re-apply every frame. Without this, sort does not
       // persist: each frame we would overwrite searchResults and reset lastSortColumn.
       // Only discard when worker is idle to avoid use-after-free (worker may still be
-      // in collector_->GetAllResults()).
+      // in ProcessStreamingSearchFutures).
       if (!search_worker.IsBusy()) {
         search_worker.DiscardResults();
         assert(search_worker.GetStreamingCollector() == nullptr);

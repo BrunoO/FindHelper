@@ -7,7 +7,6 @@ StreamingResultsCollector::StreamingResultsCollector(size_t batch_size, uint32_t
     : batch_size_(batch_size),
       notification_interval_(notification_interval_ms) {
   last_flush_time_ = std::chrono::steady_clock::now();
-  all_results_.reserve(batch_size * 2);
   current_batch_.reserve(batch_size);
 }
 
@@ -16,7 +15,6 @@ void StreamingResultsCollector::AddResult(SearchResultData&& result) {
 
   const std::scoped_lock lock(mutex_);
 
-  all_results_.push_back(SearchResultData{result.id, result.fullPath, result.isDirectory});
   current_batch_.push_back(std::move(result));  // NOLINT(hicpp-move-const-arg,performance-move-const-arg) - S5500 requires move on rvalue; type is trivially copyable so no-op
 
   auto now = std::chrono::steady_clock::now();
@@ -31,7 +29,6 @@ void StreamingResultsCollector::AddResult(const SearchResultData& result) {
 
   const std::scoped_lock lock(mutex_);
 
-  all_results_.push_back(SearchResultData{result.id, result.fullPath, result.isDirectory});
   current_batch_.push_back(result);
 
   auto now = std::chrono::steady_clock::now();
@@ -46,7 +43,6 @@ void StreamingResultsCollector::AddResults(const std::vector<SearchResultData>& 
   assert(!search_complete_.load(std::memory_order_acquire));
 
   const std::scoped_lock lock(mutex_);
-  all_results_.insert(all_results_.end(), batch.begin(), batch.end());
   current_batch_.insert(current_batch_.end(), batch.begin(), batch.end());
 
   const auto now = std::chrono::steady_clock::now();
@@ -105,11 +101,6 @@ std::vector<SearchResultData> StreamingResultsCollector::GetPendingBatchesUpTo(s
                          pending_batches_.begin() + static_cast<std::ptrdiff_t>(max_results));
   has_new_batch_.store(true, std::memory_order_release);
   return result;
-}
-
-const std::vector<SearchResultData>& StreamingResultsCollector::GetAllResults() const {
-  const std::scoped_lock lock(mutex_);
-  return all_results_;
 }
 
 bool StreamingResultsCollector::IsSearchComplete() const {

@@ -2,13 +2,14 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
 #include "TestHelpers.h"
 #include "doctest/doctest.h"
 #include "utils/StringUtils.h"
 
 TEST_SUITE("StringUtils") {
   TEST_CASE("ToLower") {
-    std::vector<test_helpers::StringUtilsTestCase> test_cases = {
+    const std::vector<test_helpers::StringUtilsTestCase> test_cases = {
       {"HELLO", "hello"},
       {"WORLD", "world"},
       {"TEST", "test"},
@@ -31,7 +32,7 @@ TEST_SUITE("StringUtils") {
   }
 
   TEST_CASE("Trim") {
-    std::vector<test_helpers::StringUtilsTestCase> test_cases = {
+    const std::vector<test_helpers::StringUtilsTestCase> test_cases = {
       {"hello", "hello"},
       {"  hello", "hello"},
       {"hello  ", "hello"},
@@ -51,7 +52,7 @@ TEST_SUITE("StringUtils") {
   }
 
   TEST_CASE("GetFilename") {
-    std::vector<test_helpers::StringUtilsTestCase> test_cases = {
+    const std::vector<test_helpers::StringUtilsTestCase> test_cases = {
       {"C:\\Users\\Test\\file.txt", "file.txt"},
       {"C:\\file.txt", "file.txt"},
       {"\\file.txt", "file.txt"},
@@ -74,7 +75,7 @@ TEST_SUITE("StringUtils") {
   }
 
   TEST_CASE("GetExtension") {
-    std::vector<test_helpers::StringUtilsTestCase> test_cases = {{"file.txt", "txt"},
+    const std::vector<test_helpers::StringUtilsTestCase> test_cases = {{"file.txt", "txt"},
                                                                  {"document.doc", "doc"},
                                                                  {"image.png", "png"},
                                                                  {"archive.zip", "zip"},
@@ -93,7 +94,7 @@ TEST_SUITE("StringUtils") {
   }
 
   TEST_CASE("ParseExtensions") {
-    std::vector<test_helpers::StringUtilsVectorTestCase> test_cases = {
+    const std::vector<test_helpers::StringUtilsVectorTestCase> test_cases = {
       {"txt", {"txt"}},
       {"txt;doc;pdf", {"txt", "doc", "pdf"}},
       {".txt;.doc;.pdf", {"txt", "doc", "pdf"}},
@@ -117,7 +118,7 @@ TEST_SUITE("StringUtils") {
     // Helper lambda to adapt ParseExtensions with comma delimiter for the test helper
     auto ParseExtensionsComma = [](std::string_view input) { return ParseExtensions(input, ','); };
 
-    std::vector<test_helpers::StringUtilsVectorTestCase> test_cases = {
+    const std::vector<test_helpers::StringUtilsVectorTestCase> test_cases = {
       {"txt,doc,pdf", {"txt", "doc", "pdf"}},
       {"txt, doc, pdf", {"txt", "doc", "pdf"}},
       {".txt,.doc,.pdf", {"txt", "doc", "pdf"}},
@@ -135,7 +136,7 @@ TEST_SUITE("StringUtils") {
       std::string expected;
     };
 
-    std::vector<TestCase> cases = {{0, "0"},
+    const std::vector<TestCase> cases = {{0, "0"},
                                    {1, "1"},
                                    {12, "12"},
                                    {123, "123"},
@@ -149,4 +150,22 @@ TEST_SUITE("StringUtils") {
       CHECK_EQ(FormatNumberWithSeparators(tc.input), tc.expected);
     }
   }
+
+#ifndef _WIN32
+  // POSIX stub coverage (StringUtils_posix.cpp): WideToUtf8 / Utf8ToWide return empty
+  // on macOS/Linux; production code uses Windows implementations.
+  TEST_CASE("WideToUtf8_PosixStub_ReturnsEmpty") {
+    CHECK_EQ(WideToUtf8(std::wstring()), "");
+    CHECK_EQ(WideToUtf8(L""), "");
+    CHECK_EQ(WideToUtf8(L"hello"), "");
+    CHECK_EQ(WideToUtf8(L"c:\\path\\file.txt"), "");
+  }
+
+  TEST_CASE("Utf8ToWide_PosixStub_ReturnsEmpty") {
+    CHECK_EQ(Utf8ToWide(std::string_view()), std::wstring());
+    CHECK_EQ(Utf8ToWide(""), std::wstring());
+    CHECK_EQ(Utf8ToWide("hello"), std::wstring());
+    CHECK_EQ(Utf8ToWide("/path/to/file"), std::wstring());
+  }
+#endif  // _WIN32
 }

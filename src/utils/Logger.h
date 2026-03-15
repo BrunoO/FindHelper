@@ -136,7 +136,8 @@ public:
     // Linux: Read VmRSS (resident set size) from /proc/self/status; value is in kB
     if (std::ifstream status_file("/proc/self/status"); status_file.is_open()) {
       std::string line;
-      while (std::getline(status_file, line)) {
+      bool exit_loop = false;
+      while (!exit_loop && std::getline(status_file, line)) {
         if (line.compare(0, 6, "VmRSS:") != 0) {
           continue;
         }
@@ -145,15 +146,16 @@ public:
           ++pos;
         }
         if (pos >= line.size() || std::isdigit(static_cast<unsigned char>(line[pos])) == 0) {
-          break;
+          exit_loop = true;
+          continue;
         }
         const char* start = line.c_str() + pos;
         char* end = nullptr;
-        const unsigned long value_kb = std::strtoul(start, &end, 10);
-        if (end != start && value_kb > 0) {
+        if (const unsigned long value_kb = std::strtoul(start, &end, 10);
+            end != start && value_kb > 0) {
           return value_kb * 1024ULL;
         }
-        break;
+        exit_loop = true;
       }
     }
 #endif  // _WIN32 / __APPLE__ / __linux__

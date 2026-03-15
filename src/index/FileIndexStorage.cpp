@@ -49,8 +49,9 @@ void FileIndexStorage::InsertLocked(uint64_t id, uint64_t parent_id,
   name_cache_.insert_or_assign(id, name);
 
   // OPTIMIZATION: Use try_emplace() instead of find()+operator[] to avoid double hash lookup
-  const FileEntry new_entry{parent_id, static_cast<uint16_t>(name.size()), ext, is_directory,
-                            file_size, LazyFileTime(last_mod_time)};
+  // Aggregate init order matches FileEntry member declaration (alignment-ordered layout).
+  const FileEntry new_entry{parent_id, ext, file_size, LazyFileTime(last_mod_time),
+                            static_cast<size_t>(-1), static_cast<uint16_t>(name.size()), is_directory};
   auto [it, inserted] = id_to_entry_.try_emplace(id, new_entry);
 
   // Update atomic counter if this is a new entry

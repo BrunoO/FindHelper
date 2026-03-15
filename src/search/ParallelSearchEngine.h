@@ -498,6 +498,8 @@ inline typename ResultsContainer::value_type CreateResultData(
   data.id = soaView.path_ids[index];
   data.isDirectory = (soaView.is_directory[index] == 1);
   data.fullPath = std::string_view(path, path_len);
+  data.filename_start = soaView.filename_start[index];
+  data.extension_start = soaView.extension_start[index];
   return data;
 }
 } // namespace parallel_search_detail

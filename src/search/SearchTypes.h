@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -43,11 +44,14 @@ struct SearchStats {
 };
 
 /** Lightweight result data extracted during search (avoids FileEntry lookup).
- * fullPath is a view into PathStorage SoA; must not outlive the search/merge phase. */
+ * fullPath is a view into PathStorage SoA; must not outlive the search/merge phase.
+ * filename_start/extension_start are offsets from path start (from SoA); avoid re-parsing in merge. */
 struct SearchResultData {  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - members default-constructed
   uint64_t id = 0;  // NOLINT(readability-identifier-naming)
   std::string_view fullPath;  // NOLINT(readability-identifier-naming) - view into SoA path_storage
   bool isDirectory = false;  // NOLINT(readability-identifier-naming)
+  size_t filename_start = 0;       // NOLINT(readability-identifier-naming) - offset of filename in fullPath
+  size_t extension_start = SIZE_MAX;  // NOLINT(readability-identifier-naming) - offset of extension (SIZE_MAX = none)
 };
 
 /** Column indices for the results table. */

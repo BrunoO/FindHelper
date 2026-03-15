@@ -1,4 +1,3 @@
-#include "TestHelpers.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -7,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <exception>
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -16,28 +16,31 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
+#include <filesystem>
+namespace fs = std::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: in SafeRemoveFile
+#else
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: in SafeRemoveFile
+#endif  // __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
+
+#ifdef _WIN32
+#include <direct.h>   // NOSONAR(cpp:S954) - Platform block; must follow #ifdef
+#include <windows.h>  // NOSONAR(cpp:S3806,cpp:S954) - Windows-only include
+#else
+#include <sys/stat.h>  // NOSONAR(cpp:S954) - Platform block; must follow #ifdef
+#include <unistd.h>   // NOSONAR(cpp:S954) - Platform block
+#endif  // _WIN32
+
 #include "MockSearchableIndex.h"
+#include "TestHelpers.h"
 #include "api/GeminiApiUtils.h"
 #include "core/Settings.h"
 #include "filters/TimeFilterUtils.h"
 #include "utils/FileTimeTypes.h"
+#include "utils/Logger.h"
 #include "utils/StringUtils.h"
-
-#if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
-#endif  // __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
-
-#ifdef _WIN32
-#include <direct.h>  // For CreateDirectoryA, DeleteFileA
-#include <windows.h>  // NOSONAR(cpp:S3806) - Windows-only include, case doesn't matter on Windows filesystem
-#else
-#include <sys/stat.h>  // For mkdtemp, chmod
-#include <unistd.h>  // NOSONAR(cpp:S954) - System include, must be after conditional compilation check
-#endif  // _WIN32
 
 namespace test_helpers {
 
@@ -46,7 +49,7 @@ namespace {
 std::string PadNumber(size_t num, size_t width) {
   std::string result = std::to_string(num);
   while (result.length() < width) {
-    result = "0" + result;
+    result.insert(0, "0");
   }
   return result;
 }
@@ -57,7 +60,7 @@ constexpr std::array<const char*, 7> kTestExtensions = {".txt", ".cpp",  ".h", "
 
 // Get extension for a given index (cycles through extensions)
 std::string GetExtensionForIndex(size_t i) {
-  return std::string(kTestExtensions[i % 7]);
+  return {kTestExtensions[i % 7]};
 }
 
 // Helper to save current settings in TestSettingsFixture
@@ -105,7 +108,7 @@ std::string GetEnvironmentVariable(const char* name) {
 // Exceptions are caught internally to prevent propagation from destructors.
 void SetEnvironmentVariable(const char* name, std::string_view value) noexcept {
   try {
-    std::string value_str(value);
+    const std::string value_str(value);
 #ifdef _WIN32
     if (value_str.empty()) {
       _putenv_s(name, "");
@@ -120,7 +123,7 @@ void SetEnvironmentVariable(const char* name, std::string_view value) noexcept {
     }
 #endif  // _WIN32
   } catch (...) {  // NOSONAR(cpp:S2738) - Test helper: must catch all exceptions to prevent
-                   // propagation from destructors
+                   // propagation from destructors. NOLINT(bugprone-empty-catch) - intentional: noexcept-safe for destructors
     // Silently ignore failures - environment variable setting failures in tests are non-critical
     // This ensures the function is safe for use in destructors (noexcept guarantee)
   }
@@ -129,7 +132,7 @@ void SetEnvironmentVariable(const char* name, std::string_view value) noexcept {
 // Helper to extract extension from filename (including the dot)
 // Returns empty string if no valid extension found
 std::string ExtractExtensionFromFilename(std::string_view filename) {
-  if (size_t last_dot = filename.find_last_of('.');
+  if (const size_t last_dot = filename.find_last_of('.');
       last_dot != std::string::npos && last_dot < filename.length() - 1) {
     return std::string(filename.substr(last_dot));
   }
@@ -149,10 +152,10 @@ void SafeRemoveFile(const std::filesystem::path& path) {
     if (fs::exists(path)) {
       fs::remove(path);
     }
-  } catch (
-    ...) {  // NOSONAR(cpp:S2738) - Test cleanup: must catch all exceptions to prevent test failures
-    // Destructors must not throw exceptions - silently ignore cleanup errors
-    // during test teardown to prevent undefined behavior
+  } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Test cleanup: catch std then catch(...) for rest
+    LOG_DEBUG_BUILD("SafeRemoveFile: " << e.what());
+  } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test cleanup: catch all to prevent test failure
+    LOG_DEBUG_BUILD("SafeRemoveFile: non-std exception");
   }
 }
 }  // anonymous namespace
@@ -185,7 +188,7 @@ std::string CreateTempFile(std::string_view prefix) {
 #else
   // Unix-like: Use mkstemp for secure temporary file creation
   // Note: mkstemp modifies the template in place, so we use vector<char> for writable buffer
-  std::string prefix_str(prefix);
+  const std::string prefix_str(prefix);
   std::vector<char> tempTemplate;
   tempTemplate.reserve(prefix_str.length() +
                        20);  // Reserve space for prefix + "/tmp/" + "XXXXXX" + null
@@ -196,7 +199,7 @@ std::string CreateTempFile(std::string_view prefix) {
   tempTemplate.push_back('m');
   tempTemplate.push_back('p');
   tempTemplate.push_back('/');
-  for (char c : prefix_str) {
+  for (const char c : prefix_str) {
     tempTemplate.push_back(c);
   }
   tempTemplate.push_back('_');
@@ -206,11 +209,9 @@ std::string CreateTempFile(std::string_view prefix) {
   }
   tempTemplate.push_back('\0');
 
-  int fd = mkstemp(tempTemplate.data());
+  const int fd = mkstemp(tempTemplate.data());
   if (fd == -1) {
-    throw std::runtime_error(
-      "Failed to create temporary file");  // NOSONAR(cpp:S112) - std::runtime_error is appropriate
-                                           // for simple test setup errors
+    throw std::runtime_error("Failed to create temporary file");  // NOSONAR(cpp:S112) - test helper; std::runtime_error acceptable
   }
   path = tempTemplate.data();
   close(fd);
@@ -250,7 +251,7 @@ std::string CreateTempDirectory(std::string_view prefix) {
   // Unix-like: Use mkdtemp for secure temporary directory creation
   // Security: mkdtemp creates directory atomically, preventing symlink attacks and TOCTOU
   // vulnerabilities
-  std::string prefix_str(prefix);
+  const std::string prefix_str(prefix);
   std::vector<char> tempTemplate;
   tempTemplate.reserve(prefix_str.length() +
                        20);  // Reserve space for prefix + "/tmp/" + "XXXXXX" + null
@@ -261,7 +262,7 @@ std::string CreateTempDirectory(std::string_view prefix) {
   tempTemplate.push_back('m');
   tempTemplate.push_back('p');
   tempTemplate.push_back('/');
-  for (char c : prefix_str) {
+  for (const char c : prefix_str) {
     tempTemplate.push_back(c);
   }
   tempTemplate.push_back('_');
@@ -271,12 +272,9 @@ std::string CreateTempDirectory(std::string_view prefix) {
   }
   tempTemplate.push_back('\0');
 
-  if (char* dir_path = mkdtemp(tempTemplate.data());
-      dir_path == nullptr) {  // NOSONAR(cpp:S995) - mkdtemp modifies template in place and returns
-                              // non-const pointer
-    throw std::runtime_error(
-      "Failed to create temporary directory");  // NOSONAR(cpp:S112) - std::runtime_error is
-                                                // appropriate for simple test setup errors
+  if (const char* dir_path = mkdtemp(tempTemplate.data());  // NOSONAR(cpp:S995,cpp:S5350) - mkdtemp returns non-const, we do not modify through dir_path
+      dir_path == nullptr) {
+    throw std::runtime_error("Failed to create temporary directory");  // NOSONAR(cpp:S112) - test helper; std::runtime_error acceptable
   }
   path = tempTemplate.data();
 
@@ -316,7 +314,7 @@ TestSettingsFixture::TestSettingsFixture(std::string_view strategy) {
   test_settings::SetInMemorySettings(current);
 }
 
-TestSettingsFixture::~TestSettingsFixture() {
+TestSettingsFixture::~TestSettingsFixture() {  // NOLINT(bugprone-exception-escape) - teardown catches all, does not rethrow
   // Restore original settings
   try {
     if (settings_were_active_) {
@@ -328,36 +326,36 @@ TestSettingsFixture::~TestSettingsFixture() {
     } else {
       test_settings::ClearInMemorySettings();
     }
-  } catch (
-    ...) {  // NOSONAR(cpp:S2738) - Test cleanup: must catch all exceptions to prevent test failures
-    // Destructors must not throw exceptions - silently ignore cleanup errors
-    // during test teardown to prevent undefined behavior
+  } catch (const std::exception& e) {
+    LOG_DEBUG_BUILD("TestSettingsFixture: teardown failed: " << e.what());
+  } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Teardown must not throw
+    LOG_DEBUG_BUILD("TestSettingsFixture: teardown failed (non-std exception)");
   }
 }
 
 void CreateTestFileIndex(FileIndex& index, size_t file_count, const std::string& base_path) {
   // Create root directory (id=1)
-  uint64_t root_id = 1;
-  FILETIME root_time = {0, 0};  // Directories use {0, 0}
+  const uint64_t root_id = 1;
+  const FILETIME root_time = {0, 0};  // Directories use {0, 0}
   index.Insert(root_id, 0, base_path, true, root_time);
 
   // Create files with predictable names: file_0001.txt, file_0002.cpp, ...
   // Mix of files and directories (every 10th item is a directory)
   for (size_t i = 1; i <= file_count; ++i) {
-    uint64_t file_id = i + 1;
-    bool is_dir = (i % 10 == 0);  // Every 10th item is a directory
+    const uint64_t file_id = i + 1;
+    const bool is_dir = (i % 10 == 0);  // Every 10th item is a directory
 
     std::string name;
     if (is_dir) {
       name = "dir_" + PadNumber(i, 4);
     } else {
       // Vary extensions for testing
-      std::string ext = GetExtensionForIndex(i);
+      const std::string ext = GetExtensionForIndex(i);
       name = "file_" + PadNumber(i, 4) + ext;
     }
 
     // Use kFileTimeNotLoaded for files, {0, 0} for directories
-    FILETIME mod_time = is_dir ? FILETIME{0, 0} : kFileTimeNotLoaded;
+    const FILETIME mod_time = is_dir ? FILETIME{0, 0} : kFileTimeNotLoaded;
     index.Insert(file_id, root_id, name, is_dir, mod_time);
   }
 
@@ -379,8 +377,12 @@ std::vector<std::string> GenerateTestPaths(size_t count, const std::string& base
   paths.reserve(count);
 
   for (size_t i = 1; i <= count; ++i) {
-    std::string ext = GetExtensionForIndex(i);
-    std::string filename = prefix + PadNumber(i, 4) + ext;
+    const std::string ext = GetExtensionForIndex(i);
+    std::string filename;
+    filename.reserve(prefix.size() + 4 + ext.size());
+    filename += prefix;
+    filename += PadNumber(i, 4);
+    filename += ext;
 
     // Build full path
     std::string full_path = base_path;
@@ -405,7 +407,7 @@ std::vector<std::string> GenerateTestExtensions(size_t count, bool include_dots)
   for (size_t i = 0; i < count; ++i) {
     std::string ext = ext_list[i % 10];
     if (include_dots) {
-      ext = "." + ext;
+      ext.insert(0, ".");
     }
     extensions.push_back(ext);
   }
@@ -421,7 +423,7 @@ bool MatchesExtension([[maybe_unused]] const SearchResultData& result, std::stri
   std::string result_ext;
   // Calculate filename and extension offsets manually
   // Note: extension is stored without the dot, so result_ext is "txt" not ".txt"
-  if (std::string_view extension = path_utils::GetExtension(path_view); !extension.empty()) {
+  if (const std::string_view extension = path_utils::GetExtension(path_view); !extension.empty()) {
     result_ext = ToLower(extension);
   } else {
     result_ext = "";  // No extension
@@ -453,12 +455,12 @@ bool ValidateSearchResults(const std::vector<SearchResultData>& results,
   // Validate each result
   for (const auto& result : results) {
     // Calculate filename offset manually
-    std::string_view path_view(result.fullPath);
+    const std::string_view path_view(result.fullPath);
     size_t filename_offset = 0;
-    if (size_t last_slash = path_view.find_last_of("/\\"); last_slash != std::string_view::npos) {
+    if (const size_t last_slash = path_view.find_last_of("/\\"); last_slash != std::string_view::npos) {
       filename_offset = last_slash + 1;
     }
-    std::string_view filename_view = path_view.substr(filename_offset);
+    const std::string_view filename_view = path_view.substr(filename_offset);
     std::string search_target(filename_view);
     auto query = std::string(expected_query);
 
@@ -473,7 +475,7 @@ bool ValidateSearchResults(const std::vector<SearchResultData>& results,
     }
 
     // Check extension filter if provided - use early return to reduce nesting
-    if (expected_extensions && !expected_extensions->empty() &&
+    if (expected_extensions != nullptr && !expected_extensions->empty() &&
         !MatchesExtension(result, path_view, *expected_extensions)) {
       return false;
     }
@@ -660,7 +662,7 @@ int64_t GetStartOfWeekUnix() {
   std::tm now_tm = GetCurrentLocalTime();
 
   // Calculate days since Monday (0=Monday, 1=Tuesday, ..., 6=Sunday)
-  int days_since_monday = (now_tm.tm_wday == 0) ? 6 : (now_tm.tm_wday - 1);
+  const int days_since_monday = (now_tm.tm_wday == 0) ? 6 : (now_tm.tm_wday - 1);
 
   std::tm week_start = now_tm;
   week_start.tm_mday -= days_since_monday;
@@ -757,16 +759,13 @@ std::vector<SearchResultData> ExecuteSearchWithDataAndTimings(
 test_helpers::TestParallelSearchEngineFixture::TestParallelSearchEngineFixture(int thread_count)
     : thread_pool_(std::make_shared<SearchThreadPool>(thread_count)), engine_(thread_pool_) {}
 
-TestGeminiApiKeyFixture::TestGeminiApiKeyFixture(std::string_view api_key) {
-  // Save original value if it exists
-  original_key_ = GetEnvironmentVariable("GEMINI_API_KEY");
-  was_set_ = !original_key_.empty();
-
-  // Set new value
+TestGeminiApiKeyFixture::TestGeminiApiKeyFixture(std::string_view api_key)
+    : original_key_(GetEnvironmentVariable("GEMINI_API_KEY")),
+      was_set_(!original_key_.empty()) {
   SetEnvironmentVariable("GEMINI_API_KEY", api_key);
 }
 
-TestGeminiApiKeyFixture::~TestGeminiApiKeyFixture() {
+TestGeminiApiKeyFixture::~TestGeminiApiKeyFixture() {  // NOLINT(bugprone-exception-escape) - teardown catches all, does not rethrow
   // Restore original value
   try {
     if (was_set_) {
@@ -774,10 +773,10 @@ TestGeminiApiKeyFixture::~TestGeminiApiKeyFixture() {
     } else {
       SetEnvironmentVariable("GEMINI_API_KEY", "");
     }
-  } catch (
-    ...) {  // NOSONAR(cpp:S2738) - Test cleanup: must catch all exceptions to prevent test failures
-    // Destructors must not throw exceptions - silently ignore cleanup errors
-    // during test teardown to prevent undefined behavior
+  } catch (const std::exception& e) {
+    LOG_DEBUG_BUILD("TestGeminiApiKeyFixture: cleanup failed: " << e.what());
+  } catch (...) {  // NOSONAR(cpp:S2738) - Test cleanup: catch all to prevent destructor from throwing
+    LOG_DEBUG_BUILD("TestGeminiApiKeyFixture: cleanup failed (non-std exception)");
   }
 }
 
@@ -855,11 +854,11 @@ TempFileFixture::TempFileFixture() {
   expectedSize = content.length();
 
   // Get file modification time
-  FileAttributes attrs = ::GetFileAttributes(path);
+  const FileAttributes attrs = ::GetFileAttributes(path);
   expectedTime = attrs.lastModificationTime;
 }
 
-TempFileFixture::~TempFileFixture() {
+TempFileFixture::~TempFileFixture() {  // NOLINT(bugprone-exception-escape) - SafeRemoveFile may throw; test cleanup accepts
   // Clean up temporary file
   SafeRemoveFile(path);
 }
@@ -870,7 +869,7 @@ TempFileFixture::TempFileFixture(TempFileFixture&& other) noexcept
   other.path.clear();  // Clear moved-from path to prevent deletion
 }
 
-TempFileFixture& TempFileFixture::operator=(TempFileFixture&& other) noexcept {
+TempFileFixture& TempFileFixture::operator=(TempFileFixture&& other) noexcept {  // NOLINT(bugprone-exception-escape) - SafeRemoveFile may throw; test fixture accepts
   if (this != &other) {
     // Clean up current file before taking ownership of new one
     SafeRemoveFile(path);
@@ -910,10 +909,7 @@ void TestLazyAttributeLoaderFixture::InsertFileEntryInternal(uint64_t id, const 
                                                              bool is_dir, const std::string& path,
                                                              const std::string& extension) {
   // Extract extension from filename if not provided
-  std::string ext = extension;
-  if (ext.empty()) {
-    ext = ExtractExtensionFromFilename(name);
-  }
+  const std::string ext = extension.empty() ? ExtractExtensionFromFilename(name) : extension;
   storage_.InsertLocked(id, 0, name, is_dir, kFileTimeNotLoaded, ext);
   const size_t idx = path_storage_.InsertPath(id, path, is_dir, std::nullopt);
   storage_.SetPathStorageIndex(id, idx);
@@ -927,12 +923,12 @@ namespace lazy_loader_test_helpers {
 
 bool VerifyFileSizeLoaded(const LazyAttributeLoader& loader, uint64_t file_id,
                           uint64_t expected_size) {
-  uint64_t size = loader.GetFileSize(file_id);
+  const uint64_t size = loader.GetFileSize(file_id);
   return size == expected_size;
 }
 
 bool VerifyModificationTimeLoaded(const LazyAttributeLoader& loader, uint64_t file_id) {
-  FILETIME time = loader.GetModificationTime(file_id);
+  const FILETIME time = loader.GetModificationTime(file_id);
   return IsValidTime(time);
 }
 
@@ -942,19 +938,19 @@ void VerifyLoadResult(bool loaded, bool expected) {
 
 void VerifyFileSizeFailure(const LazyAttributeLoader& loader, uint64_t file_id) {
   // Try to load size for failed file
-  uint64_t size = loader.GetFileSize(file_id);
+  const uint64_t size = loader.GetFileSize(file_id);
 
   // Should return failure sentinel (correct semantics for failed load)
   CHECK(size == kFileSizeFailed);
 
   // Try again - should return sentinel immediately (marked as failed, no retry)
-  uint64_t size2 = loader.GetFileSize(file_id);
+  const uint64_t size2 = loader.GetFileSize(file_id);
   CHECK(size2 == kFileSizeFailed);
 }
 
 void VerifyModificationTimeFailure(const LazyAttributeLoader& loader, uint64_t file_id) {
   // Try to load modification time for failed file
-  FILETIME time = loader.GetModificationTime(file_id);
+  const FILETIME time = loader.GetModificationTime(file_id);
 
   // Should return failed time or sentinel (not valid)
   // On some platforms, GetFileModificationTime may return sentinel instead of failed
@@ -963,13 +959,13 @@ void VerifyModificationTimeFailure(const LazyAttributeLoader& loader, uint64_t f
   (void)time;  // Suppress unused variable warning - test verifies function doesn't crash
 
   // Try again - should return immediately (marked as failed, no retry)
-  FILETIME time2 = loader.GetModificationTime(file_id);
+  const FILETIME time2 = loader.GetModificationTime(file_id);
   (void)time2;  // Suppress unused variable warning - test verifies function doesn't crash
 }
 
 void AssertStorageFileSizeFailed(const FileIndexStorage& storage, std::shared_mutex& mutex,
                                  uint64_t file_id) {
-  std::shared_lock lock(mutex);
+  const std::shared_lock lock(mutex);
   const FileEntry* const entry = storage.GetEntry(file_id);
   CHECK(entry != nullptr);
   CHECK(entry->fileSize.IsFailed());
@@ -977,7 +973,7 @@ void AssertStorageFileSizeFailed(const FileIndexStorage& storage, std::shared_mu
 
 void AssertStorageFileSizeLoaded(const FileIndexStorage& storage, std::shared_mutex& mutex,
                                  uint64_t file_id, uint64_t expected_size) {
-  std::shared_lock lock(mutex);
+  const std::shared_lock lock(mutex);
   const FileEntry* const entry = storage.GetEntry(file_id);
   CHECK(entry != nullptr);
   CHECK(entry->fileSize.IsLoaded());
@@ -989,7 +985,7 @@ MinimalLoaderSetup& CreateLoaderSetupWithDirectory(MinimalLoaderSetup& setup, ui
                                                    const std::string& dir_path) {
   // Security: If dir_path is empty, create a secure temporary directory
   // This prevents using hardcoded paths in publicly writable directories
-  std::string actual_dir_path = dir_path.empty() ? CreateTempDirectory("test_dir") : dir_path;
+  const std::string actual_dir_path = dir_path.empty() ? CreateTempDirectory("test_dir") : dir_path;
 
   setup.storage.InsertLocked(dir_id, 0, dir_name, true, kFileTimeNotLoaded, "");
   const size_t idx = setup.path_storage.InsertPath(dir_id, actual_dir_path, true, std::nullopt);
@@ -1016,19 +1012,19 @@ void TestOptimizationLoadsBothAttributes(const LazyAttributeLoader& loader, uint
                                          uint64_t expected_size, bool request_size_first) {
   if (request_size_first) {
     // Request size first, verify time was also loaded
-    uint64_t size = loader.GetFileSize(file_id);
+    const uint64_t size = loader.GetFileSize(file_id);
     CHECK(size == expected_size);
 
-    FILETIME time = loader.GetModificationTime(file_id);
+    const FILETIME time = loader.GetModificationTime(file_id);
     CHECK(IsValidTime(time));
     // Time should not be sentinel (was loaded together with size)
     CHECK(!IsSentinelTime(time));
   } else {
     // Request time first, verify size was also loaded
-    FILETIME time = loader.GetModificationTime(file_id);
+    const FILETIME time = loader.GetModificationTime(file_id);
     CHECK(IsValidTime(time));
 
-    uint64_t size = loader.GetFileSize(file_id);
+    const uint64_t size = loader.GetFileSize(file_id);
     CHECK(size == expected_size);
   }
 }
@@ -1071,8 +1067,8 @@ size_t CollectFuturesAndCount(std::vector<std::future<std::vector<SearchResultDa
 std::set<uint64_t> CollectIdsFromFutures(std::vector<std::future<std::vector<uint64_t>>>& futures) {
   std::set<uint64_t> all_ids;
   for (auto& future : futures) {
-    auto ids = future.get();
-    for (uint64_t id : ids) {
+    const auto ids = future.get();
+    for (const uint64_t id : ids) {
       all_ids.insert(id);
     }
   }
@@ -1081,7 +1077,7 @@ std::set<uint64_t> CollectIdsFromFutures(std::vector<std::future<std::vector<uin
 
 size_t TestCancellation(const std::string& strategy, size_t file_count, bool cancel_immediately,
                         size_t max_expected_results) {
-  test_helpers::TestSettingsFixture settings(strategy);
+  const test_helpers::TestSettingsFixture settings(strategy);
   test_helpers::TestFileIndexFixture index_fixture(file_count);
 
   // Use heap-allocated atomic to ensure the cancellation flag outlives any worker threads
@@ -1099,8 +1095,7 @@ size_t TestCancellation(const std::string& strategy, size_t file_count, bool can
     try {
       auto results = future.get();
       total_results += results.size();
-    } catch (...) {  // NOSONAR(cpp:S2738) - Test cancellation: catch-all needed as cancellation may
-                     // throw various exception types
+    } catch (...) {  // NOSONAR(cpp:S2738) - Test cancellation: catch-all needed. NOLINT(bugprone-empty-catch) - intentional: accept cancellation exceptions
       // Cancellation may cause exceptions, which is acceptable
     }
   }
@@ -1136,7 +1131,7 @@ std::pair<size_t, size_t> CollectTwoFutureVectors(
 size_t TestGetFuturesAndCollect(const std::string& strategy, size_t file_count,
                                 const std::string& query, int thread_count, size_t min_futures,
                                 size_t max_futures) {
-  test_helpers::TestSettingsFixture settings(strategy);
+  const test_helpers::TestSettingsFixture settings(strategy);
   test_helpers::TestFileIndexFixture index_fixture(file_count);
 
   auto futures = index_fixture.GetIndex().SearchAsyncWithData(query, thread_count, nullptr, "",

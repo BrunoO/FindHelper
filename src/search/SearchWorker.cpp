@@ -263,29 +263,6 @@ void SearchWorker::CancelSearch() {
   cancel_current_search_.store(true, std::memory_order_release);
 }
 
-// Compute filename and extension offsets from path (used by MergeAndConvertToSearchResults).
-static void ComputePathOffsets(std::string_view path_view,
-                               size_t& filename_offset,
-                               size_t& extension_offset) {
-  filename_offset = 0;
-  if (const size_t last_slash = path_view.find_last_of("/\\"); last_slash != std::string_view::npos) {
-    filename_offset = last_slash + 1;
-  }
-  if (filename_offset < path_view.size()) {
-    const std::string_view filename_part = path_view.substr(filename_offset);
-    if (const size_t last_dot = filename_part.find_last_of('.');
-        last_dot != std::string_view::npos &&
-        last_dot > 0 &&
-        last_dot + 1 < filename_part.size()) {
-      extension_offset = filename_offset + last_dot + 1;
-    } else {
-      extension_offset = std::string_view::npos;
-    }
-  } else {
-    extension_offset = std::string_view::npos;
-  }
-}
-
 std::vector<SearchResult> MergeAndConvertToSearchResults(  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables,readability-identifier-naming) - free function, PascalCase API
     std::vector<char>& pool,
     const std::vector<SearchResultData>& data,
@@ -313,7 +290,9 @@ std::vector<SearchResult> MergeAndConvertToSearchResults(  // NOLINT(cppcoreguid
     result.fileId = datum.id;
     result.isDirectory = datum.isDirectory;
     result.fullPath = std::string_view(path_start, path_len);
-    ComputePathOffsets(result.fullPath, result.filename_offset, result.extension_offset);
+    result.filename_offset = datum.filename_start;
+    result.extension_offset =
+        (datum.extension_start == SIZE_MAX) ? std::string_view::npos : datum.extension_start;
 
     if (datum.isDirectory) {
       result.fileSize = 0;
@@ -515,8 +494,7 @@ void SearchWorker::ProcessStreamingSearchFutures(  // NOLINT(readability-identif
     const MetricsTimer& search_timer,
     uint64_t& search_time_ms) {
   // Process futures in completion order (first finished first) for faster
-  // time-to-first-result. Final handoff uses GetAllResults() so result set
-  // is correct; order may vary between runs (trade-off for responsiveness).
+  // time-to-first-result. Controller accumulates batches for finalization.
   std::vector<size_t> pending_indices;
   pending_indices.reserve(search_futures.size());
   for (size_t i = 0; i < search_futures.size(); ++i) {
@@ -580,11 +558,12 @@ void SearchWorker::RunFilteredSearchPath(
   // or StartSearch resets collector_ while we're in ProcessStreamingSearchFutures
   // (e.g. when a future throws and we call SetError in the catch handler).
   // Only collector_ref is used below; collector_ is never re-read in this block.
+  // Streaming path: controller consumes batches and accumulates; no need to fill results (unused).
   if (const std::shared_ptr<StreamingResultsCollector> collector_ref = collector_;  // NOSONAR(cpp:S6004) - Init-statement used; Sonar may attach to this line
       stream_partial_results_.load(std::memory_order_acquire) && collector_ref) {
     ProcessStreamingSearchFutures(search_futures, *collector_ref, search_timer, search_time_ms);
     LogLoadBalanceIfNeeded(thread_timings);
-    results = collector_ref->GetAllResults();
+    results.clear();
   } else {
     size_t total_candidates = 0;  // NOLINT(misc-const-correctness) - set by ProcessSearchFutures
     ProcessSearchFutures(search_futures, results, cancel_current_search_,
