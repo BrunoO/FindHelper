@@ -128,7 +128,9 @@ TEST_SUITE("LazyAttributeLoader - Static I/O Methods") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
     std::string zeroBytePath = test_helpers::CreateTempFile("lazy_loader_zero_");
-    fixture.GetPathStorage().InsertPath(fixture.GetFileId(), zeroBytePath, false);
+    const size_t idx = fixture.GetPathStorage().InsertPath(
+        fixture.GetFileId(), zeroBytePath, false, std::nullopt);
+    fixture.GetStorage().SetPathStorageIndex(fixture.GetFileId(), idx);
 
     uint64_t size = fixture.GetLoader().GetFileSize(fixture.GetFileId());
 
@@ -266,7 +268,9 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
     fs::remove(deletedPath);
 
     // Update path storage to point to deleted file
-    fixture.GetPathStorage().InsertPath(fixture.GetFileId(), deletedPath, false);
+    const size_t idx = fixture.GetPathStorage().InsertPath(
+        fixture.GetFileId(), deletedPath, false, std::nullopt);
+    fixture.GetStorage().SetPathStorageIndex(fixture.GetFileId(), idx);
 
     // Verify failure scenario (returns sentinel, no retry)
     test_helpers::lazy_loader_test_helpers::VerifyFileSizeFailure(fixture.GetLoader(),
@@ -281,7 +285,9 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
     fs::remove(deletedPath);
 
     // Update path storage to point to deleted file
-    fixture.GetPathStorage().InsertPath(fixture.GetFileId(), deletedPath, false);
+    const size_t idx = fixture.GetPathStorage().InsertPath(
+        fixture.GetFileId(), deletedPath, false, std::nullopt);
+    fixture.GetStorage().SetPathStorageIndex(fixture.GetFileId(), idx);
 
     // Verify failure scenario (returns failed/sentinel, no retry)
     test_helpers::lazy_loader_test_helpers::VerifyModificationTimeFailure(fixture.GetLoader(),
@@ -294,7 +300,9 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
     std::string nonExistentPath = "/nonexistent/path/file.txt";
 
     // Update path storage to point to non-existent file
-    fixture.GetPathStorage().InsertPath(fixture.GetFileId(), nonExistentPath, false);
+    const size_t path_idx = fixture.GetPathStorage().InsertPath(
+        fixture.GetFileId(), nonExistentPath, false, std::nullopt);
+    fixture.GetStorage().SetPathStorageIndex(fixture.GetFileId(), path_idx);
 
     // Verify failure scenario (returns sentinel, no retry)
     test_helpers::lazy_loader_test_helpers::VerifyFileSizeFailure(fixture.GetLoader(),
@@ -305,7 +313,9 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
     test_helpers::TestLazyAttributeLoaderFixture fixture;
 
     std::string nonExistentPath = "/nonexistent/path/file.txt";
-    fixture.GetPathStorage().InsertPath(fixture.GetFileId(), nonExistentPath, false);
+    const size_t path_idx = fixture.GetPathStorage().InsertPath(
+        fixture.GetFileId(), nonExistentPath, false, std::nullopt);
+    fixture.GetStorage().SetPathStorageIndex(fixture.GetFileId(), path_idx);
 
     (void)fixture.GetLoader().GetFileSize(fixture.GetFileId());
 
@@ -320,7 +330,9 @@ TEST_SUITE("LazyAttributeLoader - Failure Scenarios") {
     std::string nonExistentPath = "/nonexistent/path/file.txt";
 
     // Update path storage to point to non-existent file
-    fixture.GetPathStorage().InsertPath(fixture.GetFileId(), nonExistentPath, false);
+    const size_t path_idx = fixture.GetPathStorage().InsertPath(
+        fixture.GetFileId(), nonExistentPath, false, std::nullopt);
+    fixture.GetStorage().SetPathStorageIndex(fixture.GetFileId(), path_idx);
 
     // Verify failure scenario (returns failed/sentinel, no retry)
     test_helpers::lazy_loader_test_helpers::VerifyModificationTimeFailure(fixture.GetLoader(),

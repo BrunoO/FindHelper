@@ -24,13 +24,11 @@ void SetThreadName(const char* thread_name) {  // NOLINT(readability-identifier-
 }
 
 size_t GetLogicalProcessorCount() {
-  unsigned int n = std::thread::hardware_concurrency();
-  if (n != 0) {
+  if (const unsigned int n = std::thread::hardware_concurrency(); n != 0) {
     return static_cast<size_t>(n);
   }
   // Fallback when hardware_concurrency() returns 0 (e.g. cgroups/Docker)
-  const long nproc = sysconf(_SC_NPROCESSORS_ONLN);
-  if (nproc > 0) {
+  if (const long nproc = sysconf(_SC_NPROCESSORS_ONLN); nproc > 0) {
     return static_cast<size_t>(nproc);
   }
   return 2;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "index/FileIndexStorage.h"
 #include "path/PathStorage.h"
 #include <cstddef>
 #include <cstdint>
@@ -43,9 +44,10 @@ public:
   /**
    * @brief Construct PathOperations
    *
+   * @param storage Reference to FileIndexStorage (for path_storage_index in FileEntry)
    * @param path_storage Reference to PathStorage
    */
-  explicit PathOperations(PathStorage& path_storage);
+  PathOperations(FileIndexStorage& storage, PathStorage& path_storage);
 
   // Default destructor (holds reference, no cleanup needed)
   ~PathOperations() = default;
@@ -59,40 +61,28 @@ public:
   /**
    * @brief Insert or update a path entry
    *
-   * @param id File ID
-   * @param path Full path string (string_view for flexibility)
-   * @param isDirectory True if this is a directory
+   * Resolves existing index from FileEntry.path_storage_index when present;
+   * updates path_storage_index after insert.
    *
    * @pre Caller must hold unique_lock on mutex
    */
-  inline void InsertPath(uint64_t id, std::string_view path, bool isDirectory) {  // NOLINT(readability-identifier-naming) - Public API parameter names
-    // Convert string_view to string for storage (PathStorage stores as std::string)
-    path_storage_.InsertPath(id, std::string(path), isDirectory);
-  }
+  void InsertPath(uint64_t id, std::string_view path, bool isDirectory);  // NOLINT(readability-identifier-naming) - Public API parameter names
 
   /**
    * @brief Get full path as string
    *
-   * @param id File ID
-   * @return Full path string (empty if not found)
+   * Uses FileEntry.path_storage_index then PathStorage::GetPathByIndex.
    *
    * @pre Caller must hold shared_lock or unique_lock on mutex
    */
-  [[nodiscard]] inline std::string GetPath(uint64_t id) const {
-    return path_storage_.GetPath(id);
-  }
+  [[nodiscard]] std::string GetPath(uint64_t id) const;
 
   /**
    * @brief Get full path as string_view (zero-copy)
    *
-   * @param id File ID
-   * @return Full path view (empty if not found)
-   *
    * @pre Caller must hold shared_lock or unique_lock on mutex
    */
-  [[nodiscard]] inline std::string_view GetPathView(uint64_t id) const {
-    return path_storage_.GetPathView(id);
-  }
+  [[nodiscard]] std::string_view GetPathView(uint64_t id) const;
 
   /**
    * @brief Get path components as views (zero-copy)
@@ -138,13 +128,17 @@ public:
   /**
    * @brief Mark a path entry as deleted (tombstone)
    *
-   * @param id File ID to mark as deleted
-   * @return true if the entry was found and marked, false if not found
+   * Uses FileEntry.path_storage_index then PathStorage::RemovePathByIndex.
    *
    * @pre Caller must hold unique_lock on mutex
    */
-  [[nodiscard]] inline bool RemovePath(uint64_t id) {
-    return path_storage_.RemovePath(id);
+  [[nodiscard]] bool RemovePath(uint64_t id);
+
+  /**
+   * @brief Get path by SoA index (for callers that already have the index)
+   */
+  [[nodiscard]] std::string_view GetPathByIndex(size_t index) const {
+    return path_storage_.GetPathByIndex(index);
   }
 
 private:
@@ -157,6 +151,9 @@ private:
   static PathComponentsView ConvertPathComponentsView(
       const PathStorage::PathComponentsView& storage_view);
 
-  PathStorage& path_storage_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
+  static constexpr size_t kPathStorageIndexInvalid = static_cast<size_t>(-1);
+
+  FileIndexStorage& storage_;    // NOLINT(readability-identifier-naming) - project convention: snake_case_
+  PathStorage& path_storage_;    // NOLINT(readability-identifier-naming) - project convention: snake_case_
 };
 

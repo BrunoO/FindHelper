@@ -770,13 +770,13 @@ TEST_SUITE("FileIndex Search Strategies") {
       constexpr int kMaxAttempts = 3;  // Allow retries; stress can occasionally throw under load
 
       bool any_run_clean = false;
-      for (int attempt = 0; attempt < kMaxAttempts && !any_run_clean; ++attempt) {
+      for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
         test_helpers::TestFileIndexFixture index_fixture(2000);
         FileIndex& index = index_fixture.GetIndex();
         std::atomic<bool> writer_error{false};  // NOSONAR(cpp:S6012) - C++17; std::atomic has no CTAD until C++20
         std::atomic<bool> reader_error{false};   // NOSONAR(cpp:S6012) - C++17; std::atomic has no CTAD until C++20
 
-        auto writer_task = [&index, &writer_error]() {
+        auto writer_task = [&index, &writer_error, kWriterIterations, kChurnIdBase, kChurnSlotCount]() {
           for (int i = 0; i < kWriterIterations && !writer_error.load(std::memory_order_relaxed); ++i) {
             const uint64_t id = kChurnIdBase + static_cast<uint64_t>(i % kChurnSlotCount);
             const std::string name = "stress_" + std::to_string(id) + ".txt";
@@ -785,7 +785,7 @@ TEST_SUITE("FileIndex Search Strategies") {
           }
         };
 
-        auto reader_task = [&index, &reader_error]() {
+        auto reader_task = [&index, &reader_error, kReaderIterations]() {
           for (int i = 0; i < kReaderIterations && !reader_error.load(std::memory_order_relaxed); ++i) {
             try {
               auto futures = index.SearchAsyncWithData("file_", 2, nullptr, "", nullptr, false, false, nullptr);
@@ -794,7 +794,7 @@ TEST_SUITE("FileIndex Search Strategies") {
               }
             } catch (const std::exception&) {
               reader_error.store(true, std::memory_order_relaxed);
-            } catch (...) {  // NOSONAR(cpp:S2738) - Stress test: record any exception (e.g. assert, system) from concurrent search
+            } catch (...) {  // NOSONAR(cpp:S2738,cpp:S1181) - Stress test: record any exception (e.g. future_error, assert) from concurrent search
               reader_error.store(true, std::memory_order_relaxed);
             }
           }

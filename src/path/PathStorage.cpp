@@ -5,10 +5,9 @@
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 // All SoA array accesses use operator[] intentionally for performance.
-// Indices always originate from id_to_path_index_ (a validated lookup) or
-// a size_t loop counter bounded by path_ids_.size(), so bounds are guaranteed
-// by PathStorage's own invariants. Using .at() would add redundant checks
-// in the hot search-iteration and insert paths.
+// Indices originate from existing_index (caller), loop counters bounded by
+// path_ids_.size(), or RebuildPathBuffer. Using .at() would add redundant
+// checks in the hot search-iteration and insert paths.
 
 PathStorage::PathStorage() {  // NOLINT(hicpp-use-equals-default,modernize-use-equals-default,cppcoreguidelines-pro-type-member-init,hicpp-member-init) - Cannot use = default; reserve() in body. Members default-initialized then reserve()d.
   // Initialize arrays with reasonable capacity
@@ -21,8 +20,9 @@ PathStorage::PathStorage() {  // NOLINT(hicpp-use-equals-default,modernize-use-e
   is_directory_.reserve(kInitialPathArrayCapacity);
 }
 
-void PathStorage::InsertPath(uint64_t id, const std::string &path,
-                              bool isDirectory) {  // NOLINT(readability-identifier-naming) - Public API parameter name
+size_t PathStorage::InsertPath(uint64_t id, const std::string& path,
+                               bool isDirectory,  // NOLINT(readability-identifier-naming) - Public API parameter name
+                               std::optional<size_t> existing_index) {
   // Precondition: id 0 is reserved; all real file/dir IDs must be non-zero.
   assert(id != 0 && "File ID 0 is reserved; callers must provide a non-zero ID");
 
@@ -31,43 +31,31 @@ void PathStorage::InsertPath(uint64_t id, const std::string &path,
   size_t extension_start_offset = SIZE_MAX;
   ParsePathOffsets(path, filename_start_offset, extension_start_offset);
 
-  // If the ID already has a slot and the new path fits in the existing
-  // allocation, update it in-place rather than marking it deleted and
-  // appending a new one. This keeps the SoA arrays compact, avoids growing
-  // deleted_count_, and prevents unnecessary RebuildPathBuffer calls during a
-  // bulk crawl (e.g. DirectoryResolver pre-inserts overwritten by real
-  // entries). When the new path is longer than the previous allocation we
-  // fall back to the "new entry" path below and treat the old slot as a
-  // deleted tombstone so RebuildPathBuffer can reclaim its storage.
-  if (auto path_iter = id_to_path_index_.find(id); path_iter != id_to_path_index_.end()) {
-    const size_t idx = path_iter->second;
-    const size_t old_offset = path_offsets_[idx];
-    const size_t new_len = path.length();
-    if (const size_t old_len = std::strlen(&path_storage_[old_offset]);  // NOSONAR(cpp:S1081) - Safe: path_storage_ entries are null-terminated (see AppendString)
-        new_len <= old_len) {
-      // New path fits in the existing slot: overwrite in-place (zero growth in path_storage_).
-      // Used when a DirectoryResolver synthetic entry is later overwritten by the real entry.
-      std::memcpy(&path_storage_[old_offset], path.c_str(), new_len + 1);
-      filename_start_[idx] = filename_start_offset;
-      extension_start_[idx] = extension_start_offset;
-      is_directory_[idx] = isDirectory ? 1 : 0;
-      if (is_deleted_[idx] != 0) {
-        is_deleted_[idx] = 0;
-        deleted_count_.fetch_sub(1, std::memory_order_relaxed);
+  // If caller provided an existing index (e.g. rename/UpdatePrefix), try in-place update.
+  if (existing_index.has_value()) {
+    const size_t idx = *existing_index;
+    if (idx < path_offsets_.size() && path_ids_[idx] == id) {
+      const size_t old_offset = path_offsets_[idx];
+      const size_t new_len = path.length();
+      if (const size_t old_len = std::strlen(&path_storage_[old_offset]);  // NOSONAR(cpp:S1081) - Safe: path_storage_ entries are null-terminated (see AppendString)
+          new_len <= old_len) {
+        std::memcpy(&path_storage_[old_offset], path.c_str(), new_len + 1);
+        filename_start_[idx] = filename_start_offset;
+        extension_start_[idx] = extension_start_offset;
+        is_directory_[idx] = isDirectory ? 1 : 0;
+        if (is_deleted_[idx] != 0) {
+          is_deleted_[idx] = 0;
+          deleted_count_.fetch_sub(1, std::memory_order_relaxed);
+        }
+        AssertSoAInvariant("SoA arrays must remain synchronized after InsertPath");
+        return idx;
       }
-      return;
+      // New path longer than slot: mark slot deleted and fall through to append.
+      if (is_deleted_[idx] == 0) {
+        is_deleted_[idx] = 1;
+        deleted_count_.fetch_add(1, std::memory_order_relaxed);
+      }
     }
-
-    // New path is longer than the existing allocation: mark the current slot
-    // as a tombstone and fall through to the "new entry" path, which appends
-    // a fresh slot to all SoA arrays. This preserves deleted_count_ semantics
-    // and allows FileIndexMaintenance::RebuildPathBuffer() to reclaim the old
-    // storage.
-    if (is_deleted_[idx] == 0) {
-      is_deleted_[idx] = 1;
-      deleted_count_.fetch_add(1, std::memory_order_relaxed);
-    }
-    id_to_path_index_.erase(path_iter);
   }
 
   // New entry: append a new slot to all SoA arrays.
@@ -79,38 +67,27 @@ void PathStorage::InsertPath(uint64_t id, const std::string &path,
   filename_start_.push_back(filename_start_offset);
   extension_start_.push_back(extension_start_offset);
   is_deleted_.push_back(0);                     // 0 = not deleted
-  is_directory_.push_back(isDirectory ? 1 : 0); // 0 = file, 1 = directory
+  is_directory_.push_back(isDirectory ? 1 : 0);  // 0 = file, 1 = directory
 
-  id_to_path_index_[id] = idx;
-
-  // Postcondition: all SoA arrays must remain the same length after insertion.
   AssertSoAInvariant("SoA arrays must remain synchronized after InsertPath");
+  return idx;
 }
 
-bool PathStorage::RemovePath(uint64_t id) {
-  auto path_iter = id_to_path_index_.find(id);
-  if (path_iter == id_to_path_index_.end()) {
+bool PathStorage::RemovePathByIndex(size_t index) {
+  if (index >= path_offsets_.size()) {
     return false;
   }
-
-  if (const size_t idx = path_iter->second; is_deleted_[idx] == 0) {
-    is_deleted_[idx] = 1;
-    deleted_count_.fetch_add(1, std::memory_order_relaxed);
-    return true;
+  if (is_deleted_[index] != 0) {
+    return false;
   }
-  // Already deleted
-  return false;
-}
-
-void PathStorage::UpdatePath(uint64_t id, const std::string &newPath, bool isDirectory) {  // NOLINT(readability-identifier-naming) - Public API parameter names (id, newPath, isDirectory)
-  // Remove old entry and insert new one
-  // Note: We intentionally ignore RemovePath's return value - it doesn't matter if the old path existed
-  (void)RemovePath(id);
-  InsertPath(id, newPath, isDirectory);
+  is_deleted_[index] = 1;
+  deleted_count_.fetch_add(1, std::memory_order_relaxed);
+  return true;
 }
 
 void PathStorage::UpdatePrefix(std::string_view oldPrefix,  // NOLINT(readability-identifier-naming) - Public API parameter name
-                                std::string_view newPrefix) {  // NOLINT(readability-identifier-naming) - Public API parameter name
+                                std::string_view newPrefix,  // NOLINT(readability-identifier-naming) - Public API parameter name
+                                const std::function<void(uint64_t file_id, size_t new_index)>& on_index_changed) {  // NOLINT(readability-identifier-naming) - Public API parameter name
   // Collect updates first to avoid invalidating pointers/iterators due to
   // reallocation
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - path default-initialized then assigned in push_back
@@ -118,6 +95,7 @@ void PathStorage::UpdatePrefix(std::string_view oldPrefix,  // NOLINT(readabilit
     uint64_t file_id = 0;
     std::string path;
     bool is_directory = false;
+    size_t index = 0;
   };
   std::vector<UpdateInfo> updates_full{};
   updates_full.reserve(100);  // NOLINT(readability-magic-numbers) - Heuristic capacity
@@ -130,7 +108,7 @@ void PathStorage::UpdatePrefix(std::string_view oldPrefix,  // NOLINT(readabilit
       continue;
     }
 
-    const char *path = &path_storage_[path_offsets_[i]];
+    const char* path = &path_storage_[path_offsets_[i]];
     if (const size_t path_len = std::strlen(path); path_len < old_len) {  // NOSONAR(cpp:S1081) - Safe: path_storage_ entries are null-terminated (see AppendString)
       continue;
     }
@@ -139,13 +117,18 @@ void PathStorage::UpdatePrefix(std::string_view oldPrefix,  // NOLINT(readabilit
       new_path_str.append(path + old_len);
 
       updates_full.push_back(
-          {path_ids_[i], std::move(new_path_str), (is_directory_[i] == 1)});
+          {path_ids_[i], std::move(new_path_str), (is_directory_[i] == 1), i});
     }
   }
 
-  // Apply updates
-  for (const auto &update : updates_full) {
-    InsertPath(update.file_id, update.path, update.is_directory);
+  // Apply updates (pass existing index for in-place when possible).
+  // When the new path is longer than the slot, InsertPath tombstones the old slot and appends
+  // a new one; we must notify the caller so FileEntry.path_storage_index can be updated.
+  for (const auto& update : updates_full) {
+    const size_t new_index = InsertPath(update.file_id, update.path, update.is_directory, update.index);
+    if (new_index != update.index && on_index_changed) {
+      on_index_changed(update.file_id, new_index);
+    }
   }
 }
 
@@ -171,41 +154,6 @@ PathStorage::SoAView PathStorage::GetReadOnlyView() const {
   return view;
 }
 
-std::string PathStorage::GetPath(uint64_t id) const {
-  auto path_iter = id_to_path_index_.find(id);
-  if (path_iter == id_to_path_index_.end()) {
-    return "";
-  }
-
-  const size_t idx = path_iter->second;
-  assert(idx < path_offsets_.size());
-  assert(path_offsets_[idx] < path_storage_.size());
-  if (is_deleted_[idx] != 0) {
-    return "";
-  }
-
-  // Direct pointer access to contiguous buffer
-  return {&path_storage_[path_offsets_[idx]]};
-}
-
-std::string_view PathStorage::GetPathView(uint64_t id) const {
-  auto path_iter = id_to_path_index_.find(id);
-  if (path_iter == id_to_path_index_.end()) {
-    return {};
-  }
-
-  const size_t idx = path_iter->second;
-  if (idx >= path_offsets_.size() || is_deleted_[idx] != 0) {
-    return {};
-  }
-
-  assert(idx < path_offsets_.size());
-  assert(is_deleted_[idx] == 0);
-  // Zero-copy access to contiguous buffer
-  const char *path_start = &path_storage_[path_offsets_[idx]];
-  return {path_start};
-}
-
 std::string_view PathStorage::GetPathByIndex(size_t index) const {
   if (index >= path_offsets_.size() || is_deleted_[index] != 0) {
     return {};
@@ -217,15 +165,7 @@ std::string_view PathStorage::GetPathByIndex(size_t index) const {
   return {path_start};
 }
 
-size_t PathStorage::GetIndexForId(uint64_t file_id) const {
-  auto path_iter = id_to_path_index_.find(file_id);
-  if (path_iter == id_to_path_index_.end()) {
-    return SIZE_MAX;
-  }
-  return path_iter->second;
-}
-
-void PathStorage::RebuildPathBuffer() {
+void PathStorage::RebuildPathBuffer(const std::function<void(uint64_t file_id, size_t index)>& on_rebuilt_entry) {
   rebuild_count_.fetch_add(1, std::memory_order_relaxed);
 
   // Collect all non-deleted entries
@@ -243,7 +183,7 @@ void PathStorage::RebuildPathBuffer() {
   // Collect non-deleted entries
   for (size_t i = 0; i < path_ids_.size(); ++i) {
     if (is_deleted_[i] == 0) {
-      const char *path = &path_storage_[path_offsets_[i]];
+      const char* path = &path_storage_[path_offsets_[i]];
       entries.push_back({path_ids_[i], std::string(path), filename_start_[i],
                          extension_start_[i], (is_directory_[i] == 1)});
     }
@@ -253,7 +193,7 @@ void PathStorage::RebuildPathBuffer() {
 
   // Reserve to avoid reallocations during append (each resize can trigger memcpy)
   size_t total_path_bytes = 0;
-  for (const auto &entry : entries) {
+  for (const auto& entry : entries) {
     total_path_bytes += entry.path.length() + 1;  // +1 for null terminator
   }
   path_storage_.reserve(total_path_bytes);
@@ -264,8 +204,8 @@ void PathStorage::RebuildPathBuffer() {
   is_deleted_.reserve(entries.size());
   is_directory_.reserve(entries.size());
 
-  // Rebuild from collected entries
-  for (const auto &entry : entries) {
+  // Rebuild from collected entries; notify caller so they can update path_storage_index
+  for (const auto& entry : entries) {
     const size_t offset = AppendString(entry.path);
     const size_t idx = path_offsets_.size();
 
@@ -276,11 +216,11 @@ void PathStorage::RebuildPathBuffer() {
     is_deleted_.push_back(0);
     is_directory_.push_back(entry.is_directory ? 1 : 0);
 
-    id_to_path_index_[entry.file_id] = idx;
+    on_rebuilt_entry(entry.file_id, idx);
   }
 
   LOG_INFO_BUILD("PathStorage::RebuildPathBuffer: Rebuilt " << entries.size()
-                                                             << " entries");
+                                                            << " entries");
 }
 
 void PathStorage::ClearAll() {
@@ -299,8 +239,6 @@ void PathStorage::ClearAll() {
   is_deleted_.shrink_to_fit();
   is_directory_.clear();
   is_directory_.shrink_to_fit();
-  id_to_path_index_.clear();
-  id_to_path_index_.rehash(0); // For hash_map, rehash(0) releases memory
 
   // Reset deleted count
   deleted_count_.store(0, std::memory_order_relaxed);
@@ -374,15 +312,6 @@ void PathStorage::ParsePathOffsets(std::string_view path,
 // Helper to create empty PathComponentsView (used for error cases)
 static PathStorage::PathComponentsView MakeEmptyPathComponentsView() {
   return {};
-}
-
-PathStorage::PathComponentsView PathStorage::GetPathComponents(uint64_t id) const {
-  const size_t idx = GetIndexForId(id);
-  if (idx == SIZE_MAX) {
-    // Not found - return empty views
-    return MakeEmptyPathComponentsView();
-  }
-  return GetPathComponentsByIndex(idx);
 }
 
 PathStorage::PathComponentsView PathStorage::GetPathComponentsByIndex(size_t index) const {

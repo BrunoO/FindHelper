@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -77,6 +78,8 @@ struct FileEntry {
   bool isDirectory = false;  // NOLINT(readability-identifier-naming) - see comment above
   mutable LazyFileSize fileSize{}; // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
   mutable LazyFileTime lastModificationTime{}; // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
+  // Index into PathStorage SoA for this entry's path. SIZE_MAX = not set (e.g. before path inserted).
+  size_t path_storage_index = static_cast<size_t>(-1);  // NOLINT(readability-identifier-naming) - project convention: snake_case_
 };
 
 // Core data storage for FileIndex
@@ -114,6 +117,10 @@ public:
   // Update operations (assume lock is already held, methods are const because FileEntry fields are mutable)
   void UpdateFileSize(uint64_t id, uint64_t size);
   void UpdateModificationTime(uint64_t id, const FILETIME& time);
+
+  // Set PathStorage SoA index for an entry (used after InsertPath / RebuildPathBuffer).
+  // Caller must hold unique_lock on mutex.
+  void SetPathStorageIndex(uint64_t id, size_t index);
 
   // String pool for extensions
   const std::string* InternExtension(std::string_view ext);

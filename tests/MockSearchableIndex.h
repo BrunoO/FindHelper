@@ -110,8 +110,8 @@ public:
     // Store entry
     entries_[id] = entry;
 
-    // Add to path storage
-    path_storage_.InsertPath(id, std::string(full_path), is_directory);
+    // Add to path storage (mock does not use path_storage_index in storage_)
+    (void)path_storage_.InsertPath(id, std::string(full_path), is_directory, std::nullopt);
   }
 
   /**

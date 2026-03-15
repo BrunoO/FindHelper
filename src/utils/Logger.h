@@ -134,26 +134,26 @@ public:
     }
 #elif defined(__linux__)
     // Linux: Read VmRSS (resident set size) from /proc/self/status; value is in kB
-    std::ifstream status_file("/proc/self/status");
-    if (status_file.is_open()) {
+    if (std::ifstream status_file("/proc/self/status"); status_file.is_open()) {
       std::string line;
       while (std::getline(status_file, line)) {
-        if (line.compare(0, 6, "VmRSS:") == 0) {
-          size_t pos = 6;
-          while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t')) {
-            ++pos;
-          }
-          unsigned long value_kb = 0;
-          if (pos < line.size() && std::isdigit(static_cast<unsigned char>(line[pos])) != 0) {
-            const char* start = line.c_str() + pos;
-            char* end = nullptr;
-            value_kb = std::strtoul(start, &end, 10);
-            if (end != start && value_kb > 0) {
-              return static_cast<size_t>(value_kb) * 1024ULL;
-            }
-          }
+        if (line.compare(0, 6, "VmRSS:") != 0) {
+          continue;
+        }
+        size_t pos = 6;
+        while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t')) {
+          ++pos;
+        }
+        if (pos >= line.size() || std::isdigit(static_cast<unsigned char>(line[pos])) == 0) {
           break;
         }
+        const char* start = line.c_str() + pos;
+        char* end = nullptr;
+        const unsigned long value_kb = std::strtoul(start, &end, 10);
+        if (end != start && value_kb > 0) {
+          return value_kb * 1024ULL;
+        }
+        break;
       }
     }
 #endif  // _WIN32 / __APPLE__ / __linux__

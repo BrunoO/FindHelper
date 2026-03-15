@@ -1570,9 +1570,10 @@ if(BUILD_TESTS)
         add_test(NAME IndexOperationsTests COMMAND index_operations_tests)
         message(STATUS "  Test executable: index_operations_tests")
 
-        # PathOperations tests
+        # PathOperations tests (PathOperations now depends on FileIndexStorage for path_storage_index)
         add_executable(path_operations_tests
             tests/PathOperationsTests.cpp
+            src/index/FileIndexStorage.cpp
             src/path/PathOperations.cpp
             src/path/PathStorage.cpp
             src/path/PathUtils.cpp
