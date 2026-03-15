@@ -183,5 +183,4 @@ TEST_CASE("StreamingResultsCollector - Thread Safety") {
     total_collected += final_batch.size();
 
     CHECK(total_collected == num_threads * results_per_thread);
-    CHECK(collector.GetAllResults().size() == num_threads * results_per_thread);
 }

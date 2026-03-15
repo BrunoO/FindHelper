@@ -776,7 +776,7 @@ TEST_SUITE("FileIndex Search Strategies") {
         std::atomic<bool> writer_error{false};  // NOSONAR(cpp:S6012) - C++17; std::atomic has no CTAD until C++20
         std::atomic<bool> reader_error{false};   // NOSONAR(cpp:S6012) - C++17; std::atomic has no CTAD until C++20
 
-        auto writer_task = [&index, &writer_error, kWriterIterations, kChurnIdBase, kChurnSlotCount]() {
+        auto writer_task = [&index, &writer_error, kWriterIterations, kChurnIdBase, kChurnSlotCount]() {  // NOSONAR(cpp:S1481) - captures used in loop body; Sonar false positive
           for (int i = 0; i < kWriterIterations && !writer_error.load(std::memory_order_relaxed); ++i) {
             const uint64_t id = kChurnIdBase + static_cast<uint64_t>(i % kChurnSlotCount);
             const std::string name = "stress_" + std::to_string(id) + ".txt";
@@ -785,14 +785,14 @@ TEST_SUITE("FileIndex Search Strategies") {
           }
         };
 
-        auto reader_task = [&index, &reader_error, kReaderIterations]() {
+        auto reader_task = [&index, &reader_error, kReaderIterations]() {  // NOSONAR(cpp:S1481) - kReaderIterations used in loop bound
           for (int i = 0; i < kReaderIterations && !reader_error.load(std::memory_order_relaxed); ++i) {
             try {
               auto futures = index.SearchAsyncWithData("file_", 2, nullptr, "", nullptr, false, false, nullptr);
               for (auto& f : futures) {
                 (void)f.get();
               }
-            } catch (const std::exception&) {
+            } catch (const std::exception&) {  // NOSONAR(cpp:S1181) - Stress test: record any std exception; catch(...) below for rest
               reader_error.store(true, std::memory_order_relaxed);
             } catch (...) {  // NOSONAR(cpp:S2738,cpp:S1181) - Stress test: record any exception (e.g. future_error, assert) from concurrent search
               reader_error.store(true, std::memory_order_relaxed);

@@ -15,7 +15,7 @@
 #include "filters/TimeFilter.h"  // TimeFilter enum (separated for testability)
 #include "imgui.h"
 #include "search/SearchInputField.h"
-#include "search/SearchWorker.h"
+#include "search/SearchTypes.h"
 #include "utils/HashMapAliases.h"
 
 // Forward declaration to avoid circular include with SearchTypes.h

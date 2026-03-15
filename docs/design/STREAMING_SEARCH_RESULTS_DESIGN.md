@@ -22,11 +22,11 @@ Streaming search results allow the UI to show partial results incrementally whil
 ## Architecture Overview
 
 ```
-┌─────────────────┐     AddResult()      ┌──────────────────────────┐     GetAllPendingBatches()     ┌─────────────────┐
+┌─────────────────┐     AddResult()      ┌──────────────────────────┐     GetPendingBatchesUpTo()     ┌─────────────────┐
 │  SearchWorker   │ ──────────────────► │ StreamingResultsCollector│ ◄───────────────────────────── │ SearchController│
 │  (worker thread)│     MarkSearchComplete│  (mutex + atomics)       │     (once per frame, UI thread)│  (UI thread)     │
 └─────────────────┘     SetError()      └──────────────────────────┘                                └────────┬────────┘
-        │                              all_results_ / current_batch_ / pending_batches_                        │
+        │                              current_batch_ / pending_batches_ (no full copy)                        │
         │                              HasNewBatch(), IsSearchComplete(), HasError()                           │
         │                                                                                                     ▼
         │                                                                                    GuiState: partialResults,
@@ -38,8 +38,8 @@ Streaming search results allow the UI to show partial results incrementally whil
 ```
 
 - **Producer:** `SearchWorker` (single background thread) runs the search, consumes futures in completion order, and for each chunk calls `ConvertSearchResultData` then `collector.AddResult(...)`. On exception it calls `collector.SetError(...)` and drains remaining futures; it always calls `collector.MarkSearchComplete()` before returning.
-- **Collector:** `StreamingResultsCollector` holds `all_results_`, `current_batch_`, and `pending_batches_` under a mutex; flushes to pending by size or interval; exposes `GetAllPendingBatches()` for the UI and `GetAllResults()` for the final handoff.
-- **Consumer:** `SearchController::PollResults` (UI thread, once per frame) checks `GetStreamingCollector()`; if present, calls `GetAllPendingBatches()`, appends to `state.partialResults`, and on `IsSearchComplete()` calls `FinalizeStreamingSearchComplete` which uses `collector.GetAllResults()` (not `partialResults`) as the canonical source, then replaces `state.searchResults` and discards the collector.
+- **Collector:** `StreamingResultsCollector` holds `current_batch_` and `pending_batches_` under a mutex (no duplicate full copy); flushes to pending by size or interval; exposes `GetAllPendingBatches()` / `GetPendingBatchesUpTo()` for the UI.
+- **Consumer:** `SearchController::PollResults` (UI thread, once per frame) checks `GetStreamingCollector()`; if present, calls `GetPendingBatchesUpTo()`, appends to `state.partialResults` and to `state.streamingResultsAccumulator`. On `IsSearchComplete()` calls `FinalizeStreamingSearchComplete(state, file_index)` which uses `state.streamingResultsAccumulator` as the canonical source, then replaces `state.searchResults` and discards the collector.
 
 ---
 
@@ -47,10 +47,10 @@ Streaming search results allow the UI to show partial results incrementally whil
 
 | Component | File(s) | Role |
 |-----------|---------|------|
-| **StreamingResultsCollector** | `src/search/StreamingResultsCollector.h`, `.cpp` | Batches results; producer calls `AddResult` / `MarkSearchComplete` / `SetError`; consumer calls `HasNewBatch`, `GetAllPendingBatches`, `IsSearchComplete`, `HasError`, `GetAllResults`. |
+| **StreamingResultsCollector** | `src/search/StreamingResultsCollector.h`, `.cpp` | Batches results; producer calls `AddResult` / `MarkSearchComplete` / `SetError`; consumer calls `HasNewBatch`, `GetAllPendingBatches`, `GetPendingBatchesUpTo`, `IsSearchComplete`, `HasError`. No full-result copy; controller accumulates for finalization. |
 | **SearchWorker** | `src/search/SearchWorker.h`, `.cpp` | When `stream_partial_results_` is true, creates a `StreamingResultsCollector`, runs `ProcessStreamingSearchFutures` (completion-order loop), pushes to collector; exposes `GetStreamingCollector()`. |
 | **SearchController** | `src/search/SearchController.cpp` | `PollResults()`: if collector non-null, handles error path (copy error, move partial → searchResults, clear state), consumes `GetAllPendingBatches()` into `partialResults`, on `IsSearchComplete()` calls `UpdateSearchResults` or clears. `TriggerManualSearch` / debounced / auto-refresh call `ClearSearchResults` and `SetStreamPartialResults(settings.streamPartialResults)`. |
-| **GuiState** | `src/gui/GuiState.h`, `.cpp` | Holds `partialResults`, `resultsComplete`, `resultsBatchNumber`, `showingPartialResults`, `searchError`; reset in `ClearInputs` and at start of each search. |
+| **GuiState** | `src/gui/GuiState.h`, `.cpp` | Holds `partialResults`, `streamingResultsAccumulator`, `resultsComplete`, `resultsBatchNumber`, `showingPartialResults`, `searchError`; accumulator cleared at start of streaming and after finalization/error. |
 | **SearchResultsService** | `src/search/SearchResultsService.cpp` | `GetDisplayResults(state)`: if `!resultsComplete && showingPartialResults` returns `&state.partialResults`; otherwise returns filter caches or `&state.searchResults`. |
 | **StatusBar** | `src/ui/StatusBar.cpp` | When streaming, shows "Displayed: N" (orange) and "(no filters, no sort yet)". |
 | **ResultsTable** | `src/ui/ResultsTable.cpp` | Uses `GetDisplayResults(state)` (after `HandleTableSorting`); renders whatever vector is returned. |
@@ -67,7 +67,7 @@ Streaming search results allow the UI to show partial results incrementally whil
    `SearchWorker::WorkerThread` creates a `StreamingResultsCollector` when `stream_partial_results_` is true, then runs `RunFilteredSearchPath`, which calls `ProcessStreamingSearchFutures`: for each ready future, `.get()`, convert chunk to `SearchResult`, `collector.AddResult(...)`. On exception: `collector.SetError(...)`, cancel, drain remaining futures. Always `collector.MarkSearchComplete()` at exit.
 
 3. **Poll (every frame)**  
-   `SearchController::PollResults` sees `GetStreamingCollector()` non-null. If `HasError()`, copy error to `state.searchError`, move `partialResults` → `searchResults` (or clear), invalidate caches, set `resultsComplete`, `showingPartialResults = false`, `searchActive = false`, discard collector when worker idle, return. Otherwise call `GetAllPendingBatches()`; if non-empty, append to `state.partialResults`, set `showingPartialResults = true`, `resultsComplete = false`. If `IsSearchComplete()`, call `FinalizeStreamingSearchComplete` which uses `collector.GetAllResults()` (authoritative; `partialResults` can miss batches due to timing), replaces `state.searchResults`, sets `resultsComplete`, `showingPartialResults = false`, `searchActive = false`, and discards the collector when worker is idle.
+   `SearchController::PollResults` sees `GetStreamingCollector()` non-null. If `HasError()`, copy error to `state.searchError`, clear `streamingResultsAccumulator`, move `partialResults` → `searchResults` (or clear), invalidate caches, set `resultsComplete`, `showingPartialResults = false`, `searchActive = false`, discard collector when worker idle, return. Otherwise call `GetPendingBatchesUpTo(...)`; if non-empty, append to `state.partialResults` and to `state.streamingResultsAccumulator`, set `showingPartialResults = true`, `resultsComplete = false`. If `IsSearchComplete()`, call `FinalizeStreamingSearchComplete(state, file_index)` which uses `state.streamingResultsAccumulator` (authoritative), replaces `state.searchResults`, clears the accumulator, sets `resultsComplete`, `showingPartialResults = false`, `searchActive = false`, and discards the collector when worker is idle.
 
 4. **Display**  
    `GetDisplayResults(state)` returns `&state.partialResults` when `!resultsComplete && showingPartialResults`; otherwise returns filtered or raw `searchResults`. ResultsTable and StatusBar use that pointer; during streaming they show partial count and "(no filters, no sort yet)".
@@ -91,7 +91,7 @@ The following invariants are asserted in Debug builds (see implementation):
 ## Threading
 
 - **Producer:** Only the SearchWorker thread calls `AddResult`, `MarkSearchComplete`, `SetError` on the collector.
-- **Consumer:** Only the UI thread (from `PollResults`) calls `HasNewBatch`, `GetAllPendingBatches`, `IsSearchComplete`, `HasError`, `GetError`, `GetAllResults`. `GetDisplayResults` and table/status bar rendering run on the UI thread.
+- **Consumer:** Only the UI thread (from `PollResults`) calls `HasNewBatch`, `GetAllPendingBatches`, `GetPendingBatchesUpTo`, `IsSearchComplete`, `HasError`, `GetError`. `GetDisplayResults` and table/status bar rendering run on the UI thread.
 - **Collector:** Synchronization is via `mutex_` for shared vectors and atomics (`has_new_batch_`, `search_complete_`, `has_error_`) for lock-free reads where appropriate.
 
 ---
@@ -119,12 +119,12 @@ Functions involved in the streaming pipeline, with file, purpose, callers, and i
 | Function | Purpose | Caller / thread |
 |----------|---------|-----------------|
 | **Constructor** `StreamingResultsCollector(size_t batch_size, uint32_t notification_interval_ms)` | Creates collector with batch size (default 500) and flush interval in ms (default 50). | SearchWorker (worker thread), when starting a streaming search. |
-| **AddResult**(`SearchResult&& result`) | Appends one result to `all_results_` and `current_batch_`; flushes batch when size or interval reached. **Precondition:** must not be called after `MarkSearchComplete` or `SetError` (assert in Debug). | SearchWorker only, from `ProcessStreamingSearchFutures` or the non-streaming handoff path. |
+| **AddResult**(`SearchResult&& result`) | Appends one result to `current_batch_`; flushes batch when size or interval reached. **Precondition:** must not be called after `MarkSearchComplete` or `SetError` (assert in Debug). | SearchWorker only, from `ProcessStreamingSearchFutures` or the non-streaming handoff path. |
 | **MarkSearchComplete**() | Marks search finished: flushes current batch, sets `search_complete_` true. Must be called exactly once per search (normal or error exit). | SearchWorker, at end of `ProcessStreamingSearchFutures` or equivalent path. |
 | **SetError**(`std::string_view error_message`) | Stores error message, sets `has_error_` and `search_complete_` true, flushes current batch. Used when a search future throws. | SearchWorker, in `ProcessStreamingSearchFutures` catch block. |
 | **HasNewBatch**() | Returns true if there is at least one pending batch for the UI. Lock-free (atomic). | SearchController::PollResults (UI thread). |
-| **GetAllPendingBatches**() | Moves all pending batches into a single vector, clears `pending_batches_`, clears `has_new_batch_`. Call once per frame from UI. | SearchController::PollResults (UI thread). |
-| **GetAllResults**() | Returns const reference to `all_results_` (every result collected). Used for final handoff when search completes. | SearchController (when finalizing streaming complete). |
+| **GetAllPendingBatches**() | Moves all pending batches into a single vector, clears `pending_batches_`, clears `has_new_batch_`. | SearchController (UI thread). |
+| **GetPendingBatchesUpTo**(max_results) | Returns up to max_results pending items; remainder stay in pending. Used to cap UI work per frame. | SearchController::ConsumePendingStreamingBatches (UI thread). |
 | **IsSearchComplete**() | True after `MarkSearchComplete` or `SetError`. | SearchController::PollResults (UI thread). |
 | **HasError**() / **GetError**() | True after `SetError`; returns stored error message. | SearchController::PollResults (UI thread). |
 | **FlushCurrentBatch**() (private) | Moves `current_batch_` into `pending_batches_`, clears `current_batch_`, sets `has_new_batch_` true. Called by AddResult (when batch full or interval elapsed), MarkSearchComplete, SetError. | Internal only. |
@@ -145,9 +145,9 @@ Functions involved in the streaming pipeline, with file, purpose, callers, and i
 | Function | Purpose | Caller / thread |
 |----------|---------|-----------------|
 | **PollResults**(GuiState&, SearchWorker&) | Main polling entry: if `GetStreamingCollector()` non-null, runs streaming branch. **Entry invariant (Debug):** `!(state.showingPartialResults && state.resultsComplete)`. If `collector.HasError()`, calls `ApplyStreamingErrorToState`; else consumes batches via `ConsumePendingStreamingBatches`; if `collector.IsSearchComplete()`, calls `FinalizeStreamingSearchComplete`. Non-streaming path: uses `HasNewResults()` / `GetResults()` and `ApplyNonStreamingSearchResults`. | SearchController::Update (UI thread), once per frame. |
-| **ApplyStreamingErrorToState**(state, collector) | Copies `collector.GetError()` to `state.searchError`; if partial results exist, moves them to `state.searchResults`; clears filter caches; sets `resultsComplete`, `showingPartialResults = false`, `searchActive = false`. **Postcondition (Debug):** `resultsComplete && !showingPartialResults && !searchActive && !searchError.empty()`. | PollResults (streaming branch). |
-| **ConsumePendingStreamingBatches**(state, collector) | Calls `collector.GetAllPendingBatches()`; if non-empty, appends to `state.partialResults`, sets `showingPartialResults = true`, `resultsComplete = false`, clears `searchError`, increments `resultsBatchNumber`, sets `resultsUpdated`. | PollResults (streaming branch). |
-| **FinalizeStreamingSearchComplete**(state, collector, file_index) | Uses `collector.GetAllResults()` as canonical source (not `partialResults`; accumulated partial can miss batches). Replaces `searchResults` via `UpdateSearchResults`, clears filter caches, sets `resultsComplete`, `showingPartialResults = false`, `searchActive = false`, resets sort state. **Postcondition (Debug):** `resultsComplete && !showingPartialResults && !searchActive`. | PollResults (streaming branch). |
+| **ApplyStreamingErrorToState**(state, collector) | Copies `collector.GetError()` to `state.searchError`; clears `state.streamingResultsAccumulator`; if partial results exist, moves them to `state.searchResults`; clears filter caches; sets `resultsComplete`, `showingPartialResults = false`, `searchActive = false`. **Postcondition (Debug):** `resultsComplete && !showingPartialResults && !searchActive && !searchError.empty()`. | PollResults (streaming branch). |
+| **ConsumePendingStreamingBatches**(state, collector) | Calls `collector.GetPendingBatchesUpTo(kMaxResultsPerFrame)`; if non-empty, appends to `state.partialResults` and to `state.streamingResultsAccumulator`, sets `showingPartialResults = true`, `resultsComplete = false`, clears `searchError`, increments `resultsBatchNumber`, sets `resultsUpdated`. | PollResults (streaming branch). |
+| **FinalizeStreamingSearchComplete**(state, file_index) | Uses `state.streamingResultsAccumulator` as canonical source. Replaces `searchResults` via `UpdateSearchResults`, clears accumulator and filter caches, sets `resultsComplete`, `showingPartialResults = false`, `searchActive = false`, resets sort state. **Postcondition (Debug):** `resultsComplete && !showingPartialResults && !searchActive`. | PollResults (streaming branch). |
 | **Update**(state, search_worker, monitor, is_index_building, settings) | Frame entry: may call `ClearSearchResults`, set `partialResults`/`resultsComplete`/`showingPartialResults`, `SetStreamPartialResults(settings.streamPartialResults)`, `StartSearch`; then always calls `PollResults`. | Main loop (UI thread). |
 | **ClearSearchResults**(state, reason) | Clears `searchResults`, partialResults (at search start), filter caches, sort state. Used at start of debounced/manual/auto-refresh search. | Update, TriggerManualSearch, HandleAutoRefresh. |
 
@@ -161,7 +161,8 @@ Functions involved in the streaming pipeline, with file, purpose, callers, and i
 
 | Field | Type | Meaning |
 |-------|------|--------|
-| **partialResults** | `std::vector<SearchResult>` | Incremental results during streaming; appended each frame from `GetAllPendingBatches()`. |
+| **partialResults** | `std::vector<SearchResult>` | Incremental results during streaming; appended each frame from `GetPendingBatchesUpTo()`. |
+| **streamingResultsAccumulator** | `std::vector<SearchResultData>` | Accumulated raw data from each consumed batch; used by `FinalizeStreamingSearchComplete` as canonical full set (no duplicate copy in collector). Cleared at start of streaming and after finalization/error. |
 | **resultsComplete** | bool | True when search is finished (streaming or not); false while streaming. |
 | **resultsBatchNumber** | uint64_t | Incremented each time new batches are appended to partialResults (optional UI hint). |
 | **showingPartialResults** | bool | True when the table is showing `partialResults` (no sort/filter yet). |

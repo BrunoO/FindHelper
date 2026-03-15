@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <optional>
 #include <string>
@@ -117,8 +118,9 @@ public:
    *
    * Used when renaming/moving directories to update all descendant paths.
    */
+  template<typename OnIndexChanged>
   void UpdatePrefix(std::string_view oldPrefix, std::string_view newPrefix,  // NOLINT(readability-identifier-naming) - Public API parameter names
-                    const std::function<void(uint64_t file_id, size_t new_index)>& on_index_changed = {});  // NOLINT(readability-identifier-naming) - Public API parameter names
+                    const OnIndexChanged& on_index_changed);  // NOLINT(readability-identifier-naming) - Public API parameter names
 
   /**
    * @brief Get a read-only view of SoA arrays for search operations
@@ -176,7 +178,8 @@ public:
    * Calls on_rebuilt_entry(file_id, new_index) for each kept entry so caller can
    * update FileEntry.path_storage_index.
    */
-  void RebuildPathBuffer(const std::function<void(uint64_t file_id, size_t index)>& on_rebuilt_entry);
+  template<typename OnRebuiltEntry>
+  void RebuildPathBuffer(const OnRebuiltEntry& on_rebuilt_entry);
 
   /**
    * @brief Clear all entries
@@ -243,4 +246,99 @@ private:
   static constexpr size_t kInitialPathArrayCapacity =
       500000U;  // Sized for typical target of 500K paths
 };
+
+// Template implementations (S5213: avoid std::function for zero-overhead callables)
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - SoA indices bounded by size(); same as .cpp
+template<typename OnIndexChanged>
+void PathStorage::UpdatePrefix(std::string_view oldPrefix,  // NOLINT(readability-identifier-naming)
+                               std::string_view newPrefix,  // NOLINT(readability-identifier-naming)
+                               const OnIndexChanged& on_index_changed) {  // NOLINT(readability-identifier-naming)
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - path default-initialized then assigned in push_back
+  struct UpdateInfo {
+    uint64_t file_id = 0;
+    std::string path;
+    bool is_directory = false;
+    size_t index = 0;
+  };
+  std::vector<UpdateInfo> updates_full{};
+  updates_full.reserve(100);  // NOLINT(readability-magic-numbers) - Heuristic capacity
+
+  const size_t count = path_ids_.size();
+  const size_t old_len = oldPrefix.length();
+
+  for (size_t i = 0; i < count; ++i) {
+    if (is_deleted_[i] != 0) {
+      continue;
+    }
+    const char* path = &path_storage_[path_offsets_[i]];
+    if (const size_t path_len = std::strlen(path); path_len < old_len) {  // NOSONAR(cpp:S1081) - Safe: path_storage_ entries are null-terminated
+      continue;
+    }
+    if (std::string_view(path, old_len) == oldPrefix) {
+      std::string new_path_str(newPrefix);
+      new_path_str.append(path + old_len);
+      updates_full.push_back(
+          {path_ids_[i], std::move(new_path_str), (is_directory_[i] == 1), i});
+    }
+  }
+
+  for (const auto& update : updates_full) {
+    const size_t new_index = InsertPath(update.file_id, update.path, update.is_directory, update.index);
+    if (new_index != update.index) {
+      on_index_changed(update.file_id, new_index);
+    }
+  }
+}
+
+template<typename OnRebuiltEntry>
+void PathStorage::RebuildPathBuffer(const OnRebuiltEntry& on_rebuilt_entry) {
+  rebuild_count_.fetch_add(1, std::memory_order_relaxed);
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - path default-initialized then assigned in push_back
+  struct Entry {
+    uint64_t file_id = 0;
+    std::string path;
+    size_t filename_start = 0;
+    size_t extension_start = 0;
+    bool is_directory = false;
+  };
+  std::vector<Entry> entries{};
+  entries.reserve(path_ids_.size() - deleted_count_.load(std::memory_order_relaxed));
+
+  for (size_t i = 0; i < path_ids_.size(); ++i) {
+    if (is_deleted_[i] == 0) {
+      const char* path = &path_storage_[path_offsets_[i]];
+      entries.push_back({path_ids_[i], std::string(path), filename_start_[i],
+                         extension_start_[i], (is_directory_[i] == 1)});
+    }
+  }
+
+  ClearAll();
+
+  size_t total_path_bytes = 0;
+  for (const auto& entry : entries) {
+    total_path_bytes += entry.path.length() + 1;
+  }
+  path_storage_.reserve(total_path_bytes);
+  path_offsets_.reserve(entries.size());
+  path_ids_.reserve(entries.size());
+  filename_start_.reserve(entries.size());
+  extension_start_.reserve(entries.size());
+  is_deleted_.reserve(entries.size());
+  is_directory_.reserve(entries.size());
+
+  for (const auto& entry : entries) {
+    const size_t offset = AppendString(entry.path);
+    const size_t idx = path_offsets_.size();
+    path_offsets_.push_back(offset);
+    path_ids_.push_back(entry.file_id);
+    filename_start_.push_back(entry.filename_start);
+    extension_start_.push_back(entry.extension_start);
+    is_deleted_.push_back(0);
+    is_directory_.push_back(entry.is_directory ? 1 : 0);
+    on_rebuilt_entry(entry.file_id, idx);
+  }
+
+  LOG_INFO_BUILD("PathStorage::RebuildPathBuffer: Rebuilt " << entries.size() << " entries");
+}
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 

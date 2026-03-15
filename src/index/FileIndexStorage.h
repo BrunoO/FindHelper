@@ -71,15 +71,19 @@ private:
 // Represents a single file or directory in the index.
 // NOTE: name is NOT stored here. Use FileIndexStorage::GetNameCache() during
 // RecomputeAllPaths, or derive from PathStorage after the build phase.
+//
+// Layout: members ordered by alignment (largest first) to minimize padding.
+// Current size 48 bytes; previous order had 13 bytes padding (56 bytes total).
+// Saves ~8 bytes per entry (~8 MB at 1M entries), improving L3 cache hit rate.
 struct FileEntry {
   uint64_t parentID = 0;     // NOLINT(readability-identifier-naming) - camelCase kept for backward compatibility
-  uint16_t name_length = 0;  // Length of filename component; derive name as last name_length chars of PathStorage path
-  const std::string *extension = nullptr; // Interned extension pointer
-  bool isDirectory = false;  // NOLINT(readability-identifier-naming) - see comment above
-  mutable LazyFileSize fileSize{}; // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
-  mutable LazyFileTime lastModificationTime{}; // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
+  const std::string* extension = nullptr;  // Interned extension pointer
+  mutable LazyFileSize fileSize{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
+  mutable LazyFileTime lastModificationTime{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
   // Index into PathStorage SoA for this entry's path. SIZE_MAX = not set (e.g. before path inserted).
   size_t path_storage_index = static_cast<size_t>(-1);  // NOLINT(readability-identifier-naming) - project convention: snake_case_
+  uint16_t name_length = 0;  // Length of filename component; derive name as last name_length chars of PathStorage path
+  bool isDirectory = false;   // NOLINT(readability-identifier-naming) - see comment above
 };
 
 // Core data storage for FileIndex

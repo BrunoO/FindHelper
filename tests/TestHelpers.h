@@ -179,9 +179,9 @@ public:
 
 private:
   std::string old_strategy_;
-  int old_chunk_size_;
-  int old_hybrid_percent_;
-  bool settings_were_active_;
+  int old_chunk_size_ = 0;
+  int old_hybrid_percent_ = 0;
+  bool settings_were_active_ = false;
 };
 
 /**
