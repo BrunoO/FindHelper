@@ -145,12 +145,12 @@ static bool ProcessUsnRecord(PUSN_RECORD_V2 record, int& file_count,
   }
 
   // Modification time initialization:
-  // - Directories: Set to {0,0} (no meaningful modification time tracked
-  // for folders in this app)
-  // - Files: Set to kFileTimeNotLoaded sentinel (lazy-load on first
-  // access to avoid I/O during indexing) Note: USN record timestamps are
-  // always zero, so we can't use them - must load from file system later
-  FILETIME mod_time = is_directory ? FILETIME{0, 0} : kFileTimeNotLoaded;
+  // Both directories and files start as kFileTimeNotLoaded so the lazy loader
+  // fetches the real timestamp on first access via GetFileAttributesExW.
+  // FILETIME{0,0} must NOT be used — it is the Windows epoch (1601-01-01) and
+  // is indistinguishable from a real (very old) timestamp; IsNotLoaded() would
+  // return false, suppressing lazy loading and displaying the epoch in the UI.
+  FILETIME mod_time = kFileTimeNotLoaded;
   uint64_t file_size = kFileSizeNotLoaded;  // NOLINT(misc-const-correctness) - Passed by non-const pointer to MftMetadataReader::TryGetMetadata as output parameter
   bool mft_succeeded = false;  // NOLINT(misc-const-correctness) - Updated in ENABLE_MFT_METADATA_READING block when MFT succeeds
 

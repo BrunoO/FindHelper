@@ -4,8 +4,35 @@
 #include <vector>
 
 #include "index/FileIndex.h"
+#include "path/PathUtils.h"
 #include "utils/FileAttributeConstants.h"
 #include "utils/ThreadUtils.h"
+
+namespace {
+
+// Walk up path levels and add file id to every batch directory that contains it.
+// Reuses lookup_key to avoid per-level allocations. Used by ComputeSizeBatch Pass 1.
+void AccumulateAncestorDirsForFile(
+    uint64_t id,
+    std::string_view path,
+    const hash_map_t<std::string, uint64_t>& prefix_to_id,
+    hash_map_t<uint64_t, std::vector<uint64_t>>& file_ids_per_dir,
+    std::string& lookup_key) {
+  std::string_view remaining = path;
+  while (true) {
+    const auto slash = remaining.rfind(path_utils::kPathSeparator);
+    if (slash == std::string_view::npos) {
+      break;
+    }
+    lookup_key.assign(remaining.data(), slash + 1);  // NOLINT(bugprone-suspicious-stringview-data-usage) - assign(ptr, count) is safe; count is always ≤ remaining.size()
+    if (const auto it = prefix_to_id.find(lookup_key); it != prefix_to_id.end()) {
+      file_ids_per_dir[it->second].push_back(id);
+    }
+    remaining = remaining.substr(0, slash);
+  }
+}
+
+}  // namespace
 
 FolderSizeAggregator::FolderSizeAggregator(FileIndex& index)
     : index_(index) {
@@ -126,7 +153,7 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
   hash_map_t<std::string, uint64_t> prefix_to_id;
   prefix_to_id.reserve(jobs.size());
   for (const auto& job : jobs) {
-    prefix_to_id.emplace(job.folder_path + "/", job.folder_id);
+    prefix_to_id.emplace(job.folder_path + path_utils::kPathSeparatorStr, job.folder_id);
   }
 
   // Pass 1: single index scan — for each file, walk up its path to find all
@@ -147,19 +174,7 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
         if (entry.isDirectory) {
           return true;
         }
-        // Walk up path levels, checking each ancestor against the batch prefix map.
-        std::string_view remaining = path;
-        while (true) {
-          const auto slash = remaining.rfind('/');
-          if (slash == std::string_view::npos) {
-            break;
-          }
-          lookup_key.assign(remaining.data(), slash + 1);  // NOLINT(bugprone-suspicious-stringview-data-usage) - assign(ptr, count) is safe; count is always ≤ remaining.size()
-          if (const auto it = prefix_to_id.find(lookup_key); it != prefix_to_id.end()) {
-            file_ids_per_dir[it->second].push_back(id);
-          }
-          remaining = remaining.substr(0, slash);
-        }
+        AccumulateAncestorDirsForFile(id, path, prefix_to_id, file_ids_per_dir, lookup_key);
         return true;
       },
       nullptr);
