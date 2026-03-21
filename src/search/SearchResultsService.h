@@ -64,9 +64,24 @@ namespace search {
      * @brief Get display results (applying active filters)
      * During streaming (!resultsComplete && showingPartialResults), returns partialResults;
      * otherwise returns filtered cache or searchResults. See STREAMING_SEARCH_RESULTS_DESIGN.md.
+     * Inline so callers outside SearchResultsService.cpp (e.g. SearchController.cpp) can use
+     * it without introducing an ImGui link dependency in test binaries.
      * @param state GUI state (read-only)
      * @return Pointer to results to display (filtered, unfiltered, or partial during streaming)
      */
-    static const std::vector<SearchResult>* GetDisplayResults(const GuiState& state);
+    static inline const std::vector<SearchResult>* GetDisplayResults(const GuiState& state) {
+      if (!state.resultsComplete && state.showingPartialResults) {
+        return &state.partialResults;
+      }
+      if (!state.deferFilterCacheRebuild) {
+        if (state.sizeFilter != SizeFilter::None && state.sizeFilterCacheValid) {
+          return &state.sizeFilteredResults;
+        }
+        if (state.timeFilter != TimeFilter::None && state.timeFilterCacheValid) {
+          return &state.filteredResults;
+        }
+      }
+      return &state.searchResults;
+    }
   };
 }  // namespace search

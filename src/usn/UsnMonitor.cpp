@@ -40,10 +40,10 @@ void HandleFileRename(PUSN_RECORD_V2 record,
 // Helper function to update max consecutive errors using atomic compare-and-swap
 // Extracted to reduce nesting depth
 void UpdateMaxConsecutiveErrors(std::atomic<size_t>& max_consecutive_errors, size_t consecutive_errors) {  // NOLINT(readability-identifier-naming,cppcoreguidelines-avoid-non-const-global-variables) - PascalCase; check misclassifies anonymous-namespace function as global
-  size_t current_max = max_consecutive_errors.load(std::memory_order_relaxed);
+  size_t current_max = max_consecutive_errors.load();
   while (consecutive_errors > current_max) {
     if (max_consecutive_errors.compare_exchange_weak(
-            current_max, consecutive_errors, std::memory_order_relaxed)) {
+            current_max, consecutive_errors)) {
       break;
     }
   }
@@ -52,10 +52,10 @@ void UpdateMaxConsecutiveErrors(std::atomic<size_t>& max_consecutive_errors, siz
 // Helper function to update max queue depth using atomic compare-and-swap
 // Extracted to reduce nesting depth
 void UpdateMaxQueueDepth(std::atomic<size_t>& max_queue_depth, size_t queue_size) {  // NOLINT(readability-identifier-naming,cppcoreguidelines-avoid-non-const-global-variables) - PascalCase; check misclassifies anonymous-namespace function as global
-  size_t current_max = max_queue_depth.load(std::memory_order_relaxed);
+  size_t current_max = max_queue_depth.load();
   while (queue_size > current_max) {
     if (max_queue_depth.compare_exchange_weak(
-            current_max, queue_size, std::memory_order_relaxed)) {
+            current_max, queue_size)) {
       break;
     }
   }
@@ -73,7 +73,7 @@ bool HandleSystemFileFilter(PUSN_RECORD_V2 record, std::string_view filename,
 
   // Count genuine delete events even though we skip the record.
   if (record->Reason & USN_REASON_FILE_DELETE) {
-    metrics.files_deleted.fetch_add(1, std::memory_order_relaxed);
+    metrics.files_deleted.fetch_add(1);
   }
   // Evict from index on any event type: acts as a safety net in case a
   // $-prefixed file was indexed (e.g. via MFT enumeration on an older build).
@@ -109,7 +109,7 @@ bool ProcessInterestingUsnRecord(PUSN_RECORD_V2 record,
   ProcessUsnRecordReasons(record, file_ref_num, parent_ref_num, filename,
                           is_directory, file_index, metrics);
 
-  metrics.records_processed.fetch_add(1, std::memory_order_relaxed);
+  metrics.records_processed.fetch_add(1);
   return false;  // Record processed normally
 }
 
@@ -128,11 +128,11 @@ void ProcessUsnRecordReasons(PUSN_RECORD_V2 record,
     // Pass kFileTimeNotLoaded to trigger lazy loading
     file_index.Insert(file_ref_num, parent_ref_num, filename,
                       is_directory, kFileTimeNotLoaded);
-    metrics.files_created.fetch_add(1, std::memory_order_relaxed);
+    metrics.files_created.fetch_add(1);
   }
   if (record->Reason & USN_REASON_FILE_DELETE) {
     file_index.Remove(file_ref_num);
-    metrics.files_deleted.fetch_add(1, std::memory_order_relaxed);
+    metrics.files_deleted.fetch_add(1);
   }
   if (record->Reason & USN_REASON_RENAME_NEW_NAME) {
     HandleFileRename(record, file_ref_num, parent_ref_num, filename, is_directory,
@@ -148,7 +148,7 @@ void ProcessUsnRecordReasons(PUSN_RECORD_V2 record,
     if (!file_index.UpdateSize(file_ref_num)) {
       LOG_WARNING_BUILD("Failed to update file size in index: ref=" << file_ref_num);
     }
-    metrics.files_modified.fetch_add(1, std::memory_order_relaxed);
+    metrics.files_modified.fetch_add(1);
   }
 }
 
@@ -164,7 +164,7 @@ bool HandleRenameForUnknownEntry(uint64_t file_ref_num, uint64_t parent_ref_num,
   assert(false && "RENAME for unknown ID during live monitoring: missed CREATE or dropped buffer");
   // Treat as create to keep the index consistent (release-mode recovery).
   file_index.Insert(file_ref_num, parent_ref_num, filename, is_directory, kFileTimeNotLoaded);
-  metrics.files_renamed.fetch_add(1, std::memory_order_relaxed);
+  metrics.files_renamed.fetch_add(1);
   return true;
 }
 
@@ -240,7 +240,7 @@ void HandleFileRename([[maybe_unused]] PUSN_RECORD_V2 record, uint64_t file_ref_
       assert(false && "Rename failed after entry_exists confirmed: concurrent deletion or index divergence");
     }
   }
-  metrics.files_renamed.fetch_add(1, std::memory_order_relaxed);
+  metrics.files_renamed.fetch_add(1);
 }
 
 }  // anonymous namespace
@@ -267,7 +267,7 @@ bool UsnMonitor::Start() {
   // Prevent double-start: if already monitoring, stop first
   {
     std::scoped_lock guard(mutex_);  // NOLINT(readability-identifier-naming) - project convention snake_case for locals
-    if (monitoring_active_.load(std::memory_order_acquire)) {
+    if (monitoring_active_.load()) {
       LOG_WARNING("Monitoring already active, stopping existing monitoring "
                   "before restart");
     }
@@ -275,7 +275,7 @@ bool UsnMonitor::Start() {
 
   // StopMonitoring acquires its own lock, so we release ours first to avoid
   // deadlock
-  if (monitoring_active_.load(std::memory_order_acquire)) {
+  if (monitoring_active_.load()) {
     Stop();
   }
 
@@ -294,7 +294,7 @@ bool UsnMonitor::Start() {
   // Reset metrics and internal counters for new monitoring session
   metrics_.Reset();
   reader_push_count_ = 0;
-  initial_population_failed_.store(false, std::memory_order_release);
+  initial_population_failed_.store(false);
 
   // Create queue with configured size
   queue_ = std::make_unique<UsnJournalQueue>(config_.max_queue_size);
@@ -313,7 +313,7 @@ bool UsnMonitor::Start() {
   // Start the monitoring threads
   // Initial population will happen in the reader thread before monitoring
   // starts
-  monitoring_active_.store(true, std::memory_order_release);
+  monitoring_active_.store(true);
   reader_thread_ = std::thread(&UsnMonitor::ReaderThread, this);
   processor_thread_ = std::thread(&UsnMonitor::ProcessorThread, this);
 
@@ -352,12 +352,12 @@ void UsnMonitor::Stop() {  // NOLINT(readability-make-member-function-const) - S
     std::scoped_lock guard(mutex_);  // NOLINT(readability-identifier-naming) - project convention snake_case for locals
 
     // Prevent double-stop: if not monitoring, do nothing
-    if (!monitoring_active_.load(std::memory_order_acquire)) {
+    if (!monitoring_active_.load()) {
       return;
     }
 
     LOG_INFO("Stopping USN monitoring");
-    monitoring_active_.store(false, std::memory_order_release);
+    monitoring_active_.store(false);
 
     // Capture handle under lock, but close it outside the critical section to
     // avoid deadlock with ReaderThread's final cleanup block.
@@ -390,7 +390,7 @@ void UsnMonitor::Stop() {  // NOLINT(readability-make-member-function-const) - S
   {
     std::scoped_lock guard(mutex_);  // NOLINT(readability-identifier-naming)
     if (queue_ != nullptr) {
-      if (size_t dropped_count = metrics_.buffers_dropped.load(std::memory_order_relaxed); dropped_count > 0) {
+      if (size_t dropped_count = metrics_.buffers_dropped.load(); dropped_count > 0) {
         LOG_WARNING_BUILD("Queue had " << dropped_count
                                        << " dropped buffers during monitoring");
       }
@@ -413,7 +413,7 @@ size_t UsnMonitor::GetQueueSize() const {
 size_t UsnMonitor::GetDroppedBufferCount() const {
   // Use metrics counter instead of queue's internal counter
   // This avoids mutex lock and uses the authoritative source
-  return metrics_.buffers_dropped.load(std::memory_order_relaxed);
+  return metrics_.buffers_dropped.load();
 }
 
 void UsnMonitor::UpdateConfig(const MonitoringConfig &config) {
@@ -429,7 +429,7 @@ void UsnMonitor::UpdateConfig(const MonitoringConfig &config) {
 }
 
 void UsnMonitor::HandleInitializationFailure() {
-  monitoring_active_.store(false, std::memory_order_release);
+  monitoring_active_.store(false);
   init_promise_.set_value(false);
   {
     std::scoped_lock guard(mutex_);  // NOLINT(readability-identifier-naming) - project convention snake_case for locals
@@ -490,17 +490,17 @@ bool UsnMonitor::OpenVolumeAndQueryJournal(HANDLE& out_handle,
 
 bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
   LOG_INFO("Starting initial index population");
-  is_populating_index_.store(true, std::memory_order_release);
+  is_populating_index_.store(true);
   ScopedTimer timer("Initial index population");
   if (!PopulateInitialIndex(handle, file_index_, &indexed_file_count_)) {
     LOG_ERROR("Failed to populate initial index - stopping monitoring. Volume: " +
               config_.volume_path);
-    is_populating_index_.store(false, std::memory_order_release);
-    initial_population_failed_.store(true, std::memory_order_release);
+    is_populating_index_.store(false);
+    initial_population_failed_.store(true);
     HandleInitializationFailure();
     return false;
   }
-  indexed_file_count_.store(file_index_.Size(), std::memory_order_release);
+  indexed_file_count_.store(file_index_.Size());
   LOG_INFO_BUILD("Initial index populated with "
                  << indexed_file_count_.load() << " entries");
 
@@ -516,7 +516,7 @@ bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
     file_index_.RecomputeAllPaths();
   }
 
-  is_populating_index_.store(false, std::memory_order_release);
+  is_populating_index_.store(false);
 
 #ifdef _WIN32
   // SECURITY: Drop unnecessary privileges AFTER initial index population completes
@@ -528,10 +528,10 @@ bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
   if (privilege_utils::DropUnnecessaryPrivileges()) {
     LOG_INFO("Dropped unnecessary privileges - reduced attack surface");
   } else {
-    privilege_drop_failed_.store(true, std::memory_order_release);
+    privilege_drop_failed_.store(true);
     LOG_ERROR("Failed to drop privileges - shutting down for security.");
-    is_populating_index_.store(false, std::memory_order_release);
-    initial_population_failed_.store(true, std::memory_order_release);
+    is_populating_index_.store(false);
+    initial_population_failed_.store(true);
     HandleInitializationFailure();
     return false;
   }
@@ -542,23 +542,23 @@ bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
 void UsnMonitor::HandleReadJournalError(DWORD err, size_t& consecutive_errors,
                                          bool& should_exit) {
   consecutive_errors++;
-  metrics_.errors_encountered.fetch_add(1, std::memory_order_relaxed);
-  metrics_.consecutive_errors.store(consecutive_errors, std::memory_order_relaxed);
+  metrics_.errors_encountered.fetch_add(1);
+  metrics_.consecutive_errors.store(consecutive_errors);
   UpdateMaxConsecutiveErrors(metrics_.max_consecutive_errors, consecutive_errors);
 
   if (err == ERROR_JOURNAL_ENTRY_DELETED) {
-    metrics_.journal_wrap_errors.fetch_add(1, std::memory_order_relaxed);
+    metrics_.journal_wrap_errors.fetch_add(1);
     LOG_INFO("USN journal entry deleted (journal wrapped), continuing "
              "from current position");
     std::this_thread::sleep_for(
         std::chrono::milliseconds(usn_monitor_constants::kJournalWrapDelayMs));
     consecutive_errors = 0;
-    metrics_.consecutive_errors.store(0, std::memory_order_relaxed);
+    metrics_.consecutive_errors.store(0);
     return;
   }
 
   if (err == ERROR_INVALID_PARAMETER) {
-    metrics_.invalid_param_errors.fetch_add(1, std::memory_order_relaxed);
+    metrics_.invalid_param_errors.fetch_add(1);
     logging_utils::LogWindowsApiError("DeviceIoControl (FSCTL_READ_USN_JOURNAL)",
                                       "Volume: " + config_.volume_path +
                                           ", Invalid parameter - retrying with backoff",
@@ -574,7 +574,7 @@ void UsnMonitor::HandleReadJournalError(DWORD err, size_t& consecutive_errors,
     return;
   }
 
-  metrics_.other_errors.fetch_add(1, std::memory_order_relaxed);
+  metrics_.other_errors.fetch_add(1);
   logging_utils::LogWindowsApiError("DeviceIoControl (FSCTL_READ_USN_JOURNAL)",
                                     "Volume: " + config_.volume_path +
                                         ", Retrying with backoff",
@@ -586,7 +586,7 @@ void UsnMonitor::HandleReadJournalError(DWORD err, size_t& consecutive_errors,
   if (consecutive_errors >= max_consecutive_errors_limit) {
     LOG_ERROR_BUILD("Too many consecutive errors (" << consecutive_errors
                                                     << "), stopping USN monitoring");
-    monitoring_active_.store(false, std::memory_order_release);
+    monitoring_active_.store(false);
     should_exit = true;
   }
 }
@@ -614,21 +614,21 @@ void UsnMonitor::ProcessSuccessfulReadAndEnqueue(
 
   if (!queue_) {
     LOG_ERROR("USN queue is null in reader thread. Volume: " + config_.volume_path);
-    monitoring_active_.store(false, std::memory_order_release);
+    monitoring_active_.store(false);
     should_exit = true;
     return;
   }
-  metrics_.buffers_read.fetch_add(1, std::memory_order_relaxed);
+  metrics_.buffers_read.fetch_add(1);
 
   if (!queue_) {
     LOG_ERROR("USN queue became null before Push in reader thread. Volume: " + config_.volume_path);
-    monitoring_active_.store(false, std::memory_order_release);
+    monitoring_active_.store(false);
     should_exit = true;
     return;
   }
 
   if (!queue_->Push(std::move(queue_buffer))) {
-    size_t current_drops = metrics_.buffers_dropped.fetch_add(1, std::memory_order_relaxed) + 1;
+    size_t current_drops = metrics_.buffers_dropped.fetch_add(1) + 1;
     if (current_drops % usn_monitor_constants::kDropLogInterval == 0) {
       LOG_WARNING_BUILD("USN Queue full! Dropped "
                         << current_drops << " buffers (queue size: "
@@ -638,8 +638,7 @@ void UsnMonitor::ProcessSuccessfulReadAndEnqueue(
 
   if (queue_ != nullptr) {
     size_t queue_size = queue_->Size();
-    metrics_.current_queue_depth.store(queue_size,
-                                       std::memory_order_relaxed);
+    metrics_.current_queue_depth.store(queue_size);
     UpdateMaxQueueDepth(metrics_.max_queue_depth, queue_size);
   }
 
@@ -724,7 +723,7 @@ void UsnMonitor::ReaderThread() {
     bool should_exit = false;  // NOLINT(misc-const-correctness) - modified by reference in HandleReadJournalError/ProcessSuccessfulReadAndEnqueue
     DWORD bytes_returned = 0;
 
-    while (monitoring_active_.load(std::memory_order_acquire) && !should_exit) {
+    while (monitoring_active_.load() && !should_exit) {
       auto read_start = std::chrono::steady_clock::now();
 
       if (!DeviceIoControl(handle, FSCTL_READ_USN_JOURNAL, &read_data,
@@ -739,12 +738,11 @@ void UsnMonitor::ReaderThread() {
       auto read_duration =
           std::chrono::duration_cast<std::chrono::milliseconds>(read_end -
                                                                 read_start);
-      metrics_.total_read_time_ms.fetch_add(read_duration.count(),
-                                            std::memory_order_relaxed);
+      metrics_.total_read_time_ms.fetch_add(read_duration.count());
 
       // Reset error counter on success
       consecutive_errors = 0;
-      metrics_.consecutive_errors.store(0, std::memory_order_relaxed);
+      metrics_.consecutive_errors.store(0);
 
       ProcessSuccessfulReadAndEnqueue(buffer, buffer_size, bytes_returned,
                                      read_data, should_exit);
@@ -755,11 +753,11 @@ void UsnMonitor::ReaderThread() {
     logging_utils::LogException("USN Reader thread",
                                 "Volume: " + config_.volume_path,
                                 e);
-    monitoring_active_.store(false, std::memory_order_release);
+    monitoring_active_.store(false);
   } catch (...) {  // NOSONAR(cpp:S2738) NOLINT(bugprone-empty-catch) - log and continue; cannot rethrow from thread
     logging_utils::LogUnknownException("USN Reader thread",
                                       "Volume: " + config_.volume_path);
-    monitoring_active_.store(false, std::memory_order_release);
+    monitoring_active_.store(false);
   }
 
   // Clean up handle if it wasn't already closed by Stop()
@@ -837,31 +835,30 @@ void UsnMonitor::ProcessOneBuffer(std::vector<char>& buffer) {  // NOLINT(readab
     offset += record->RecordLength;
   }
 
-  indexed_file_count_.store(file_index_.Size(), std::memory_order_release);
+  indexed_file_count_.store(file_index_.Size());
 
   auto buffer_process_end = std::chrono::steady_clock::now();
   auto process_duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(
           buffer_process_end - buffer_process_start);
-  metrics_.total_process_time_ms.fetch_add(process_duration.count(),
-                                           std::memory_order_relaxed);
+  metrics_.total_process_time_ms.fetch_add(process_duration.count());
 
   auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch())
                     .count();
-  metrics_.last_update_time_ms.store(now_ms, std::memory_order_relaxed);
+  metrics_.last_update_time_ms.store(now_ms);
 
   std::this_thread::yield();
 
-  metrics_.buffers_processed.fetch_add(1, std::memory_order_relaxed);
+  metrics_.buffers_processed.fetch_add(1);
 
   size_t buffers_processed =
-      metrics_.buffers_processed.load(std::memory_order_relaxed);
+      metrics_.buffers_processed.load();
   if (buffers_processed % usn_monitor_constants::kLogIntervalBuffers == 0) {
     size_t queue_size = queue_->Size();
-    size_t dropped_count = metrics_.buffers_dropped.load(std::memory_order_relaxed);
+    size_t dropped_count = metrics_.buffers_dropped.load();
     size_t total_records =
-        metrics_.records_processed.load(std::memory_order_relaxed);
+        metrics_.records_processed.load();
     LOG_INFO_BUILD("Processed "
                    << buffers_processed << " buffers, " << total_records
                    << " total records. Queue size: " << queue_size);

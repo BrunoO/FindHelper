@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+
 // Enable test mode for non-Windows platforms (allows use of Windows type stubs)
 // Note: CMake also defines this, so we only define if not already defined
 #ifndef _WIN32
@@ -778,7 +779,7 @@ TEST_SUITE("FileIndex Search Strategies") {
         std::atomic<bool> reader_error{false};   // NOSONAR(cpp:S6012) - C++17; std::atomic has no CTAD until C++20
 
         auto writer_task = [&index, &writer_error, kWriterIterations, kChurnIdBase, kChurnSlotCount]() {  // NOSONAR(cpp:S1481) - captures used in loop body; Sonar false positive
-          for (int i = 0; i < kWriterIterations && !writer_error.load(std::memory_order_relaxed); ++i) {
+          for (int i = 0; i < kWriterIterations && !writer_error.load(); ++i) {
             const uint64_t id = kChurnIdBase + static_cast<uint64_t>(i % kChurnSlotCount);
             const std::string name = "stress_" + std::to_string(id) + ".txt";
             index.Insert(id, 1, name, false, kFileTimeNotLoaded);
@@ -787,16 +788,16 @@ TEST_SUITE("FileIndex Search Strategies") {
         };
 
         auto reader_task = [&index, &reader_error, kReaderIterations]() {  // NOSONAR(cpp:S1481) - kReaderIterations used in loop bound
-          for (int i = 0; i < kReaderIterations && !reader_error.load(std::memory_order_relaxed); ++i) {
+          for (int i = 0; i < kReaderIterations && !reader_error.load(); ++i) {
             try {
               auto futures = index.SearchAsyncWithData("file_", 2, nullptr, "", nullptr, false, false, nullptr);
               for (auto& f : futures) {
                 (void)f.get();
               }
             } catch (const std::exception&) {  // NOSONAR(cpp:S1181) - Stress test: record any std exception; catch(...) below for rest
-              reader_error.store(true, std::memory_order_relaxed);
+              reader_error.store(true);
             } catch (...) {  // NOSONAR(cpp:S2738,cpp:S1181) - Stress test: record any exception (e.g. future_error, assert) from concurrent search
-              reader_error.store(true, std::memory_order_relaxed);
+              reader_error.store(true);
             }
           }
         };
@@ -813,8 +814,8 @@ TEST_SUITE("FileIndex Search Strategies") {
         r2.join();
         r3.join();
 
-        const bool no_writer_error = !writer_error.load(std::memory_order_relaxed);
-        const bool no_reader_error = !reader_error.load(std::memory_order_relaxed);
+        const bool no_writer_error = !writer_error.load();
+        const bool no_reader_error = !reader_error.load();
         if (no_writer_error && no_reader_error) {
           any_run_clean = true;
           break;

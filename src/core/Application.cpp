@@ -186,7 +186,7 @@ void ProcessShortcutTestHookRequests(IRegressionTestHook* hook, GuiState& state,
   if (hook->GetAndClearRequestSetSelectionAndMarkFirstResult()) {
     const auto* dr = search::SearchResultsService::GetDisplayResults(state);
     if (dr != nullptr && !dr->empty()) {
-      state.selectedRow = 0;
+      state.SetSelectedRow(0);
       state.markedFileIds.clear();
       state.markedFileIds.insert((*dr)[0].fileId);
     }
@@ -200,7 +200,7 @@ void ProcessShortcutTestHookRequests(IRegressionTestHook* hook, GuiState& state,
   if (hook->GetAndClearRequestCopySelectedPathToClipboard()) {
     const auto* dr = search::SearchResultsService::GetDisplayResults(state);
     if (dr != nullptr && !dr->empty()) {
-      state.selectedRow = 0;
+      state.SetSelectedRow(0);
       file_operations::CopyPathToClipboard(window, (*dr)[0].fullPath);
     }
   }
@@ -686,13 +686,13 @@ void Application::UpdateIndexBuildState() {
 
   // Update GUI-facing view of index build state so UI components can display
   // progress without knowing the underlying implementation (USN vs crawler).
-  state_.index_build_in_progress = index_build_state_.active.load(std::memory_order_relaxed);
-  state_.index_build_failed = index_build_state_.failed.load(std::memory_order_relaxed);
+  state_.index_build_in_progress = index_build_state_.active.load();
+  state_.index_build_failed = index_build_state_.failed.load();
   state_.index_entries_processed =
-    index_build_state_.entries_processed.load(std::memory_order_relaxed);
-  state_.index_files_processed = index_build_state_.files_processed.load(std::memory_order_relaxed);
-  state_.index_dirs_processed = index_build_state_.dirs_processed.load(std::memory_order_relaxed);
-  state_.index_error_count = index_build_state_.errors.load(std::memory_order_relaxed);
+    index_build_state_.entries_processed.load();
+  state_.index_files_processed = index_build_state_.files_processed.load();
+  state_.index_dirs_processed = index_build_state_.dirs_processed.load();
+  state_.index_error_count = index_build_state_.errors.load();
 
   // Detect start of a new index build (initial crawl, auto-crawl, or USN-based build).
   if (state_.index_build_in_progress && !was_building) {
@@ -730,7 +730,7 @@ void Application::UpdateIndexBuildState() {
       error = "Index build failed";
     }
     state_.index_build_status_text = std::move(error);
-  } else if (index_build_state_.completed.load(std::memory_order_relaxed) &&
+  } else if (index_build_state_.completed.load() &&
              state_.index_entries_processed > 0U) {
     state_.index_build_status_text =
       "Index ready - " + std::to_string(state_.index_entries_processed) + " entries";
@@ -825,12 +825,12 @@ bool Application::IsIndexBuilding() const {
   // Prefer shared IndexBuildState when available so that all platforms
   // (Windows USN, macOS/Linux FolderCrawler) report index build status
   // through a single abstraction.
-  if (index_build_state_.active.load(std::memory_order_relaxed)) {
+  if (index_build_state_.active.load()) {
     return true;
   }
 
   // Check if finalization is in progress (prevents search race condition)
-  if (index_build_state_.finalizing_population.load(std::memory_order_relaxed)) {
+  if (index_build_state_.finalizing_population.load()) {
     return true;
   }
 

@@ -9,6 +9,8 @@
  *
  * Index file: one path per line (e.g. from --dump-index or generated list).
  * Config JSON: { "version": "1.0", "search_config": { "path": "pp:src/...", "extensions": ["cpp"], ... } }
+ * Large index + filename-only stress: tests/data/std-linux-filesystem.txt with
+ * tests/benchmark_config_std_linux_filename_hotpath.json (see scripts/build_tests_macos.sh).
  * Strategy: static, hybrid, dynamic, interleaved (and work_stealing if built with Boost).
  */
 
@@ -20,10 +22,14 @@
 #include "utils/CpuFeatures.h"
 #include "utils/LoadBalancingStrategy.h"
 
+#include <cerrno>
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -35,6 +41,20 @@ namespace search_benchmark_detail {
 constexpr int kDefaultIterations = 5;
 constexpr int kDefaultWarmup = 1;
 constexpr size_t kJsonExtensionLength = 5;
+
+// Parses base-10 integer; returns on_failure if the string is not a single integer in int range.
+[[nodiscard]] inline int ParseCliInt(const char* val, int on_failure) {
+  errno = 0;
+  char* end = nullptr;
+  const std::int64_t n = std::strtoll(val, &end, 10);
+  if (val[0] == '\0' || end == val || *end != '\0' || errno == ERANGE) {
+    return on_failure;
+  }
+  if (n > std::numeric_limits<int>::max() || n < std::numeric_limits<int>::min()) {
+    return on_failure;
+  }
+  return static_cast<int>(n);
+}
 
 void PrintEnvironmentInfo(std::string_view load_balancing_strategy) {
   std::cout << "=== Environment ===\n";
@@ -220,8 +240,7 @@ int HandleIterations(int argc, char** argv, int& i, ParsedArgs& out) {
   if (val == nullptr) {
     return 1;
   }
-  // NOLINTNEXTLINE(cert-err34-c) - CLI parsing
-  out.iterations = (std::max)(std::atoi(val), 1);
+  out.iterations = (std::max)(ParseCliInt(val, 0), 1);
   return 0;
 }
 
@@ -230,8 +249,7 @@ int HandleWarmup(int argc, char** argv, int& i, ParsedArgs& out) {
   if (val == nullptr) {
     return 1;
   }
-  // NOLINTNEXTLINE(cert-err34-c) - CLI parsing
-  out.warmup = (std::max)(std::atoi(val), 0);
+  out.warmup = (std::max)(ParseCliInt(val, 0), 0);
   return 0;
 }
 

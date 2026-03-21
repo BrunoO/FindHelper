@@ -259,7 +259,7 @@ bool MftMetadataReader::ReadMftRecord(uint64_t file_ref_num,
         // Use LOG_WARNING for first failure to ensure visibility, then LOG_DEBUG_BUILD for subsequent
         static std::atomic<size_t> error_count{0};
         constexpr size_t kMaxErrorLogCount = 5;  // Log first N errors
-        if (size_t count = error_count.fetch_add(1, std::memory_order_relaxed); count < kMaxErrorLogCount) {  // Use init-statement pattern
+        if (size_t count = error_count.fetch_add(1); count < kMaxErrorLogCount) {  // Use init-statement pattern
             const bool volume_handle_valid = (volume_handle_ != INVALID_HANDLE_VALUE && volume_handle_ != nullptr);
             {
                 std::ostringstream oss;
@@ -278,7 +278,7 @@ bool MftMetadataReader::ReadMftRecord(uint64_t file_ref_num,
     // Validate returned size is reasonable
     if (bytes_returned_dword == 0 || bytes_returned_dword > buffer_size) {
         static std::atomic<size_t> size_error_count{0};
-        if (size_t count = size_error_count.fetch_add(1, std::memory_order_relaxed); count < 3) {  // Use init-statement pattern
+        if (size_t count = size_error_count.fetch_add(1); count < 3) {  // Use init-statement pattern
             {
                 std::ostringstream oss;
                 oss << "FSCTL_GET_NTFS_FILE_RECORD returned invalid size: "
@@ -294,7 +294,7 @@ bool MftMetadataReader::ReadMftRecord(uint64_t file_ref_num,
 
     // Log first successful read for confirmation
     static std::atomic<size_t> success_count{0};
-    if (size_t count = success_count.fetch_add(1, std::memory_order_relaxed); count == 0) {  // Use init-statement pattern
+    if (size_t count = success_count.fetch_add(1); count == 0) {  // Use init-statement pattern
         LOG_INFO_BUILD("FSCTL_GET_NTFS_FILE_RECORD first successful read: file ref "
                       << file_ref_num << ", bytes returned: " << bytes_returned_dword);
     }

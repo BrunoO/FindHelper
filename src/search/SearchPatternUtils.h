@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <cstring>
 #include <functional>
 #include <memory>
 
@@ -16,7 +15,6 @@
 #include "utils/StringUtils.h"
 #include <string>
 #include <string_view>
-#include <type_traits>
 
 namespace search_pattern_utils {
 // Maximum pattern length to prevent ReDoS (Regular Expression Denial of Service) attacks
@@ -149,27 +147,9 @@ inline bool MatchPattern(std::string_view pattern, std::string_view text,
   return false; // Should never reach here
 }
 
-// Type traits for handling differences between const char* and std::string_view
+// Type traits for matcher text type (bounded std::string_view in hot paths).
 template<typename TextType>
 struct TextTypeTraits;
-
-template<>
-struct TextTypeTraits<const char*> {
-  using ReturnType = lightweight_callable::LightweightCallable<bool, const char*>;
-
-  static bool ContainsSubstringCaseSensitive(const char* text, std::string_view pattern) {
-    // strstr is safe here: text is null-terminated (from std::string), pattern is bounded by string_view
-    return strstr(text, pattern.data()) != nullptr;  // NOSONAR(cpp:S7132) NOLINT(bugprone-suspicious-stringview-data-usage) - text null-terminated, pattern bounded
-  }
-
-  static bool ContainsSubstringCaseInsensitive(const char* text, std::string_view pattern) {
-    return string_search::StrStrCaseInsensitive(text, pattern.data()) != nullptr;  // NOLINT(bugprone-suspicious-stringview-data-usage) - pattern bounded by string_view
-  }
-
-  static std::string ConvertToStdString(const char* text) {
-    return std::string{text};
-  }
-};
 
 template<>
 struct TextTypeTraits<std::string_view> {
@@ -267,26 +247,14 @@ template<typename TextType>
 inline typename TextTypeTraits<TextType>::ReturnType CreateMatcherImplSubstring(
     std::string_view pattern, bool case_sensitive, std::string_view pattern_lower) {
   if (case_sensitive) {
-    if constexpr (std::is_same_v<TextType, const char*>) {
-      const std::string pattern_str(pattern);
-      return [pattern_str](const char* text) {  // NOLINT(bugprone-exception-escape)
-        return std::string_view(text).find(pattern_str) != std::string_view::npos;
-      };
-    }
     const std::string_view pattern_view(pattern);
-    return [pattern_view](std::string_view text) {  // NOLINT(bugprone-exception-escape)
+    return [pattern_view](TextType text) {  // NOLINT(bugprone-exception-escape)
       return string_search::ContainsSubstring(text, pattern_view);
     };
   }
   const std::string lower_pattern =
       pattern_lower.empty() ? ToLower(pattern) : std::string(pattern_lower);
-  if constexpr (std::is_same_v<TextType, const char*>) {
-    return [lower_pattern](const char* text) {  // NOLINT(bugprone-exception-escape)
-      return (string_search::StrStrCaseInsensitive(
-                  text, lower_pattern.c_str()) != nullptr);
-    };
-  }
-  return [lower_pattern](std::string_view text) {  // NOLINT(bugprone-exception-escape)
+  return [lower_pattern](TextType text) {  // NOLINT(bugprone-exception-escape)
     return string_search::ContainsSubstringI(text, lower_pattern);
   };
 }
@@ -315,12 +283,12 @@ CreateMatcherImpl(std::string_view pattern, bool case_sensitive,
 }
 
 // Create a filename matcher function (for FileIndex use)
-// Returns a function that matches a C-string filename against the pattern
+// Returns a function that matches a bounded filename std::string_view (last path segment only)
 // Uses lightweight callable wrapper for better performance in hot paths
-inline lightweight_callable::LightweightCallable<bool, const char *>
+inline lightweight_callable::LightweightCallable<bool, std::string_view>
 CreateFilenameMatcher(std::string_view pattern, bool case_sensitive,
                       std::string_view pattern_lower = "") {
-  return CreateMatcherImpl<const char*>(pattern, case_sensitive, pattern_lower);
+  return CreateMatcherImpl<std::string_view>(pattern, case_sensitive, pattern_lower);
 }
 
 // Create a path matcher function (for FileIndex use)
@@ -335,14 +303,14 @@ CreatePathMatcher(std::string_view pattern, bool case_sensitive,  // NOLINT(read
 // Create a filename matcher using a pre-compiled PathPattern (optimization:
 // compile once before threads, pass to all threads).
 // This avoids recompiling the same pattern in each thread.
-inline lightweight_callable::LightweightCallable<bool, const char *>
+inline lightweight_callable::LightweightCallable<bool, std::string_view>
 CreateFilenameMatcher(  // NOLINT(readability-identifier-naming,cppcoreguidelines-avoid-non-const-global-variables) - PascalCase API; checker misidentifies function as global
     const std::shared_ptr<path_pattern::CompiledPathPattern>& compiled_pattern) {
   if (!compiled_pattern || !compiled_pattern->valid) {
-    return [](const char *) { return false; };
+    return [](std::string_view) { return false; };
   }
 
-  return [compiled_pattern](const char *filename) {
+  return [compiled_pattern](std::string_view filename) {
     return path_pattern::PathPatternMatches(*compiled_pattern, filename);
   };
 }

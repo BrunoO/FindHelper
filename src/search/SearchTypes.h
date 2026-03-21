@@ -180,20 +180,20 @@ struct SearchMetrics {
 
   [[nodiscard]] Snapshot GetSnapshot() const {
     Snapshot s{};
-    s.total_searches_ = total_searches_.load(std::memory_order_acquire);
-    s.total_results_found_ = total_results_found_.load(std::memory_order_acquire);
+    s.total_searches_ = total_searches_.load();
+    s.total_results_found_ = total_results_found_.load();
     s.total_search_time_ms_ =
-        total_search_time_ms_.load(std::memory_order_acquire);
+        total_search_time_ms_.load();
     s.total_postprocess_time_ms_ =
-        total_postprocess_time_ms_.load(std::memory_order_acquire);
-    s.max_search_time_ms_ = max_search_time_ms_.load(std::memory_order_acquire);
+        total_postprocess_time_ms_.load();
+    s.max_search_time_ms_ = max_search_time_ms_.load();
     s.max_postprocess_time_ms_ =
-        max_postprocess_time_ms_.load(std::memory_order_acquire);
-    s.last_search_time_ms_ = last_search_time_ms_.load(std::memory_order_acquire);
+        max_postprocess_time_ms_.load();
+    s.last_search_time_ms_ = last_search_time_ms_.load();
     s.last_postprocess_time_ms_ =
-        last_postprocess_time_ms_.load(std::memory_order_acquire);
-    s.last_results_count_ = last_results_count_.load(std::memory_order_acquire);
-    s.max_results_count_ = max_results_count_.load(std::memory_order_acquire);
+        last_postprocess_time_ms_.load();
+    s.last_results_count_ = last_results_count_.load();
+    s.max_results_count_ = max_results_count_.load();
     return s;
   }
 };

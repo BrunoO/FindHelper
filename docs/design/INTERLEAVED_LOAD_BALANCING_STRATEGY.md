@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Interleaved Load Balancing Strategy** is one of four load balancing strategies available in the USN_WINDOWS project for distributing parallel file search work across multiple threads. It provides a deterministic, round-robin approach to work distribution that balances load effectively without requiring atomic operations.
+The **Interleaved Load Balancing Strategy** is one of four load balancing strategies available in the FindHelper project for distributing parallel file search work across multiple threads. It provides a deterministic, round-robin approach to work distribution that balances load effectively without requiring atomic operations.
 
 ## How It Works
 

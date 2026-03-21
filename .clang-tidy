@@ -66,6 +66,7 @@ Checks: >-
   -llvmlibc-*,
   -misc-include-cleaner,
   -misc-non-private-member-variables-in-classes,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
   -misc-use-anonymous-namespace,
   -misc-use-internal-linkage,
   -modernize-macro-to-enum,
@@ -159,7 +160,7 @@ Checks: >-
 #   ImGui and SoA/path code require pointer+offset patterns (e.g. text.data()+text.size()).
 #   Disabling avoids pure noise while keeping bounds safety elsewhere.
 #
-# Non-private member variables (-misc-non-private-member-variables-in-classes):
+# Non-private member variables (-misc- and -cppcoreguidelines-non-private-member-variables-in-classes):
 #   POD/config structs (GuiState, SavedSearch, Settings, etc.) intentionally use
 #   public members. Disabling reflects design choice and avoids hundreds of NOLINTs.
 #

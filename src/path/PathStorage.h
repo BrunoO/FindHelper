@@ -168,7 +168,7 @@ public:
    * @brief Get the number of deleted entries
    */
   [[nodiscard]] size_t GetDeletedCount() const {
-    return deleted_count_.load(std::memory_order_relaxed);
+    return deleted_count_.load();
   }
 
   /**
@@ -292,7 +292,7 @@ void PathStorage::UpdatePrefix(std::string_view oldPrefix,  // NOLINT(readabilit
 
 template<typename OnRebuiltEntry>
 void PathStorage::RebuildPathBuffer(const OnRebuiltEntry& on_rebuilt_entry) {
-  rebuild_count_.fetch_add(1, std::memory_order_relaxed);
+  rebuild_count_.fetch_add(1);
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - path default-initialized then assigned in push_back
   struct Entry {
     uint64_t file_id = 0;
@@ -302,7 +302,7 @@ void PathStorage::RebuildPathBuffer(const OnRebuiltEntry& on_rebuilt_entry) {
     bool is_directory = false;
   };
   std::vector<Entry> entries{};
-  entries.reserve(path_ids_.size() - deleted_count_.load(std::memory_order_relaxed));
+  entries.reserve(path_ids_.size() - deleted_count_.load());
 
   for (size_t i = 0; i < path_ids_.size(); ++i) {
     if (is_deleted_[i] == 0) {

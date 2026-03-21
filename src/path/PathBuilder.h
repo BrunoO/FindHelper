@@ -2,9 +2,9 @@
 
 #include "index/FileIndexStorage.h"
 #include "path/PathUtils.h"
-#include "utils/HashMapAliases.h"
 #include <array>
 #include <string>
+#include <string_view>
 
 // Path computation helper class
 // Stateless helper for building full paths from parent chains
@@ -21,19 +21,17 @@ class PathBuilder {
 public:
   // Build full path with depth limit checking and logging.
   // Used exclusively by PathRecomputer::RecomputeAllPaths.
-  // name_cache maps entry ID -> filename string; pointers into it are stable
-  // (node-based container) so they may be stored in the components array.
   //
   // Parameters:
   //   id:         File/directory ID (for logging)
   //   parent_id:  Parent directory ID
-  //   name:       Name of the leaf file/directory (from name_cache[id])
+  //   name:       Name of the leaf file/directory (from name_cache.Find(id))
   //   storage:    Reference to FileIndexStorage for parent chain traversal
-  //   name_cache: Temporary name cache (populated by FileIndexStorage::InsertLocked)
+  //   name_cache: Temporary name arena (populated by FileIndexStorage::InsertLocked)
   static std::string BuildFullPathWithLogging(uint64_t id, uint64_t parent_id,
                                                std::string_view name,
                                                const FileIndexStorage& storage,
-                                               const hash_map_t<uint64_t, std::string>& name_cache);
+                                               const NameArena& name_cache);
 
 private:
   static constexpr int kMaxPathDepth = 64; // Maximum path depth (prevents infinite loops)
@@ -42,11 +40,11 @@ private:
   // Reads each parent's name from name_cache. Returns number of components.
   static int CollectPathComponents(uint64_t parent_id, std::string_view name,
                                     const FileIndexStorage& storage,
-                                    const hash_map_t<uint64_t, std::string>& name_cache,
-                                    std::array<const std::string*, kMaxPathDepth>& components);
+                                    const NameArena& name_cache,
+                                    std::array<std::string_view, kMaxPathDepth>& components);
 
   // Internal helper to build path string from components
-  static std::string BuildPathFromComponents(const std::array<const std::string*, kMaxPathDepth>& components,
+  static std::string BuildPathFromComponents(const std::array<std::string_view, kMaxPathDepth>& components,
                                               int component_count);
 };
 

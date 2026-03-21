@@ -85,27 +85,16 @@ public:
    * @param is_directory True if directory, false if file
    * @param full_path Full path for the entry (e.g., "C:\\Test\\file.txt")
    */
-  void AddEntry(uint64_t id, uint64_t parent_id, std::string_view name,
+  void AddEntry(uint64_t id, uint64_t parent_id, [[maybe_unused]] std::string_view name,
                 bool is_directory, std::string_view full_path) {
     const std::unique_lock lock(mutex_);
 
     // Create FileEntry
     FileEntry entry;
     entry.parentID = parent_id;
-    entry.name_length = static_cast<uint16_t>(name.size());
     entry.isDirectory = is_directory;
     entry.fileSize = kFileSizeNotLoaded;
     entry.lastModificationTime = kFileTimeNotLoaded;
-    entry.extension = nullptr; // Default to no extension
-
-    // Extract extension if it's a file
-    if (!is_directory) {
-      const size_t dot_pos = name.find_last_of('.');
-      if (dot_pos != std::string_view::npos && dot_pos < name.length() - 1) {
-        const std::string ext(name.substr(dot_pos + 1));
-        entry.extension = storage_.InternExtension(ext);
-      }
-    }
 
     // Store entry
     entries_[id] = entry;

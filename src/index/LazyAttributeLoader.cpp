@@ -371,7 +371,7 @@ bool LazyAttributeLoader::LoadFileSize(uint64_t id) {
       return false;
     }
     if (entry->path_storage_index != static_cast<size_t>(-1)) {
-      path = std::string(path_storage_.GetPathByIndex(entry->path_storage_index));
+      path.assign(path_storage_.GetPathByIndex(entry->path_storage_index));
     }
   }
   if (!ValidatePathAndMarkFileSizeFailed(id, path, storage_, index_mutex_ref_)) {
@@ -407,7 +407,7 @@ bool LazyAttributeLoader::LoadModificationTime(uint64_t id) {
       return false;
     }
     if (entry->path_storage_index != static_cast<size_t>(-1)) {
-      path = std::string(path_storage_.GetPathByIndex(entry->path_storage_index));
+      path.assign(path_storage_.GetPathByIndex(entry->path_storage_index));
     }
   }
   if (!ValidatePathAndMarkModificationTimeFailed(id, path, storage_, index_mutex_ref_)) {

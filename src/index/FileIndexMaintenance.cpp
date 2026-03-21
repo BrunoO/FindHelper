@@ -72,11 +72,11 @@ FileIndexMaintenance::MaintenanceStats FileIndexMaintenance::GetMaintenanceStats
   stats.deleted_count = path_stats.deleted_entries;
   stats.total_entries = path_stats.total_entries;
   stats.remove_not_in_index_count =
-      remove_not_in_index_count_.load(std::memory_order_acquire);
+      remove_not_in_index_count_.load();
   stats.remove_duplicate_count =
-      remove_duplicate_count_.load(std::memory_order_acquire);
+      remove_duplicate_count_.load();
   stats.remove_inconsistency_count =
-      remove_inconsistency_count_.load(std::memory_order_acquire);
+      remove_inconsistency_count_.load();
   return stats;
 }
 

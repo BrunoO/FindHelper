@@ -288,6 +288,16 @@ for target in "${TEST_TARGETS[@]}"; do
     if [[ "$target" == "search_benchmark" ]]; then
         run_test_with_coverage "$target" "$target" \
             "--index $PROJECT_ROOT/tests/benchmark_index_sample.txt --config $PROJECT_ROOT/tests/benchmark_config_sample.json"
+        # Filename-matcher hot path over ~700k paths (tests/data/std-linux-filesystem.txt).
+        # Rare substring keeps match count tiny while every entry runs the filename matcher.
+        STD_LINUX_INDEX="$PROJECT_ROOT/tests/data/std-linux-filesystem.txt"
+        STD_LINUX_BENCH_CONFIG="$PROJECT_ROOT/tests/benchmark_config_std_linux_filename_hotpath.json"
+        if [[ -f "$STD_LINUX_INDEX" && -f "$STD_LINUX_BENCH_CONFIG" ]]; then
+            run_test_with_coverage "search_benchmark_std_linux_filename" "$target" \
+                "--index $STD_LINUX_INDEX --config $STD_LINUX_BENCH_CONFIG --iterations 1 --warmup 0"
+        else
+            echo "Skipping search_benchmark_std_linux_filename (missing $STD_LINUX_INDEX or $STD_LINUX_BENCH_CONFIG)"
+        fi
     else
         run_test_with_coverage "$target" "$target"
     fi

@@ -28,7 +28,6 @@ TEST_CASE("DirectoryResolver::GetOrCreateDirectoryId creates single directory") 
   // Verify directory was created
   const FileEntry* entry = fixture.GetStorage().GetEntry(dir_id);
   CHECK(entry != nullptr);
-  CHECK(entry->name_length == 9);  // len("Documents")
   CHECK(entry->isDirectory == true);
   CHECK(entry->parentID == 0); // Root
 
@@ -56,21 +55,18 @@ TEST_CASE("DirectoryResolver::GetOrCreateDirectoryId creates nested directories 
   // Verify nested directory
   const FileEntry* nested_entry = fixture.GetStorage().GetEntry(nested_id);
   CHECK(nested_entry != nullptr);
-  CHECK(nested_entry->name_length == 9);  // len("Documents")
   CHECK(nested_entry->isDirectory == true);
   CHECK(nested_entry->parentID == john_id);
 
   // Verify parent directory
   const FileEntry* john_entry = fixture.GetStorage().GetEntry(john_id);
   CHECK(john_entry != nullptr);
-  CHECK(john_entry->name_length == 4);  // len("John")
   CHECK(john_entry->isDirectory == true);
   CHECK(john_entry->parentID == users_id);
 
   // Verify root parent directory
   const FileEntry* users_entry = fixture.GetStorage().GetEntry(users_id);
   CHECK(users_entry != nullptr);
-  CHECK(users_entry->name_length == 5);  // len("Users")
   CHECK(users_entry->isDirectory == true);
   CHECK(users_entry->parentID == 0); // Root
 }

@@ -1,37 +1,38 @@
 #pragma once
 
-#include "index/FileIndex.h"
-#include "search/SearchContext.h"
-#include "core/Settings.h"
-#include "utils/FileTimeTypes.h"
-#include "utils/FileAttributeConstants.h"
-#include "path/PathUtils.h"
-#include "path/DirectoryResolver.h"
-#include "index/FileIndexStorage.h"
-#include "index/LazyAttributeLoader.h"
-#include "index/FileIndexMaintenance.h"
-#include "search/ParallelSearchEngine.h"
-#include "search/SearchThreadPool.h"
-#include "search/SearchPatternUtils.h"
-#include "MockSearchableIndex.h"
-#include "crawler/IndexOperations.h"
-#include "path/PathOperations.h"
-#include "path/PathStorage.h"
-#include "utils/StdRegexUtils.h"
-#include "utils/FileSystemUtils.h"
-#include "api/GeminiApiUtils.h"
-#include "doctest/doctest.h"
+#include <atomic>
+#include <fstream>
+#include <future>
+#include <mutex>
+#include <set>
+#include <shared_mutex>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-#include <future>
-#include <stdexcept>
-#include <atomic>
-#include <shared_mutex>
-#include <mutex>
-#include <fstream>
-#include <set>
+
+#include "MockSearchableIndex.h"
+#include "api/GeminiApiUtils.h"
+#include "core/Settings.h"
+#include "crawler/IndexOperations.h"
+#include "doctest/doctest.h"
+#include "index/FileIndex.h"
+#include "index/FileIndexMaintenance.h"
+#include "index/FileIndexStorage.h"
+#include "index/LazyAttributeLoader.h"
+#include "path/DirectoryResolver.h"
+#include "path/PathOperations.h"
+#include "path/PathStorage.h"
+#include "path/PathUtils.h"
+#include "search/ParallelSearchEngine.h"
+#include "search/SearchContext.h"
+#include "search/SearchPatternUtils.h"
+#include "search/SearchThreadPool.h"
+#include "utils/FileAttributeConstants.h"
+#include "utils/FileSystemUtils.h"
+#include "utils/FileTimeTypes.h"
+#include "utils/StdRegexUtils.h"
 
 #if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
 #include <filesystem>
@@ -586,13 +587,11 @@ public:
    *
    * @param file_id File ID to use (default: 1)
    * @param filename Filename for the file entry (default: "test.txt")
-   * @param extension Extension for the file entry (default: ".txt")
    * @param is_directory Whether the entry is a directory (default: false)
    */
   explicit TestLazyAttributeLoaderFixture(
       uint64_t file_id = 1,
       const std::string& filename = "test.txt",
-      const std::string& extension = ".txt",
       bool is_directory = false);
 
   /**
@@ -661,9 +660,8 @@ public:
 
 private:
   // Helper to insert file entry into both storage and path_storage
-  // Extracts extension from filename if not provided
   void InsertFileEntryInternal(uint64_t id, const std::string& name, bool is_dir,
-                               const std::string& path, const std::string& extension = "");
+                               const std::string& path);
 
   std::shared_mutex mutex_;
   FileIndexStorage storage_;
@@ -797,14 +795,12 @@ MinimalLoaderSetup& CreateLoaderSetupWithDirectory(
  * @param setup Setup struct to populate (will be modified)
  * @param file_id File ID (default: 1)
  * @param file_name File name (default: "empty_path.txt")
- * @param extension File extension (default: ".txt")
  * @return Reference to the setup struct
  */
 MinimalLoaderSetup& CreateLoaderSetupWithEmptyPath(
     MinimalLoaderSetup& setup,
     uint64_t file_id = 1,
-    const std::string& file_name = "empty_path.txt",
-    const std::string& extension = ".txt");
+    const std::string& file_name = "empty_path.txt");
 
 /**
  * Test concurrent access to a lazy-loaded attribute.

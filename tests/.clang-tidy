@@ -15,11 +15,19 @@ Checks: >-
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -hicpp-signed-bitwise,
+  -google-build-using-namespace,
+  -google-readability-casting,
   -llvm-use-ranges,
+  -misc-const-correctness,
+  -misc-unused-alias-decls,
+  -modernize-avoid-c-style-cast,
   -modernize-raw-string-literal,
+  -modernize-use-nodiscard,
   -readability-function-cognitive-complexity,
   -readability-identifier-naming,
-  -readability-magic-numbers
+  -readability-magic-numbers,
+  -readability-math-missing-parentheses,
+  -readability-redundant-member-init
 
 # Rationale for each disabled check:
 #
@@ -83,6 +91,33 @@ Checks: >-
 #   arrays, loop bounds). Using .at() or range-for everywhere would add noise
 #   in test code with little benefit.
 #
+# google-build-using-namespace / misc-unused-alias-decls:
+#   Test files and shared fixtures use `using namespace` and local namespace
+#   aliases (e.g. `namespace fs = std::filesystem`) for brevity in CHECK()
+#   expressions and test setup. Enforcing fully-qualified names in tests adds
+#   noise without safety benefit.
+#
+# google-readability-casting / modernize-avoid-c-style-cast:
+#   Test assertion helpers and fixture setups use C-style casts for concise
+#   expected-value expressions (e.g. `(uint64_t)1`). Requiring static_cast
+#   everywhere in test code would obscure the intent of the expected value.
+#
 # llvm-use-ranges:
 #   Project targets C++17; the check suggests std::ranges algorithms (C++20).
 #   Disabling in tests avoids NOLINT on every loop that could be a range algo.
+#
+# misc-unused-alias-decls: see google-build-using-namespace above.
+#
+# modernize-use-nodiscard:
+#   Test fixture accessors (GetX(), GetEngine(), etc.) do not need [[nodiscard]]
+#   — the caller is always a CHECK() or assignment in test code.
+#
+# readability-math-missing-parentheses:
+#   Expected-value expressions in CHECK() assertions use arithmetic that
+#   follows standard operator precedence. Adding parentheses would be pedantic
+#   and reduce readability of the assertion intent.
+#
+# readability-redundant-member-init:
+#   Test fixture members use explicit `= {}` default-initialization to make
+#   the zero-initialized state visible in the fixture struct definition.
+#   Removing these initializers would obscure intent in test infrastructure.

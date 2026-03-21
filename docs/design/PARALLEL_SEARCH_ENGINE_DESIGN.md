@@ -119,7 +119,7 @@ static void ProcessChunkRange(
     ResultsContainer& local_results,
     const SearchContext& context,
     size_t storage_size,
-    const LightweightCallable<bool, const char*>& filename_matcher,
+    const LightweightCallable<bool, std::string_view>& filename_matcher,
     const LightweightCallable<bool, std::string_view>& path_matcher);
 ```
 
@@ -145,7 +145,7 @@ static void ProcessChunkRangeIds(
     std::vector<uint64_t>& local_results,
     const SearchContext& context,
     size_t storage_size,
-    const LightweightCallable<bool, const char*>& filename_matcher,
+    const LightweightCallable<bool, std::string_view>& filename_matcher,
     const LightweightCallable<bool, std::string_view>& path_matcher);
 ```
 

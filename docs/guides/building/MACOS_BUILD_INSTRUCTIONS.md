@@ -68,10 +68,10 @@ cmake ..  # The ".." points to the parent directory (where CMakeLists.txt is)
 
 ### Error: Compilation errors about Windows.h or Windows types
 
-**Solution**: Make sure `USN_WINDOWS_TESTS` is defined. Check that:
+**Solution**: Make sure the cross-platform test macro is defined for the FindHelper project. Check that:
 1. You're using `-DCROSS_PLATFORM_TESTS=ON`
 2. You're on a non-Windows platform (macOS/Linux)
-3. The CMakeLists.txt correctly defines `USN_WINDOWS_TESTS` for non-Windows
+3. The CMakeLists.txt correctly defines the appropriate test macro for non-Windows
 
 ### Error: Missing dependencies (doctest, nlohmann/json)
 

@@ -89,7 +89,7 @@ void LogInsertPathErrorAndIncrement(
                     << (detail != nullptr && *detail != '\0' ? std::string(" - ") + detail
                                                               : ""));
   if (out_error_count != nullptr) {
-    out_error_count->fetch_add(1, std::memory_order_relaxed);
+    out_error_count->fetch_add(1);
   }
 }
 
@@ -186,7 +186,7 @@ void FileIndex::InsertPathUnderLock(std::string_view full_path, bool is_director
   }
 
   const uint64_t parent_id = directory_resolver_.GetOrCreateDirectoryId(directory_path);
-  const uint64_t file_id = next_file_id_.fetch_add(1, std::memory_order_relaxed);
+  const uint64_t file_id = next_file_id_.fetch_add(1);
 
   InsertLocked(file_id, parent_id, filename, is_directory, kFileTimeNotLoaded);
   if (is_directory) {
@@ -241,7 +241,7 @@ void FileIndex::Clear() {
   path_storage_.Clear();
   path_to_id_index_.clear();
   path_to_id_chain_.clear();
-  next_file_id_.store(1, std::memory_order_relaxed);
+  next_file_id_.store(1);
   LOG_INFO_BUILD("FileIndex::Clear: Cleared all entries from index");
 }
 

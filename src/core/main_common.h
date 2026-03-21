@@ -124,7 +124,7 @@ namespace main_common_detail {
     } else {
       // No background builder: treat index as ready (e.g., index_from_file only, or auto-crawl will start later).
       index_build_state.Reset();
-      index_build_state.completed.store(true, std::memory_order_relaxed);
+      index_build_state.completed.store(true);
     }
 
     // Create Application instance (owns all components and manages main loop)

@@ -40,10 +40,10 @@ The FileIndex system has been refactored from a monolithic "God Class" (~2,823 l
 ├──────────────┤      ├───────────────┤      ├──────────────┤
 │ • SoA arrays │      │ • FileEntry   │      │ • Search     │
 │ • Path buffer│      │   storage     │      │   orchestration│
-│ • Zero-copy  │      │ • StringPool  │      │ • Load       │
-│   access     │      │ • Directory   │      │   balancing  │
-│ • ~400 lines │      │   cache       │      │ • Pattern    │
-│              │      │ • ~350 lines  │      │   matching   │
+│ • Zero-copy  │      │ • Directory   │      │ • Load       │
+│   access     │      │   cache       │      │   balancing  │
+│ • ~400 lines │      │ • ~350 lines  │      │ • Pattern    │
+│              │      │               │      │   matching   │
 └──────────────┘      └───────────────┘      │ • ~600 lines │
         │                     │              └──────────────┘
         │                     │                     │
@@ -109,7 +109,7 @@ The FileIndex system has been refactored from a monolithic "God Class" (~2,823 l
 **Key Features:**
 - Zero-copy access via `SoAView`
 - Contiguous memory layout (cache-friendly)
-- Pre-parsed filename/extension offsets
+- Pre-parsed filename/extension offsets (`extension_start`, etc.)
 - Thread-safe (uses shared_mutex from FileIndex)
 
 **API:**
@@ -136,31 +136,28 @@ class PathStorage {
 
 **Responsibilities:**
 - Stores FileEntry map (ID → FileEntry)
-- Manages StringPool for extension interning
-- Maintains directory cache
-- Handles extension interning (memory optimization)
-- Tracks storage size
+- Maintains directory cache (path → id)
+- Temporary name cache (`NameArena`) during index build for path recomputation; released after paths are materialized in `PathStorage`
+- Tracks entry count
 
 **Key Features:**
-- Hash map for O(1) lookups
-- StringPool for extension deduplication
-- Directory cache for fast parent lookups
+- Hash map (`flat_hash_map_t`) for O(1) lookups
+- Directory cache for fast directory lookups
 - Thread-safe (uses shared_mutex from FileIndex)
 
-**API:**
+**API (representative):**
 ```cpp
 class FileIndexStorage {
   void InsertLocked(uint64_t id, ...);
   void RemoveLocked(uint64_t id);
   const FileEntry* GetEntry(uint64_t id) const;
-  const std::string* InternExtension(const std::string& ext);
   size_t Size() const;
 };
 ```
 
 **Design Decisions:**
-- StringPool uses stable hash set to prevent dangling pointers
-- Extension interning reduces memory usage (extensions are often repeated)
+- Extensions for search/UI come from **PathStorage** SoA (offsets into the path buffer), not from a per-entry `StringPool` on `FileIndexStorage` (see `docs/design/STRING_POOL_DESIGN.md`).
+- `hash_set_stable_t` in `HashMapAliases.h` remains the pattern when stable pointers into a string set are required elsewhere.
 - Directory cache speeds up path computation
 
 ---
@@ -340,9 +337,8 @@ FileIndex::Insert() / Remove() / Rename()
     │
     ├─► PathBuilder::BuildFullPath() ──► Compute path
     │
-    ├─► FileIndexStorage::InsertLocked() ──► Store FileEntry
-    │   ├─► Intern extension (StringPool)
-    │   └─► Update directory cache
+    ├─► FileIndexStorage::InsertLocked() ──► Store FileEntry, name cache (NameArena)
+    │   └─► Update directory cache as needed
     │
     └─► PathStorage::InsertPathLocked() ──► Update SoA arrays
         └─► Update path buffer and offsets

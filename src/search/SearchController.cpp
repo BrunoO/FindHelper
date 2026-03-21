@@ -69,6 +69,7 @@
 
 #include "index/LazyValue.h"  // For kFileSizeNotLoaded, kFileSizeFailed
 #include "search/SearchResultUtils.h"  // For CleanupAttributeLoadingFutures
+#include "search/SearchResultsService.h"  // For GetDisplayResults (selection remap)
 #include "usn/UsnMonitor.h"
 #include "utils/FileSystemUtils.h"
 #include "utils/HashMapAliases.h"
@@ -195,6 +196,17 @@ void UpdateSearchResults(GuiState& state,
                          std::vector<SearchResult>&& new_results,  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved) - moved into state.searchResults
                          bool is_complete) {
   WaitForAllAttributeLoadingFutures(state);
+  // Remap selection BEFORE replacing searchResults: string_views in the old display
+  // reference the current path pool, which is invalidated after the move below.
+  // Entity-based remap: items still present in new_results stay selected at their new
+  // positions; items that disappeared are deselected. This handles both manual new
+  // searches (old paths absent → selection clears) and auto-refresh (surviving files
+  // tracked to their new row indices). The sort path (HandleTableSorting with
+  // resultsUpdated=true) handles the active-sort case and re-remaps after sorting.
+  if (!state.GetSelectedRows().empty()) {
+    state.RemapSelectionAfterDisplayResultsChange(
+        *search::SearchResultsService::GetDisplayResults(state), new_results);
+  }
   state.searchResults = std::move(new_results);
   // CRITICAL: Invalidate filter caches whenever searchResults is replaced.
   // GetDisplayResults checks valid flags and falls back to searchResults when invalid.

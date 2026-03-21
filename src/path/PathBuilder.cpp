@@ -6,36 +6,35 @@
 #include <sstream>
 
 // Collect path components in reverse order (leaf to root).
-// Names are read from name_cache; pointers into the map are stable (node-based).
+// Names are read from name_cache as string_view into the arena (stable for arena lifetime).
 int PathBuilder::CollectPathComponents(uint64_t parent_id,
                                        std::string_view name,
                                        const FileIndexStorage& storage,
-                                       const hash_map_t<uint64_t, std::string>& name_cache,
-                                       std::array<const std::string*, kMaxPathDepth>& components) {
+                                       const NameArena& name_cache,
+                                       std::array<std::string_view, kMaxPathDepth>& components) {
   int component_count = 0;
 
-  // Store the leaf name in a thread-local to give it a stable address.
-  static thread_local std::string name_storage;
-  name_storage.assign(name);
-  components.at(static_cast<size_t>(component_count)) = &name_storage;
+  // Leaf name is already a string_view into the arena — stable for the arena's lifetime.
+  components.at(static_cast<size_t>(component_count)) = name;
   ++component_count;
   uint64_t current_id = parent_id;
 
-  // Walk up the parent chain, reading each parent's name from name_cache.
+  // Walk up the parent chain, reading each parent's name from the arena.
   while (component_count < kMaxPathDepth) {
     const FileEntry* entry = storage.GetEntry(current_id);
     if (entry == nullptr) {
       break;
     }
-    const auto it = name_cache.find(current_id);
-    if (it == name_cache.end()) {
-      // Name not in cache (entry inserted after ReleaseNameCache — shouldn't happen)
+    const std::string_view parent_name = name_cache.Find(current_id);
+    if (parent_name.empty()) {
+      // Name not in cache (entry inserted after ReleaseNameCache — shouldn't happen).
+      // Empty names are never valid, so empty == not found.
       // Return early instead of using a second break to satisfy Sonar's limit on
       // nested break statements (S924) while preserving existing behaviour.
       assert(component_count >= 1 && "Path must have at least the leaf name component");
       return component_count;
     }
-    components.at(static_cast<size_t>(component_count)) = &it->second;
+    components.at(static_cast<size_t>(component_count)) = parent_name;
     ++component_count;
 
     // Check for root directory (parent_id == current_id)
@@ -54,7 +53,7 @@ int PathBuilder::CollectPathComponents(uint64_t parent_id,
 
 // Build path string from collected components
 std::string PathBuilder::BuildPathFromComponents(
-    const std::array<const std::string*, kMaxPathDepth>& components,
+    const std::array<std::string_view, kMaxPathDepth>& components,
     int component_count) {
 #ifdef _WIN32
   // Calculate total size for single allocation
@@ -66,9 +65,7 @@ std::string PathBuilder::BuildPathFromComponents(
   // prefixing with the default volume root. This prevents paths like "C:\\F:\\..."
   // when crawling subst or secondary drives and when directory roots are named "X:".
   if (component_count > 0) {
-    const std::string* top_component =
-      components.at(static_cast<size_t>(component_count - 1));
-    const std::string& top_name = *top_component;
+    const std::string_view top_name = components.at(static_cast<size_t>(component_count - 1));
     if (top_name.size() == 2 && top_name[1] == ':' &&
         std::isalpha(static_cast<unsigned char>(top_name[0])) != 0) {
       drive_root_buffer.clear();
@@ -88,7 +85,7 @@ std::string PathBuilder::BuildPathFromComponents(
   size_t total_len = volume_root.length();
   if (effective_component_count > 0) {
     for (int i = 0; i < effective_component_count; ++i) {
-      total_len += components.at(static_cast<size_t>(i))->length() + 1;  // component + separator
+      total_len += components.at(static_cast<size_t>(i)).length() + 1;  // component + separator
     }
     total_len -= 1; // No trailing separator at the end
   }
@@ -104,7 +101,7 @@ std::string PathBuilder::BuildPathFromComponents(
     if (i < effective_component_count) {
       full_path.push_back(path_utils::kPathSeparator);
     }
-    full_path.append(*components.at(static_cast<size_t>(i - 1)));
+    full_path.append(components.at(static_cast<size_t>(i - 1)));
   }
 
   return full_path;
@@ -116,8 +113,8 @@ std::string PathBuilder::BuildFullPathWithLogging(uint64_t file_id,
                                                   uint64_t parent_id,
                                                   std::string_view name,
                                                   const FileIndexStorage& storage,
-                                                  const hash_map_t<uint64_t, std::string>& name_cache) {
-  std::array<const std::string*, kMaxPathDepth> components{};  // NOLINT(cppcoreguidelines-pro-type-member-init) - value-initialized
+                                                  const NameArena& name_cache) {
+  std::array<std::string_view, kMaxPathDepth> components{};  // NOLINT(cppcoreguidelines-pro-type-member-init) - value-initialized
 
   const int component_count = CollectPathComponents(
       parent_id, name, storage, name_cache, components);

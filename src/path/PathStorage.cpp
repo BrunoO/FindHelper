@@ -43,7 +43,7 @@ size_t PathStorage::InsertPath(uint64_t id, const std::string& path,
         new_len > old_len) {
       if (is_deleted_[idx] == 0) {
         is_deleted_[idx] = 1;
-        deleted_count_.fetch_add(1, std::memory_order_relaxed);
+        deleted_count_.fetch_add(1);
       }
       goto append_new_entry;  // NOLINT(cppcoreguidelines-avoid-goto,hicpp-avoid-goto) - S134: single exit reduces nesting
     }
@@ -53,7 +53,7 @@ size_t PathStorage::InsertPath(uint64_t id, const std::string& path,
     is_directory_[idx] = isDirectory ? 1 : 0;
     if (is_deleted_[idx] != 0) {
       is_deleted_[idx] = 0;
-      deleted_count_.fetch_sub(1, std::memory_order_relaxed);
+      deleted_count_.fetch_sub(1);
     }
     AssertSoAInvariant("SoA arrays must remain synchronized after InsertPath");
     return idx;
@@ -83,7 +83,7 @@ bool PathStorage::RemovePathByIndex(size_t index) {
     return false;
   }
   is_deleted_[index] = 1;
-  deleted_count_.fetch_add(1, std::memory_order_relaxed);
+  deleted_count_.fetch_add(1);
   return true;
 }
 
@@ -138,20 +138,20 @@ void PathStorage::ClearAll() {
   is_directory_.shrink_to_fit();
 
   // Reset deleted count
-  deleted_count_.store(0, std::memory_order_relaxed);
+  deleted_count_.store(0);
 }
 
 void PathStorage::Clear() {
   ClearAll();
-  rebuild_count_.store(0, std::memory_order_relaxed);
+  rebuild_count_.store(0);
 }
 
 PathStorage::Stats PathStorage::GetStats() const {
   Stats stats;
   stats.total_entries = path_ids_.size();
-  stats.deleted_entries = deleted_count_.load(std::memory_order_relaxed);
+  stats.deleted_entries = deleted_count_.load();
   stats.path_storage_bytes = path_storage_.size();
-  stats.rebuild_count = rebuild_count_.load(std::memory_order_relaxed);
+  stats.rebuild_count = rebuild_count_.load();
   return stats;
 }
 

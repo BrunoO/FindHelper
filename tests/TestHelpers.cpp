@@ -129,16 +129,6 @@ void SetEnvironmentVariable(const char* name, std::string_view value) noexcept {
   }
 }
 
-// Helper to extract extension from filename (including the dot)
-// Returns empty string if no valid extension found
-std::string ExtractExtensionFromFilename(std::string_view filename) {
-  if (const size_t last_dot = filename.find_last_of('.');
-      last_dot != std::string::npos && last_dot < filename.length() - 1) {
-    return std::string(filename.substr(last_dot));
-  }
-  return "";
-}
-
 // Helper to build test file path with predictable naming
 // Pattern: base_path\file{id}.txt
 std::string BuildTestFilePath(const std::string& base_path, uint64_t id) {
@@ -887,11 +877,10 @@ TempFileFixture& TempFileFixture::operator=(TempFileFixture&& other) noexcept { 
 
 TestLazyAttributeLoaderFixture::TestLazyAttributeLoaderFixture(uint64_t file_id,
                                                                const std::string& filename,
-                                                               const std::string& extension,
                                                                bool is_directory)
     : storage_(mutex_), loader_(storage_, path_storage_, mutex_), file_id_(file_id) {
   // Insert file entry with default temp file
-  InsertFileEntryInternal(file_id, filename, is_directory, temp_file_.path, extension);
+  InsertFileEntryInternal(file_id, filename, is_directory, temp_file_.path);
 }
 
 void TestLazyAttributeLoaderFixture::InsertFileEntry(uint64_t id, const std::string& name,
@@ -906,11 +895,8 @@ void TestLazyAttributeLoaderFixture::InsertFileEntryWithTempFile(uint64_t id,
 }
 
 void TestLazyAttributeLoaderFixture::InsertFileEntryInternal(uint64_t id, const std::string& name,
-                                                             bool is_dir, const std::string& path,
-                                                             const std::string& extension) {
-  // Extract extension from filename if not provided
-  const std::string ext = extension.empty() ? ExtractExtensionFromFilename(name) : extension;
-  storage_.InsertLocked(id, 0, name, is_dir, kFileTimeNotLoaded, ext);
+                                                             bool is_dir, const std::string& path) {
+  storage_.InsertLocked(id, 0, name, is_dir, kFileTimeNotLoaded);
   const size_t idx = path_storage_.InsertPath(id, path, is_dir, std::nullopt);
   storage_.SetPathStorageIndex(id, idx);
 }
@@ -987,16 +973,15 @@ MinimalLoaderSetup& CreateLoaderSetupWithDirectory(MinimalLoaderSetup& setup, ui
   // This prevents using hardcoded paths in publicly writable directories
   const std::string actual_dir_path = dir_path.empty() ? CreateTempDirectory("test_dir") : dir_path;
 
-  setup.storage.InsertLocked(dir_id, 0, dir_name, true, kFileTimeNotLoaded, "");
+  setup.storage.InsertLocked(dir_id, 0, dir_name, true, kFileTimeNotLoaded);
   const size_t idx = setup.path_storage.InsertPath(dir_id, actual_dir_path, true, std::nullopt);
   setup.storage.SetPathStorageIndex(dir_id, idx);
   return setup;
 }
 
 MinimalLoaderSetup& CreateLoaderSetupWithEmptyPath(MinimalLoaderSetup& setup, uint64_t file_id,
-                                                   const std::string& file_name,
-                                                   const std::string& extension) {
-  setup.storage.InsertLocked(file_id, 0, file_name, false, kFileTimeNotLoaded, extension);
+                                                   const std::string& file_name) {
+  setup.storage.InsertLocked(file_id, 0, file_name, false, kFileTimeNotLoaded);
   // Don't insert path - path will be empty
   return setup;
 }

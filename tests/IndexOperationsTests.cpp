@@ -22,7 +22,6 @@ TEST_CASE("IndexOperations::Insert creates file entry") {
   // Verify file exists in storage
   const FileEntry* entry = fixture.GetStorage().GetEntry(2);
   CHECK(entry != nullptr);
-  CHECK(entry->name_length == 8);  // len("test.txt")
   CHECK(entry->isDirectory == false);
   CHECK(entry->parentID == 1);
 
@@ -43,7 +42,6 @@ TEST_CASE("IndexOperations::Insert creates directory entry") {
   // Verify directory exists in storage
   const FileEntry* entry = fixture.GetStorage().GetEntry(2);
   CHECK(entry != nullptr);
-  CHECK(entry->name_length == 6);  // len("subdir")
   CHECK(entry->isDirectory == true);
   CHECK(entry->parentID == 1);
 }
@@ -96,7 +94,6 @@ TEST_CASE("IndexOperations::Rename updates file name") {
   // Verify name was updated
   const FileEntry* entry = fixture.GetStorage().GetEntry(2);
   CHECK(entry != nullptr);
-  CHECK(entry->name_length == 11);  // len("newname.txt")
 
   // Verify path was updated
   const std::string path = fixture.GetPathOperations().GetPath(2);

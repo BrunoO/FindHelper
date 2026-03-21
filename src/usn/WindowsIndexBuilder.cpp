@@ -44,7 +44,7 @@ public:
     worker_thread_ = std::thread([this]() {
       IndexBuildState* state = shared_state_;
       if (state == nullptr || monitor_ == nullptr) {
-        running_.store(false, std::memory_order_release);
+        running_.store(false);
         return;
       }
 
@@ -54,8 +54,8 @@ public:
         // Read initial metrics snapshot
         auto metrics = monitor_->GetMetricsSnapshot();
         size_t indexed_count = monitor_->GetIndexedFileCount();
-        state->entries_processed.store(indexed_count, std::memory_order_relaxed);
-        state->errors.store(metrics.errors_encountered, std::memory_order_relaxed);
+        state->entries_processed.store(indexed_count);
+        state->errors.store(metrics.errors_encountered);
 
         // Poll at intervals for population completion (we can't use callbacks here)
         // Use exponential backoff: start at 50ms, increase to 500ms max
@@ -63,7 +63,7 @@ public:
         const std::chrono::milliseconds max_interval(500);
         const std::chrono::milliseconds interval_increment(50);
 
-        while (!state->cancel_requested.load(std::memory_order_acquire)) {
+        while (!state->cancel_requested.load()) {
           // Check if index population is complete or failed
           if (!monitor_->IsPopulatingIndex()) {
             if (monitor_->InitialPopulationFailed()) {
@@ -77,7 +77,7 @@ public:
               // here all paths are fully resolved and monitoring is already
               // running against correct PathStorage state.
               size_t final_count = monitor_->GetIndexedFileCount();
-              state->entries_processed.store(final_count, std::memory_order_release);
+              state->entries_processed.store(final_count);
               state->MarkCompleted();
               LOG_INFO_BUILD("WindowsIndexBuilder: USN initial population completed with "
                              << final_count << " entries");
@@ -88,8 +88,8 @@ public:
           // Update metrics before sleeping
           metrics = monitor_->GetMetricsSnapshot();
           indexed_count = monitor_->GetIndexedFileCount();
-          state->entries_processed.store(indexed_count, std::memory_order_relaxed);
-          state->errors.store(metrics.errors_encountered, std::memory_order_relaxed);
+          state->entries_processed.store(indexed_count);
+          state->errors.store(metrics.errors_encountered);
 
           // Sleep before checking again (with adaptive backoff)
           std::this_thread::sleep_for(poll_interval);
@@ -106,13 +106,13 @@ public:
       }
 
       state->MarkInactive();
-      running_.store(false, std::memory_order_release);
+      running_.store(false);
     });
   }
 
   void Stop() override {
     if (shared_state_ != nullptr) {
-      shared_state_->cancel_requested.store(true, std::memory_order_release);
+      shared_state_->cancel_requested.store(true);
     }
 
     if (worker_thread_.joinable()) {
@@ -125,7 +125,7 @@ public:
       }
     }
 
-    running_.store(false, std::memory_order_release);
+    running_.store(false);
   }
 
 private:

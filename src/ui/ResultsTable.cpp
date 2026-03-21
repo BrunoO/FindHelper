@@ -187,6 +187,7 @@ struct RenderRowParams {
   int& drag_candidate_row;      // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   ImVec2& drag_start_pos;       // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   bool& drag_started;           // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  int focus_row = -1;           // Row that should receive SetKeyboardFocusHere(0); -1 = none
 };
 
 /**
@@ -207,6 +208,10 @@ struct RenderVisibleRowsParams {
   int& drag_candidate_row;      // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   ImVec2& drag_start_pos;       // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   bool& drag_started;           // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  // Row index that ImGui's multi-select uses as the range anchor (RangeSrcItem from
+  // BeginMultiSelect). Must always be submitted to the clipper so it is never clipped out;
+  // corrupt range selections result silently if it is skipped. -1 means no active range.
+  int range_src_item = -1;
 };
 
 /**
@@ -220,12 +225,24 @@ void RenderResultsTableRow(int row, const RenderRowParams& params);
  * Extracted to reduce nesting depth in Render()
  */
 inline void RenderVisibleTableRows(const RenderVisibleRowsParams& params) {
+  // Consume the pending focus request once before the clipper loop. Since all keyboard navigation
+  // paths that call RequestFocusForRow also set scrollToSelectedRow = true, the target row is
+  // always forced into the visible range by IncludeItemByIndex, so consuming here is safe.
+  const int focus_row = params.state.ConsumeFocusRequest();
+
   ImGuiListClipper clipper;
   clipper.Begin(static_cast<int>(
     params.display_results.size()));  // NOSONAR(cpp:S1905) - Required cast: ImGui API expects int
-  if (params.state.scrollToSelectedRow && params.state.selectedRow >= 0 &&
-      params.state.selectedRow < static_cast<int>(params.display_results.size())) {
-    clipper.IncludeItemByIndex(params.state.selectedRow);
+  if (const int selected_row_for_scroll = params.state.GetSelectedRow();
+      params.state.scrollToSelectedRow && selected_row_for_scroll >= 0 &&
+      selected_row_for_scroll < static_cast<int>(params.display_results.size())) {
+    clipper.IncludeItemByIndex(selected_row_for_scroll);
+  }
+  // Always include the multi-select range anchor so ImGui can compute ranges correctly.
+  // If RangeSrcItem is clipped, range selections corrupt silently (ImGui API contract).
+  if (const auto item_count = static_cast<int>(params.display_results.size());
+      params.range_src_item >= 0 && params.range_src_item < item_count) {
+    clipper.IncludeItemByIndex(params.range_src_item);
   }
   while (clipper.Step()) {
     for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
@@ -244,7 +261,8 @@ inline void RenderVisibleTableRows(const RenderVisibleRowsParams& params) {
                                        params.drag_candidate_active,
                                        params.drag_candidate_row,
                                        params.drag_start_pos,
-                                       params.drag_started};
+                                       params.drag_started,
+                                       focus_row};
       RenderResultsTableRow(row, row_params);
     }
   }
@@ -430,15 +448,16 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
     ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, final_row_bg_color);
   }
 
-  const bool is_selected = (params.state.selectedRow == row);
+  const bool is_selected = params.state.IsRowSelected(row);
 
   // Column 0: Mark (dired-style)
   ImGui::TableSetColumnIndex(ResultColumn::Mark);
   ImGui::PushID(ResultColumn::Mark);
   // Use unique hidden ID (##mark) to avoid collisions
+  ImGui::SetNextItemSelectionUserData(row);
   if (const char* mark_label = is_marked ? "*##mark" : " ##mark";
       ImGui::Selectable(mark_label, is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
-    params.state.selectedRow = row;
+    // Selection handled by ImGui multi-select. Toggle mark only:
     if (is_marked) {
       params.state.markedFileIds.erase(params.result.fileId);
     } else {
@@ -449,8 +468,7 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
 
   // Set text color
   if (const bool is_pending_delete =
-        params.has_pending_deletions &&
-        (params.state.pendingDeletions.find(params.result.fullPath) != params.state.pendingDeletions.end());
+        params.has_pending_deletions && params.state.IsPendingDeletion(params.result.fullPath);
       !is_pending_delete) {
     if (is_selected) {
       ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::Accent);  // Highlight selected text
@@ -471,9 +489,17 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   }
   ImGui::PushID(ResultColumn::Filename);
   static thread_local std::array<char, 512> filename_buffer;
+  // Focus sync: if a keyboard navigation set a focus request for this row, call
+  // SetKeyboardFocusHere(0) immediately before the Selectable so ImGui's focus
+  // rectangle tracks the selection. The request was already consumed before the
+  // clipper loop (see RenderVisibleTableRows) to avoid re-firing across frames.
+  if (row == params.focus_row) {
+    ImGui::SetKeyboardFocusHere(0);
+  }
+  ImGui::SetNextItemSelectionUserData(row);
   if (const char* filename_cstr = GetRowFilenameCstr(params.result, filename_buffer);
       ImGui::Selectable(filename_cstr, is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
-    params.state.selectedRow = row;
+    // Selection handled by ImGui multi-select. No per-column action here.
   }
   // Initiate potential drag from filename column.
   if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -528,16 +554,18 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   // Column 1: Size
   ImGui::TableSetColumnIndex(ResultColumn::Size);
   ImGui::PushID(ResultColumn::Size);
+  ImGui::SetNextItemSelectionUserData(row);
   if (ImGui::Selectable(ResultsTable::GetSizeDisplayText(params.result), is_selected, 0)) {
-    params.state.selectedRow = row;
+    // Selection handled by ImGui multi-select.
   }
   ImGui::PopID();
 
   // Column 2: Last Modified
   ImGui::TableSetColumnIndex(ResultColumn::LastModified);
   ImGui::PushID(ResultColumn::LastModified);
+  ImGui::SetNextItemSelectionUserData(row);
   if (ImGui::Selectable(ResultsTable::GetModTimeDisplayText(params.result), is_selected, 0)) {
-    params.state.selectedRow = row;
+    // Selection handled by ImGui multi-select.
   }
   ImGui::PopID();
 
@@ -583,8 +611,9 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
     ext_buffer.back() = '\0';
     ext_cstr = ext_buffer.data();
   }
+  ImGui::SetNextItemSelectionUserData(row);
   if (ImGui::Selectable(ext_cstr, is_selected, 0)) {
-    params.state.selectedRow = row;
+    // Selection handled by ImGui multi-select.
   }
   ImGui::PopID();
 
@@ -622,8 +651,10 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   }
   ImGui::PopID();
 
-  // Handle scrolling to selected row if requested
-  if (is_selected && params.state.scrollToSelectedRow) {
+  // Handle scrolling to the primary selected row. Compare against selectedRow (the scroll
+  // target, set to new_primary by SetSelectionRange) rather than is_selected so that range
+  // selections scroll to the correct end of the range, not the first selected row rendered.
+  if (row == params.state.GetSelectedRow() && params.state.scrollToSelectedRow) {
     ImGui::SetScrollHereY();
     params.state.scrollToSelectedRow = false;
   }
@@ -634,14 +665,17 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   ImGui::PopStyleColor();
 }
 
+// Returns true if result is a file that may be dragged: not a directory and not pending delete.
+[[nodiscard]] bool IsEligibleForDrag(const SearchResult& result, const GuiState& state) {
+  return !result.isDirectory && !state.IsPendingDeletion(result.fullPath);
+}
+
 /**
  * @brief Start file drag-drop if result is not a directory and not pending delete.
  * Extracted to keep EvaluateDragGesture nesting at most 3 levels (S134).
  */
 void TryStartFileDragDropIfAllowed(const SearchResult& drag_result, const GuiState& state) {
-  if (const bool is_pending_delete =
-        (state.pendingDeletions.find(drag_result.fullPath) != state.pendingDeletions.end());
-      drag_result.isDirectory || is_pending_delete) {
+  if (!IsEligibleForDrag(drag_result, state)) {
     return;
   }
 #if defined(_WIN32) || defined(__APPLE__)
@@ -650,22 +684,48 @@ void TryStartFileDragDropIfAllowed(const SearchResult& drag_result, const GuiSta
 }
 
 /**
- * @brief Handle drag-and-drop gesture evaluation
+ * @brief Collect eligible drag paths from the current multi-selection.
  *
- * Evaluates drag gesture and starts shell drag-drop if threshold is exceeded.
- * Updates drag state variables.
+ * Iterates selected rows in display order, skipping directories and rows
+ * pending deletion. The returned views point into display_results, which
+ * must outlive the returned vector.
+ */
+std::vector<std::string_view> CollectEligibleDragPaths(
+  const std::vector<SearchResult>& display_results,
+  const GuiState& state) {
+  const int item_count = static_cast<int>(display_results.size());
+  std::vector<std::string_view> paths;
+  for (const int row : state.GetSelectedRows()) {
+    if (row < 0 || row >= item_count) {
+      continue;
+    }
+    const auto& result = display_results[static_cast<std::size_t>(row)];  // NOSONAR(cpp:S1905) - Required cast for array indexing
+    if (IsEligibleForDrag(result, state)) {
+      paths.push_back(result.fullPath);
+    }
+  }
+  return paths;
+}
+
+/**
+ * @brief Handle drag-and-drop gesture evaluation.
+ *
+ * Evaluates the drag gesture and starts a shell drag-drop when the movement threshold is
+ * exceeded. Selection-aware: dragging from an unselected row snaps the selection to that
+ * row and performs a single-file drag. Dragging from a selected row collects all eligible
+ * selected files and initiates a multi-file shell drag for all of them.
  *
  * @param drag_candidate_active Whether a drag candidate is active (modified)
- * @param drag_candidate_row Row index of drag candidate (modified)
- * @param drag_start_pos Starting position of drag (input)
- * @param drag_started Whether drag has started (modified)
- * @param drag_threshold Minimum movement in pixels to start drag
- * @param display_results Display results for drag target lookup
- * @param state GUI state for pending deletions check
+ * @param drag_candidate_row    Row index of drag candidate (modified)
+ * @param drag_start_pos        Starting position of drag (input)
+ * @param drag_started          Whether drag has started (modified)
+ * @param drag_threshold        Minimum movement in pixels to start drag
+ * @param display_results       Display results for drag target lookup
+ * @param state                 GUI state for selection and pending deletions (modified)
  */
 void HandleDragAndDrop(bool& drag_candidate_active, int& drag_candidate_row,
                        const ImVec2& drag_start_pos, bool& drag_started, float drag_threshold,
-                       const std::vector<SearchResult>& display_results, const GuiState& state) {
+                       const std::vector<SearchResult>& display_results, GuiState& state) {
   const ImGuiIO& imgui_io = ImGui::GetIO();
   if (drag_candidate_active) {
 #if defined(_WIN32) || defined(__APPLE__)
@@ -689,7 +749,19 @@ void HandleDragAndDrop(bool& drag_candidate_active, int& drag_candidate_row,
       if (over_threshold && row_valid) {  // NOSONAR(cpp:S134) - Nesting required for drag gesture; extracted helper keeps table at 3 levels
         const auto& drag_result =
           display_results[static_cast<std::size_t>(drag_candidate_row)];  // NOSONAR(cpp:S1905) - Required cast for array indexing
-        TryStartFileDragDropIfAllowed(drag_result, state);
+        if (!state.IsRowSelected(drag_candidate_row)) {
+          // Drag from unselected row: snap selection to that row, then single-file drag.
+          state.SetSelectedRow(drag_candidate_row);
+          TryStartFileDragDropIfAllowed(drag_result, state);
+        } else {
+          const auto eligible_paths = CollectEligibleDragPaths(display_results, state);
+          if (!eligible_paths.empty()) {
+#if defined(_WIN32) || defined(__APPLE__)
+            drag_drop::StartFileDragDrop(eligible_paths);
+#endif  // defined(_WIN32) || defined(__APPLE__)
+          }
+          // If eligible_paths is empty (all dirs or pending-delete): no-op.
+        }
         drag_started = true;
       }
     }
@@ -700,16 +772,52 @@ void HandleDragAndDrop(bool& drag_candidate_active, int& drag_candidate_row,
   }
 }
 
+// Attempt deletion of every path in state.filesToDelete, clear the list, and report aggregate
+// feedback via state.exportNotification / state.exportErrorMessage.
+void ExecuteMultiDelete(GuiState& state) {
+  int deleted_count = 0;   // NOLINT(misc-const-correctness) - incremented inside loop
+  int failed_count = 0;    // NOLINT(misc-const-correctness) - incremented inside loop
+  std::string failed_paths;  // NOLINT(misc-const-correctness) - appended inside loop
+  for (const auto& path : state.filesToDelete) {
+    if (file_operations::DeleteFileToRecycleBin(path)) {
+      state.pendingDeletions.insert(path);
+      ++deleted_count;
+    } else {
+      if (!failed_paths.empty()) {
+        failed_paths += ", ";
+      }
+      failed_paths += path;
+      ++failed_count;
+    }
+  }
+  state.filesToDelete.clear();
+
+  if (failed_paths.empty()) {
+    state.exportNotification =
+      (deleted_count == 1) ? "Deleted 1 item"
+                           : "Deleted " + std::to_string(deleted_count) + " items";
+    state.exportErrorMessage = "";
+  } else {
+    state.exportNotification =
+      (deleted_count > 0) ? "Deleted " + std::to_string(deleted_count) + "/" +
+                              std::to_string(deleted_count + failed_count) + " items"
+                          : "";
+    state.exportErrorMessage = "Failed to delete: " + failed_paths;
+  }
+  state.exportNotificationTime = std::chrono::steady_clock::now();
+}
+
 /**
  * @brief Handle delete key and confirmation popup
  *
- * Renders the single-file delete confirmation modal.
+ * Renders the delete confirmation modal for one or more selected files.
  * Delete key handling is in HandleResultsTableKeyboardShortcuts; this only opens and draws the popup.
  *
  * @param state GUI state (modified by delete operations)
  * @param display_results Unused; kept for API compatibility with call site
  */
-void HandleDeleteKeyAndPopup(GuiState& state,
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Cohesive delete confirmation modal: single/multi-item display, per-item loop, aggregate feedback; splitting would fragment closely related logic
+void HandleDeleteKeyAndPopup(GuiState& state,  // NOSONAR(cpp:S3776) - Same rationale as above
                              [[maybe_unused]] const std::vector<SearchResult>& display_results) {
   if (state.showDeletePopup) {
     ImGui::OpenPopup("Confirm Delete");
@@ -721,23 +829,35 @@ void HandleDeleteKeyAndPopup(GuiState& state,
   CenterNextWindowInMainWindow();
 
   if (ImGui::BeginPopupModal("Confirm Delete", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-    ImGui::Text("Are you sure you want to delete this file?");
-    ImGui::TextColored(Theme::Colors::Error, "%s", state.fileToDelete.c_str());
+    if (const auto delete_count = state.filesToDelete.size(); delete_count == 1) {
+      ImGui::Text("Are you sure you want to delete this file?");
+      ImGui::TextColored(Theme::Colors::Error, "%s", state.filesToDelete[0].c_str());  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by delete_count == 1
+    } else {
+      const std::string header_msg =
+        "Are you sure you want to delete " + std::to_string(delete_count) + " items?";
+      ImGui::TextUnformatted(header_msg.c_str());
+      constexpr std::size_t kMaxListedPaths = 3;
+      const std::size_t listed = (std::min)(delete_count, kMaxListedPaths);
+      for (std::size_t i = 0; i < listed; ++i) {
+        ImGui::TextColored(Theme::Colors::Error, "%s", state.filesToDelete[i].c_str());  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by i < listed <= delete_count
+      }
+      if (delete_count > kMaxListedPaths) {
+        ImGui::Text("... and %zu more", delete_count - kMaxListedPaths);
+      }
+    }
     ImGui::Separator();
 
     if (ImGui::Button(ICON_FA_TRASH " Delete", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
       // DeleteFileToRecycleBin is implemented on both Windows and macOS
       // Windows: Moves to Recycle Bin, macOS: Moves to Trash
-      if (const bool deleted = file_operations::DeleteFileToRecycleBin(state.fileToDelete);
-          deleted) {
-        state.pendingDeletions.insert(state.fileToDelete);
-      }
-      state.selectedRow = -1;
+      ExecuteMultiDelete(state);
+      state.ClearSelection();
       ImGui::CloseCurrentPopup();
     }
     ImGui::SetItemDefaultFocus();
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_XMARK " Cancel", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
+      state.filesToDelete.clear();
       ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
@@ -762,7 +882,7 @@ void ExecuteBulkDelete(GuiState& state, const FileIndex& file_index) {
     }
   }
   state.markedFileIds.clear();
-  state.selectedRow = -1;
+  state.ClearSelection();
   ImGui::CloseCurrentPopup();
 }
 
@@ -799,10 +919,75 @@ void HandleBulkDeletePopup(GuiState& state, const FileIndex& file_index) {
   }
 }
 
+// Translate ImGui multi-select requests into GuiState selection mutations.
+// Called twice per frame: once after BeginMultiSelect (pending nav requests from
+// the previous frame) and once after EndMultiSelect (requests from this frame).
+void ApplyMultiSelectRequests(const ImGuiMultiSelectIO* ms_io, GuiState& state, int item_count) {
+  if (ms_io->Requests.empty()) {
+    return;
+  }
+  for (const ImGuiSelectionRequest& req : ms_io->Requests) {
+    if (req.Type == ImGuiSelectionRequestType_SetAll) {
+      if (req.Selected && item_count > 0) {
+        state.SetSelectionRange(0, item_count - 1, 0, 0);
+      } else {
+        state.ClearSelection();
+      }
+    } else if (req.Type == ImGuiSelectionRequestType_SetRange) {
+      const auto first  = static_cast<int>(req.RangeFirstItem);
+      const auto last   = static_cast<int>(req.RangeLastItem);
+      const int  lo     = (std::min)(first, last);
+      const int  hi     = (std::max)(first, last);
+      const auto anchor = static_cast<int>(ms_io->RangeSrcItem);
+      if (req.Selected) {
+        // AddSelectionRange merges [lo,hi] into existing selection without clearing.
+        // When ImGui precedes this with SetAll(false), the selection is already empty,
+        // so the result is the same as SetSelectionRange — but Ctrl+Click arrives with
+        // no preceding Clear and must add to the existing selection, not replace it.
+        state.AddSelectionRange(lo, hi, anchor, last);
+      } else {
+        state.RemoveSelectionRange(lo, hi);
+      }
+    }
+  }
+}
+
+// Sync selected_row with incremental search batch changes. Only resets the selection
+// (single-row, clears multi-select) when CheckBatchNumber actually changed the value —
+// e.g. a new search arrived while the incremental filter prompt was visible.
+void SyncSelectedRowWithIncrementalSearch(GuiState& state,
+                                          IncrementalSearchState& incremental_search) {
+  int selected_row       = state.GetSelectedRow();
+  const int pre_check    = selected_row;
+  incremental_search.CheckBatchNumber(state.resultsBatchNumber, selected_row);
+  if (selected_row != pre_check) {
+    state.SetSelectedRow(selected_row);
+  }
+}
+
+// Build the per-frame multi-select flags and open the multi-select scope.
+// Must be called inside BeginTable (inside the scroll child) so that ms->FocusScopeId
+// matches the scroll child's focus scope → ms->IsFocused = true → Shift+Arrow works.
+// ClearOnEscape is suppressed while the incremental search prompt is visible (Gap 2).
+[[nodiscard]] ImGuiMultiSelectIO* BeginMultiSelectForTable(
+    const IncrementalSearchState& incremental_search,
+    const GuiState& state,
+    int display_item_count) {
+  ImGuiMultiSelectFlags ms_flags =
+      ImGuiMultiSelectFlags_ScopeRect |    // NOLINT(hicpp-signed-bitwise) - ImGui flags bitmask
+      ImGuiMultiSelectFlags_BoxSelect1d |  // NOLINT(hicpp-signed-bitwise)
+      ImGuiMultiSelectFlags_NoAutoSelect;  // NOLINT(hicpp-signed-bitwise) - Down/Up/N/P handled manually; prevents SetKeyboardFocusHere from generating a conflicting auto-select SetRange
+  if (!incremental_search.IsPromptVisible()) {
+    ms_flags |= ImGuiMultiSelectFlags_ClearOnEscape;  // NOLINT(hicpp-signed-bitwise)
+  }
+  return ImGui::BeginMultiSelect(
+      ms_flags, static_cast<int>(state.GetSelectedRows().size()), display_item_count);
+}
+
 }  // namespace
 
 bool ResultsTable::RenderPathColumnWithEllipsis(const SearchResult& result, bool is_selected,
-                                                int row, GuiState& state,
+                                                int row, [[maybe_unused]] GuiState& state,
                                                 [[maybe_unused]] NativeWindowHandle native_window,
                                                 GLFWwindow* glfw_window, float max_width) {
   // max_width is pre-calculated and passed in to avoid repeated GetColumnWidth calls
@@ -816,11 +1001,10 @@ bool ResultsTable::RenderPathColumnWithEllipsis(const SearchResult& result, bool
   const char* display_path_cstr = CalculateDisplayPath(
       const_cast<SearchResult&>(result), directory_path, max_width);  // NOSONAR(cpp:S859) NOLINT(cppcoreguidelines-pro-type-const-cast) - caching optimization
 
-  bool selection_changed = false;
-  if (ImGui::Selectable(display_path_cstr, is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
-    state.selectedRow = row;
-    selection_changed = true;
-  }
+  ImGui::SetNextItemSelectionUserData(row);
+  // Selection handled by ImGui multi-select. Keep double-click → OpenParentFolder below.
+  const bool selection_changed =
+      ImGui::Selectable(display_path_cstr, is_selected, ImGuiSelectableFlags_AllowDoubleClick);
 
   // Tooltip with full path (only allocated when hovered, which is rare)
   if (ImGui::IsItemHovered()) {
@@ -911,13 +1095,24 @@ void RenderMarkedActionsToolbar(GuiState& state,
                                 const FileIndex& file_index,
                                 [[maybe_unused]] bool shift) {
   const size_t marked_count = state.markedFileIds.size();
-  if (marked_count == 0) {
+  const size_t selected_count = state.GetSelectedRows().size();
+  if (marked_count == 0 && selected_count <= 1) {
     return;
   }
 
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
+  // "N selected" badge — shown when 2+ rows are selected.
+  if (selected_count > 1) {
+    const detail::StyleColorGuard sel_color_guard(ImGuiCol_Text, Theme::Colors::Accent);
+    const std::string sel_label = std::to_string(selected_count) + " selected";
+    ImGui::TextUnformatted(sel_label.c_str());
+    if (marked_count > 0) {
+      ImGui::SameLine();
+    }
+  }
+
+  if (marked_count == 0) {
+    return;  // only the selection count badge was needed; no mark buttons
+  }
 
   {
     const detail::StyleColorGuard accent_color_guard(ImGuiCol_Text, Theme::Colors::Accent);
@@ -967,7 +1162,7 @@ void RenderResultsTableHeaderArea(const IncrementalSearchState& incremental_sear
     RenderIncrementalSearchPrompt(incremental_search);
   } else if (incremental_search.IsFilterActive()) {
     RenderIncrementalSearchFilterStatus(incremental_search);
-  } else if (!state.markedFileIds.empty()) {
+  } else if (!state.markedFileIds.empty() || state.GetSelectedRows().size() > 1) {
     RenderMarkedActionsToolbar(state, glfw_window, file_index, shift);
   } else if (results_shortcuts_active) {
     const detail::StyleColorGuard text_color_guard(ImGuiCol_Text, Theme::Colors::Accent);
@@ -1183,7 +1378,7 @@ void ResultsTable::Render(
         ImGui::SetScrollY(restore_y);
       }
 
-      incremental_search.CheckBatchNumber(state.resultsBatchNumber, state.selectedRow);
+      SyncSelectedRowWithIncrementalSearch(state, incremental_search);
 
       const std::vector<SearchResult>* display_results_ptr = &base_results;
       if (incremental_search.IsFilterActive()) {
@@ -1191,12 +1386,14 @@ void ResultsTable::Render(
       }
       const std::vector<SearchResult>& display_results = *display_results_ptr;
 
-      // Clamp selectedRow so it is never out of bounds for the current display (avoids
-      // wrong selection when switching between partial/final or when results are cleared)
-      if (state.selectedRow >= static_cast<int>(display_results.size())) {
-        state.selectedRow =
-          display_results.empty() ? -1 : static_cast<int>(display_results.size()) - 1;
-      }
+      // Clamp all selection indices so none are out of bounds for the current display.
+      state.ClampSelectionToRowCount(display_results.size());
+
+      // display_results is now resolved; open the multi-select scope inside the scroll child.
+      const auto display_item_count = static_cast<int>(display_results.size());
+      const ImGuiMultiSelectIO* ms_io =
+          BeginMultiSelectForTable(incremental_search, state, display_item_count);
+      ApplyMultiSelectRequests(ms_io, state, display_item_count);
 
       // Early check: if pendingDeletions is empty, skip the lookup for all rows
       const bool has_pending_deletions = !state.pendingDeletions.empty();
@@ -1217,7 +1414,8 @@ void ResultsTable::Render(
                                                         drag_candidate_active,
                                                         drag_candidate_row,
                                                         drag_start_pos,
-                                                        drag_started};
+                                                        drag_started,
+                                                        static_cast<int>(ms_io->RangeSrcItem)};
       RenderVisibleTableRows(visible_rows_params);
 
       // Update status bar flag AFTER row rendering: per-row RenderResultsTableRow calls
@@ -1229,6 +1427,10 @@ void ResultsTable::Render(
       // Evaluate drag gesture and start shell drag-drop if threshold exceeded
       HandleDragAndDrop(drag_candidate_active, drag_candidate_row, drag_start_pos, drag_started,
                         drag_threshold, display_results, state);
+
+      // Apply requests generated by this frame's interactions (clicks, keyboard, box-select).
+      ms_io = ImGui::EndMultiSelect();
+      ApplyMultiSelectRequests(ms_io, state, display_item_count);
 
       ImGui::EndTable();
 

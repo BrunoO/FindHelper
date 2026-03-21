@@ -1,5 +1,24 @@
 # Release Notes
 
+## March 21, 2026
+
+### Added
+
+- **Multi-file drag-and-drop:** Drag selected rows from the results table to any shell target (Explorer, Desktop, Finder, etc.). Dragging from an unselected row snaps selection to that row and performs a single-file drag. Dragging from a selected row drags all eligible selected files at once. Directories and files pending deletion are excluded. Available on Windows and macOS.
+- **Results table:** ImGui multi-select drives row selection and range extension (Shift+arrows, Shift+N/P, Ctrl+A, Ctrl+click), with table-aligned focus and clipper handling for range anchors.
+- **Benchmarks:** macOS test script can run an optional std-linux filename hot-path search benchmark after the sample run.
+
+### Changed
+
+- **Indexing:** Bump-pointer name arena replaces many small string allocations on large indexes; vestigial per-entry extension pooling removed from `FileEntry`.
+- **Parallel search:** Filename filters use bounded `string_view` path slices.
+
+### Fixed
+
+- **Results table:** Ctrl+click merges into the existing selection; N/P moves one row per keypress; Shift+arrow / Shift+N/P ranges work with the scrollable table’s focus scope.
+
+---
+
 ## March 15, 2026
 
 ### Added

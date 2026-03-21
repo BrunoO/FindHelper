@@ -788,8 +788,11 @@ std::future<GeminiApiResult> GenerateSearchConfigAsync(
   const std::string desc_str(user_description);
   const std::string key_str(api_key);
 
-  // Launch async task
-  return std::async(std::launch::async, [desc_str, key_str, timeout_seconds]() {  // NOLINT(bugprone-exception-escape) - exceptions propagate to std::future
+  // Launch async task. std::async(launch::async) is appropriate here: this is a single
+  // user-triggered network call; the returned future is stored, polled each frame via
+  // wait_for(0), and explicitly cleaned up on all code paths. Replacing with std::thread +
+  // std::promise would add boilerplate without any correctness benefit.
+  return std::async(std::launch::async, [desc_str, key_str, timeout_seconds]() {  // NOLINT(bugprone-exception-escape) - exceptions propagate to std::future // NOSONAR(cpp:S8460)
     return GenerateSearchConfigFromDescription(desc_str, key_str, timeout_seconds);
   });
 }

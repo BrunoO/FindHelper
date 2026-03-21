@@ -11,7 +11,7 @@ StreamingResultsCollector::StreamingResultsCollector(size_t batch_size, uint32_t
 }
 
 void StreamingResultsCollector::AddResult(SearchResultData&& result) {
-  assert(!search_complete_.load(std::memory_order_acquire));
+  assert(!search_complete_.load());
 
   const std::scoped_lock lock(mutex_);
 
@@ -25,7 +25,7 @@ void StreamingResultsCollector::AddResult(SearchResultData&& result) {
 }
 
 void StreamingResultsCollector::AddResult(const SearchResultData& result) {
-  assert(!search_complete_.load(std::memory_order_acquire));
+  assert(!search_complete_.load());
 
   const std::scoped_lock lock(mutex_);
 
@@ -40,7 +40,7 @@ void StreamingResultsCollector::AddResult(const SearchResultData& result) {
 
 void StreamingResultsCollector::AddResults(const std::vector<SearchResultData>& batch) {
   if (batch.empty()) { return; }
-  assert(!search_complete_.load(std::memory_order_acquire));
+  assert(!search_complete_.load());
 
   const std::scoped_lock lock(mutex_);
   current_batch_.insert(current_batch_.end(), batch.begin(), batch.end());
@@ -57,28 +57,28 @@ void StreamingResultsCollector::MarkSearchComplete() {
   if (!current_batch_.empty()) {
     FlushCurrentBatch();
   }
-  search_complete_.store(true, std::memory_order_release);
-  assert(search_complete_.load(std::memory_order_acquire) && "postcondition");
+  search_complete_.store(true);
+  assert(search_complete_.load() && "postcondition");
 }
 
 void StreamingResultsCollector::SetError(std::string_view error_message) {
   const std::scoped_lock lock(mutex_);
   error_message_ = error_message;
-  has_error_.store(true, std::memory_order_release);
-  search_complete_.store(true, std::memory_order_release);
-  assert(has_error_.load(std::memory_order_acquire) &&
-         search_complete_.load(std::memory_order_acquire) && "SetError postcondition");
+  has_error_.store(true);
+  search_complete_.store(true);
+  assert(has_error_.load() &&
+         search_complete_.load() && "SetError postcondition");
 }
 
 bool StreamingResultsCollector::HasNewBatch() const {
-  return has_new_batch_.load(std::memory_order_acquire);
+  return has_new_batch_.load();
 }
 
 std::vector<SearchResultData> StreamingResultsCollector::GetAllPendingBatches() {
   const std::scoped_lock lock(mutex_);
   std::vector<SearchResultData> result = std::move(pending_batches_);
   pending_batches_.clear();
-  has_new_batch_.store(false, std::memory_order_release);
+  has_new_batch_.store(false);
   // Invariant: after drain, pending is empty and has_new_batch_ is false
   assert(pending_batches_.empty() && "pending must be clear after GetAllPendingBatches");
   return result;
@@ -89,7 +89,7 @@ std::vector<SearchResultData> StreamingResultsCollector::GetPendingBatchesUpTo(s
   if (pending_batches_.size() <= max_results) {
     std::vector<SearchResultData> result = std::move(pending_batches_);
     pending_batches_.clear();
-    has_new_batch_.store(false, std::memory_order_release);
+    has_new_batch_.store(false);
     return result;
   }
   std::vector<SearchResultData> result;
@@ -99,16 +99,16 @@ std::vector<SearchResultData> StreamingResultsCollector::GetPendingBatchesUpTo(s
                std::make_move_iterator(pending_batches_.begin() + static_cast<std::ptrdiff_t>(max_results)));
   pending_batches_.erase(pending_batches_.begin(),
                          pending_batches_.begin() + static_cast<std::ptrdiff_t>(max_results));
-  has_new_batch_.store(true, std::memory_order_release);
+  has_new_batch_.store(true);
   return result;
 }
 
 bool StreamingResultsCollector::IsSearchComplete() const {
-  return search_complete_.load(std::memory_order_acquire);
+  return search_complete_.load();
 }
 
 bool StreamingResultsCollector::HasError() const {
-  return has_error_.load(std::memory_order_acquire);
+  return has_error_.load();
 }
 
 std::string_view StreamingResultsCollector::GetError() const {
@@ -134,6 +134,6 @@ void StreamingResultsCollector::FlushCurrentBatch() {
   current_batch_.clear();
   current_batch_.reserve(batch_size_);
   last_flush_time_ = std::chrono::steady_clock::now();
-  has_new_batch_.store(true, std::memory_order_release);
+  has_new_batch_.store(true);
   assert(!pending_batches_.empty());
 }

@@ -61,13 +61,18 @@ bool SearchResultsService::HandleTableSorting(GuiState& state,
       // For Size or Last Modified columns, use async loading
       if (spec.ColumnIndex == ResultColumn::Size || spec.ColumnIndex == ResultColumn::LastModified) {
         StartSortAttributeLoading(state, state.searchResults, spec.ColumnIndex, file_index, thread_pool);
+        // Selection remap happens in CheckAndCompleteAsyncSort when the sort finishes.
       } else {
+        // Snapshot old display results before in-place sort for entity-based selection remap.
+        const std::vector<SearchResult> old_display = *GetDisplayResults(state);
         // For other columns, sort immediately (no attribute loading needed)
         SortSearchResults(state.searchResults, spec.ColumnIndex, spec.SortDirection, file_index, thread_pool);
         // Invalidate and rebuild filter caches after sorting
         state.InvalidateFilterCacheFlags();
         UpdateTimeFilterCacheIfNeeded(state, file_index, &thread_pool);
         UpdateSizeFilterCacheIfNeeded(state, file_index);
+        // Remap selection so the same logical items remain selected after reorder.
+        state.RemapSelectionAfterDisplayResultsChange(old_display, *GetDisplayResults(state));
       }
       sort_specs->SpecsDirty = false;
       return true;
@@ -79,13 +84,18 @@ bool SearchResultsService::HandleTableSorting(GuiState& state,
     // For Size or Last Modified columns, use async loading
     if (state.lastSortColumn == ResultColumn::Size || state.lastSortColumn == ResultColumn::LastModified) {
       StartSortAttributeLoading(state, state.searchResults, state.lastSortColumn, file_index, thread_pool);
+      // Selection remap happens in CheckAndCompleteAsyncSort when the sort finishes.
     } else {
+      // Snapshot old display results before in-place sort for entity-based selection remap.
+      const std::vector<SearchResult> old_display = *GetDisplayResults(state);
       // For other columns, sort immediately (no attribute loading needed)
       SortSearchResults(state.searchResults, state.lastSortColumn, state.lastSortDirection, file_index, thread_pool);
       // Invalidate and rebuild filter caches after sorting
       state.InvalidateFilterCacheFlags();
       UpdateTimeFilterCacheIfNeeded(state, file_index, &thread_pool);
       UpdateSizeFilterCacheIfNeeded(state, file_index);
+      // Remap selection so the same logical items remain selected after reorder.
+      state.RemapSelectionAfterDisplayResultsChange(old_display, *GetDisplayResults(state));
     }
 
     // Consume the one-shot "results updated" flag
@@ -101,32 +111,52 @@ bool SearchResultsService::CheckAndCompleteAsyncSort(GuiState& state,
                                                      ThreadPool& thread_pool) {
   // Check for async sorting completion
   // Also check sortDataReady flag for immediate sorting when all data is already loaded
-  // NOLINTNEXTLINE(readability-simplify-boolean-expr) - Combined condition intentionally groups \"work pending\" and \"completed\" checks to mirror async sort state machine
-  if ((!state.attributeLoadingFutures.empty() || state.sortDataReady) &&
-      CheckSortAttributeLoadingAndSort(
-          state, state.searchResults, state.lastSortColumn,
-          state.lastSortDirection, state.sort_generation_)) {
-    // Sort completed - invalidate and rebuild filter caches
-    // Caches must be invalidated because searchResults order changed
-    state.InvalidateFilterCacheFlags();
-
-    // Piggyback: if we just sorted by Size or Last Modified, all attributes are loaded.
-    // Sum immediately to avoid unnecessary progressive computation frames.
-    UpdateDisplayedTotalSizeAfterSort(state);
-
-    UpdateTimeFilterCacheIfNeeded(state, file_index, &thread_pool);
-    UpdateSizeFilterCacheIfNeeded(state, file_index);
-    return true;
+  if (const bool has_pending =
+          !state.attributeLoadingFutures.empty() || state.sortDataReady;
+      !has_pending) {
+    return false;
   }
-  return false;
+  // Snapshot old display results before sort mutates searchResults order.
+  const std::vector<SearchResult> old_display = *GetDisplayResults(state);
+  if (!CheckSortAttributeLoadingAndSort(state, state.searchResults, state.lastSortColumn,
+                                        state.lastSortDirection, state.sort_generation_)) {
+    return false;  // Still loading
+  }
+  // Sort completed - invalidate and rebuild filter caches
+  // Caches must be invalidated because searchResults order changed
+  state.InvalidateFilterCacheFlags();
+
+  // Piggyback: if we just sorted by Size or Last Modified, all attributes are loaded.
+  // Sum immediately to avoid unnecessary progressive computation frames.
+  UpdateDisplayedTotalSizeAfterSort(state);
+
+  UpdateTimeFilterCacheIfNeeded(state, file_index, &thread_pool);
+  UpdateSizeFilterCacheIfNeeded(state, file_index);
+  // Remap selection so the same logical items remain selected after reorder.
+  state.RemapSelectionAfterDisplayResultsChange(old_display, *GetDisplayResults(state));
+  return true;
 }
 
 void SearchResultsService::UpdateFilterCaches(GuiState& state,
                                               const FileIndex& file_index,
                                               ThreadPool& thread_pool) {
+  // Detect if a filter cache rebuild is likely (filter setting changed or cache invalid).
+  // Only snapshot old display results when needed to avoid per-frame copy overhead.
+  const bool might_rebuild =
+      !state.timeFilterCacheValid || state.cachedTimeFilter != state.timeFilter ||
+      !state.sizeFilterCacheValid || state.cachedSizeFilter != state.sizeFilter;
+  const std::vector<SearchResult> old_display =
+      might_rebuild ? *GetDisplayResults(state) : std::vector<SearchResult>{};
+
   UpdateTimeFilterCacheIfNeeded(state, file_index, &thread_pool);
   UpdateSizeFilterCacheIfNeeded(state, file_index);
   UpdateDisplayedTotalSizeIfNeeded(state, file_index);
+
+  // Remap selection so the same logical items remain selected after filter change.
+  // RemapSelectionAfterDisplayResultsChange is a no-op when selectedRows is empty.
+  if (might_rebuild && !state.GetSelectedRows().empty()) {
+    state.RemapSelectionAfterDisplayResultsChange(old_display, *GetDisplayResults(state));
+  }
   // Only assert count/size match when the filter is active. When filter is None,
   // UpdateFilterCacheForNoFilter sets cache_valid=true but leaves the vector empty
   // and only sets the count (display uses searchResults); count != size by design.
@@ -136,32 +166,6 @@ void SearchResultsService::UpdateFilterCaches(GuiState& state,
   if (state.sizeFilterCacheValid && state.sizeFilter != SizeFilter::None) {
     assert(state.sizeFilteredCount == state.sizeFilteredResults.size());
   }
-}
-
-const std::vector<SearchResult>* SearchResultsService::GetDisplayResults(const GuiState& state) {
-  // If we are showing partial results, return them directly
-  // Filtering and sorting are minimal for partial results to keep UI responsive
-  if (!state.resultsComplete && state.showingPartialResults) {
-    // NOLINTNEXTLINE(readability-simplify-boolean-expr) - Assert intentionally mirrors if-condition to verify partial-results invariant
-    assert(!state.resultsComplete && state.showingPartialResults);
-    return &state.partialResults;
-  }
-
-  // Determine which results to display based on active filters
-  // Priority: sizeFiltered (if size filter active and valid) > timeFiltered (if time filter active and valid) > raw searchResults
-  // CRITICAL: Only return filter caches when valid. After searchResults is replaced we invalidate caches;
-  // returning them when invalid would show stale data (wrong results until rebuild).
-  // PERFORMANCE: If filter cache rebuild is deferred, show unfiltered results to avoid empty display
-  if (!state.deferFilterCacheRebuild) {
-    if (state.sizeFilter != SizeFilter::None && state.sizeFilterCacheValid) {
-      return &state.sizeFilteredResults;
-    }
-    if (state.timeFilter != TimeFilter::None && state.timeFilterCacheValid) {
-      return &state.filteredResults;
-    }
-  }
-  // deferFilterCacheRebuild, or cache invalid (e.g. after replace), or no filter: show searchResults
-  return &state.searchResults;
 }
 
 }  // namespace search

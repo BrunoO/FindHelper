@@ -81,19 +81,19 @@ public:
             //   for the vast majority of crawler-inserted entries.
             // The finalizing flag blocks concurrent searches while PathStorage
             // is cleared and rebuilt.
-            state->finalizing_population.store(true, std::memory_order_release);
+            state->finalizing_population.store(true);
             file_index_.RecomputeAllPaths();
-            state->finalizing_population.store(false, std::memory_order_release);
+            state->finalizing_population.store(false);
 
             // Update final metrics
-            state->files_processed.store(crawler.GetFilesProcessed(), std::memory_order_relaxed);
-            state->dirs_processed.store(crawler.GetDirectoriesProcessed(), std::memory_order_relaxed);
-            state->errors.store(crawler.GetErrorCount(), std::memory_order_relaxed);
+            state->files_processed.store(crawler.GetFilesProcessed());
+            state->dirs_processed.store(crawler.GetDirectoriesProcessed());
+            state->errors.store(crawler.GetErrorCount());
             state->MarkCompleted();
             LOG_INFO_BUILD("FolderCrawlerIndexBuilder: crawl completed successfully");
           } else {
             state->MarkFailed();
-            if (!state->cancel_requested.load(std::memory_order_acquire)) {
+            if (!state->cancel_requested.load()) {
               state->SetLastErrorMessage("Folder crawl failed or was incomplete");
               LOG_ERROR_BUILD("FolderCrawlerIndexBuilder: crawl failed or was cancelled");
             } else {
@@ -109,7 +109,7 @@ public:
         }
         state->MarkInactive();
       }
-      running_.store(false, std::memory_order_release);
+      running_.store(false);
     });
   }
 
@@ -117,8 +117,8 @@ public:
     // If the worker thread was ever started, make sure we always join it.
     if (worker_thread_.joinable()) {
       // Request cooperative cancellation if the crawl is still running.
-      if (running_.load(std::memory_order_acquire) && shared_state_ != nullptr) {
-        shared_state_->cancel_requested.store(true, std::memory_order_release);
+      if (running_.load() && shared_state_ != nullptr) {
+        shared_state_->cancel_requested.store(true);
       }
       try {
         worker_thread_.join();

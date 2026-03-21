@@ -24,12 +24,10 @@
 template<typename T>
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,readability-identifier-naming) - Template function, not a global variable (clang-tidy false positive), naming follows project convention
 static void UpdateAtomicMax(std::atomic<T>& atomic_var, T new_value) {
-  T current = atomic_var.load(std::memory_order_acquire);
+  T current = atomic_var.load();
   while (new_value > current &&
          !atomic_var.compare_exchange_weak(
-             current, new_value,
-             std::memory_order_release,
-             std::memory_order_acquire)) {
+             current, new_value)) {
     // Loop until we update or find a larger value
   }
 }
@@ -212,7 +210,7 @@ void SearchWorker::StartSearch(const SearchParams &params,
     const std::scoped_lock lock(mutex_);
     // If a search is already running, cancel it
     if (running_) {
-      cancel_current_search_.store(true, std::memory_order_release);
+      cancel_current_search_.store(true);
     }
     next_params_ = params;
     next_search_settings_ = optional_settings;
@@ -234,12 +232,12 @@ std::vector<SearchResultData> SearchWorker::GetResultsData() {
 
 bool SearchWorker::IsSearching() const {
   // This is a lock-free check for UI status.
-  return is_searching_.load(std::memory_order_relaxed);
+  return is_searching_.load();
 }
 
 bool SearchWorker::IsBusy() const {
   const std::scoped_lock lock(mutex_);
-  return is_searching_.load(std::memory_order_relaxed) || search_requested_;
+  return is_searching_.load() || search_requested_;
 }
 
 bool SearchWorker::IsSearchComplete() const { return search_complete_.load(); }
@@ -247,7 +245,7 @@ bool SearchWorker::IsSearchComplete() const { return search_complete_.load(); }
 StreamingResultsCollector* SearchWorker::GetStreamingCollector() {
   const std::scoped_lock lock(mutex_);
   if (collector_ != nullptr && !collector_->IsSearchComplete()) {
-    assert(is_searching_.load(std::memory_order_relaxed));
+    assert(is_searching_.load());
   }
   return collector_.get();
 }
@@ -260,7 +258,7 @@ void SearchWorker::DiscardResults() {
 }
 
 void SearchWorker::CancelSearch() {
-  cancel_current_search_.store(true, std::memory_order_release);
+  cancel_current_search_.store(true);
 }
 
 std::vector<SearchResult> MergeAndConvertToSearchResults(  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables,readability-identifier-naming) - free function, PascalCase API
@@ -341,7 +339,7 @@ static void ProcessSearchFutures(std::vector<std::future<std::vector<SearchResul
   const size_t futures_count = search_futures.size();
   for (size_t future_idx = 0; future_idx < futures_count; ++future_idx) {
     // Check cancellation periodically (check cancel flag directly for faster response)
-    if (future_idx % 2 == 0 && cancel_current_search.load(std::memory_order_acquire)) {
+    if (future_idx % 2 == 0 && cancel_current_search.load()) {
       LOG_INFO_BUILD("Search cancelled while waiting for futures, breaking early");
       break;
     }
@@ -408,18 +406,16 @@ static void UpdateMetricsAfterSearch(SearchMetrics& metrics,
                                     uint64_t search_time_ms,
                                     uint64_t post_process_time_ms,
                                     size_t results_count) {
-  metrics.total_searches_.fetch_add(1, std::memory_order_relaxed);
-  metrics.total_results_found_.fetch_add(results_count, std::memory_order_relaxed);
-  metrics.total_search_time_ms_.fetch_add(search_time_ms, std::memory_order_relaxed);
-  metrics.total_postprocess_time_ms_.fetch_add(post_process_time_ms,
-                                              std::memory_order_relaxed);
+  metrics.total_searches_.fetch_add(1);
+  metrics.total_results_found_.fetch_add(results_count);
+  metrics.total_search_time_ms_.fetch_add(search_time_ms);
+  metrics.total_postprocess_time_ms_.fetch_add(post_process_time_ms);
   UpdateAtomicMax(metrics.max_search_time_ms_, search_time_ms);
   UpdateAtomicMax(metrics.max_postprocess_time_ms_, post_process_time_ms);
   UpdateAtomicMax(metrics.max_results_count_, results_count);
-  metrics.last_search_time_ms_.store(search_time_ms, std::memory_order_release);
-  metrics.last_postprocess_time_ms_.store(post_process_time_ms,
-                                         std::memory_order_release);
-  metrics.last_results_count_.store(results_count, std::memory_order_release);
+  metrics.last_search_time_ms_.store(search_time_ms);
+  metrics.last_postprocess_time_ms_.store(post_process_time_ms);
+  metrics.last_results_count_.store(results_count);
 }
 
 // Helper to process one ready future (reduces complexity/nesting in ProcessStreamingSearchFutures; S3776, S134).
@@ -444,7 +440,7 @@ static bool ProcessOneReadyFutureIfReady(
       [&collector, &cancel_flag](std::string_view msg) {
         // Set error first so consumers that see cancel_flag (acquire) will observe the error.
         collector.SetError(msg);
-        cancel_flag.store(true, std::memory_order_release);
+        cancel_flag.store(true);
       });
   // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   return true;
@@ -502,7 +498,7 @@ void SearchWorker::ProcessStreamingSearchFutures(  // NOLINT(readability-identif
   }
 
   while (!pending_indices.empty()) {
-    if (cancel_current_search_.load(std::memory_order_acquire)) {
+    if (cancel_current_search_.load()) {
       break;
     }
 
@@ -560,7 +556,7 @@ void SearchWorker::RunFilteredSearchPath(
   // Only collector_ref is used below; collector_ is never re-read in this block.
   // Streaming path: controller consumes batches and accumulates; no need to fill results (unused).
   if (const std::shared_ptr<StreamingResultsCollector> collector_ref = collector_;  // NOSONAR(cpp:S6004) - Init-statement used; Sonar may attach to this line
-      stream_partial_results_.load(std::memory_order_acquire) && collector_ref) {
+      stream_partial_results_.load() && collector_ref) {
     ProcessStreamingSearchFutures(search_futures, *collector_ref, search_timer, search_time_ms);
     LogLoadBalanceIfNeeded(thread_timings);
     results.clear();
@@ -607,15 +603,15 @@ void SearchWorker::WorkerThread() {
       exception_handling::LogException("SearchWorker", "background search", e);
       {
         const std::scoped_lock lock(mutex_);
-        is_searching_.store(false, std::memory_order_release);
-        search_complete_.store(true, std::memory_order_release);
+        is_searching_.store(false);
+        search_complete_.store(true);
       }
     } catch (...) {  // NOSONAR(cpp:S2738) NOLINT(bugprone-empty-catch) - log and continue; cannot rethrow from worker thread
       exception_handling::LogUnknownException("SearchWorker", "background search");
       {
         const std::scoped_lock lock(mutex_);
-        is_searching_.store(false, std::memory_order_release);
-        search_complete_.store(true, std::memory_order_release);
+        is_searching_.store(false);
+        search_complete_.store(true);
       }
     }
   }
@@ -633,13 +629,13 @@ bool SearchWorker::WaitForSearchRequest(SearchParams& params) {
   current_search_settings_ = next_search_settings_;
   next_search_settings_ = nullptr;
   search_requested_ = false;
-  is_searching_.store(true, std::memory_order_release);
-  search_complete_.store(false, std::memory_order_release);
-  cancel_current_search_.store(false, std::memory_order_release);
+  is_searching_.store(true);
+  search_complete_.store(false);
+  cancel_current_search_.store(false);
 
   // Create collector only when streaming is enabled (Settings: "Stream search results").
   // SetStreamPartialResults(settings.streamPartialResults) is called by SearchController before StartSearch().
-  const bool stream_enabled = stream_partial_results_.load(std::memory_order_acquire);
+  const bool stream_enabled = stream_partial_results_.load();
   collector_ = stream_enabled ? std::make_shared<StreamingResultsCollector>() : nullptr;
   LOG_INFO_BUILD("Stream search results: " << (stream_enabled ? "enabled" : "disabled"));
   return true;
@@ -676,8 +672,8 @@ void SearchWorker::ExecuteSearch(const SearchParams& params) {
     if (!search_requested_) {
       results_data_ = std::move(results);
       has_new_results_ = true;
-      is_searching_.store(false, std::memory_order_release);
-      search_complete_.store(true, std::memory_order_release);
+      is_searching_.store(false);
+      search_complete_.store(true);
       LOG_INFO_BUILD("Background search completed - Found " << results_data_.size() << " results");
     }
   }

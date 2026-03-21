@@ -64,12 +64,39 @@ void MarkInvertAll(GuiState& state, const std::vector<SearchResult>& display_res
   }
 }
 
-void MoveSelectionDownIfPossible(GuiState& state,
-                                 const std::vector<SearchResult>& display_results) {
-  if (state.selectedRow < static_cast<int>(display_results.size()) - 1) {
-    ++state.selectedRow;
-    state.scrollToSelectedRow = true;
+// Move the single-row selection (and ImGui focus rect) by delta rows (+1 down, -1 up).
+// Calls EnsureSomeSelection so N/P work even when nothing is currently selected.
+// Clamps silently: no-op at the first/last row.
+void MoveSelectionAndFocusInDirection(GuiState& state,
+                                      const std::vector<SearchResult>& display_results,
+                                      int delta) {
+  state.EnsureSomeSelection(display_results);
+  const int selected_row = state.GetSelectedRow();
+  const int new_row      = selected_row + delta;
+  if (new_row < 0 || new_row >= static_cast<int>(display_results.size())) {
+    return;
   }
+  state.SetSelectedRowAndFocus(new_row);
+  state.scrollToSelectedRow = true;
+}
+
+// Extend the multi-selection range by delta rows (+1 down, -1 up) from the current
+// anchor (GetPrimarySelectedRow). Calls SetSelectionRange to replace the current range
+// without touching ImGui's RangeSrcItem, keeping Shift+Arrow anchor consistent.
+// Clamps silently: no-op at the first/last row.
+void ExtendSelectionInDirection(GuiState& state,
+                                const std::vector<SearchResult>& display_results,
+                                int delta) {
+  state.EnsureSomeSelection(display_results);
+  const int selected_row = state.GetSelectedRow();
+  const int new_active   = selected_row + delta;
+  if (new_active < 0 || new_active >= static_cast<int>(display_results.size())) {
+    return;
+  }
+  const int anchor = state.GetPrimarySelectedRow();
+  state.SetSelectionRange((std::min)(anchor, new_active), (std::max)(anchor, new_active),
+                          anchor, new_active);
+  state.scrollToSelectedRow = true;
 }
 
 // Apply a mark (true) or unmark (false) to the currently selected row.
@@ -78,7 +105,12 @@ void ApplyMarkToCurrentRow(GuiState& state,
                            const FileIndex& file_index,
                            const std::vector<SearchResult>& display_results,
                            bool mark) {
-  const auto& selected_res = display_results[static_cast<size_t>(state.selectedRow)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - callers guard with has_selection
+  const int selected_row = state.GetSelectedRow();
+  if (selected_row < 0 ||
+      selected_row >= static_cast<int>(display_results.size())) {
+    return;
+  }
+  const auto& selected_res = display_results[static_cast<size_t>(selected_row)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by range check above
   if (selected_res.isDirectory) {
     MarkAllInFolder(state, file_index, selected_res.fullPath, mark);
   } else if (mark) {
@@ -91,25 +123,30 @@ void ApplyMarkToCurrentRow(GuiState& state,
 void MarkToggleCurrentAndMove(GuiState& state,
                               const FileIndex& file_index,
                               const std::vector<SearchResult>& display_results) {
-  const auto& selected_res = display_results[static_cast<size_t>(state.selectedRow)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - callers guard with has_selection
+  const int selected_row = state.GetSelectedRow();
+  if (selected_row < 0 ||
+      selected_row >= static_cast<int>(display_results.size())) {
+    return;
+  }
+  const auto& selected_res = display_results[static_cast<size_t>(selected_row)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by range check above
   const bool currently_marked =
     state.markedFileIds.find(selected_res.fileId) != state.markedFileIds.end();
   ApplyMarkToCurrentRow(state, file_index, display_results, !currently_marked);
-  MoveSelectionDownIfPossible(state, display_results);
+  MoveSelectionAndFocusInDirection(state, display_results, +1);
 }
 
 void MarkCurrentAndMoveDown(GuiState& state,
                             const FileIndex& file_index,
                             const std::vector<SearchResult>& display_results) {
   ApplyMarkToCurrentRow(state, file_index, display_results, true);
-  MoveSelectionDownIfPossible(state, display_results);
+  MoveSelectionAndFocusInDirection(state, display_results, +1);
 }
 
 void UnmarkCurrentAndMoveDown(GuiState& state,
                               const FileIndex& file_index,
                               const std::vector<SearchResult>& display_results) {
   ApplyMarkToCurrentRow(state, file_index, display_results, false);
-  MoveSelectionDownIfPossible(state, display_results);
+  MoveSelectionAndFocusInDirection(state, display_results, +1);
 }
 
 // Debounce interval for mark/unmark key actions (absorbs macOS synthetic key repeats).
@@ -157,26 +194,38 @@ std::string EscapeCsvField(std::string_view value) {
 
 // Build the list of row indices to export as CSV: all marked rows (in visual order) when
 // any marks exist; otherwise, the single selected row (if any).
-std::vector<int> BuildCsvRowIndexList(const GuiState& state,
-                                      const std::vector<SearchResult>& display_results) {
+std::vector<int> GetMarkedRowIndices(const GuiState& state,
+                                     const std::vector<SearchResult>& display_results) {
   std::vector<int> row_indices;
   row_indices.reserve(display_results.size());
 
-  if (!state.markedFileIds.empty()) {
-    const auto row_count = static_cast<int>(display_results.size());
-    for (int row = 0; row < row_count; ++row) {
-      const auto it = state.markedFileIds.find(
-        display_results[static_cast<size_t>(row)].fileId);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - row bounded by row_count
-      if (it != state.markedFileIds.end()) {
-        row_indices.push_back(row);
-      }
+  const auto row_count = static_cast<int>(display_results.size());
+  for (int row = 0; row < row_count; ++row) {
+    const auto it = state.markedFileIds.find(
+      display_results[static_cast<size_t>(row)].fileId);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - row bounded by row_count
+    if (it != state.markedFileIds.end()) {
+      row_indices.push_back(row);
     }
-  } else if (state.selectedRow >= 0 &&
-             state.selectedRow < static_cast<int>(display_results.size())) {
-    row_indices.push_back(state.selectedRow);
   }
 
   return row_indices;
+}
+
+std::vector<int> GetSingleSelectionRowIndices(const GuiState& state,
+                                              const std::vector<SearchResult>& display_results) {
+  std::vector<int> row_indices;
+  if (const int primary = state.GetPrimarySelectedRow(display_results); primary >= 0) {
+    row_indices.push_back(primary);
+  }
+  return row_indices;
+}
+
+std::vector<int> BuildCsvRowIndexList(const GuiState& state,
+                                      const std::vector<SearchResult>& display_results) {
+  if (!state.markedFileIds.empty()) {
+    return GetMarkedRowIndices(state, display_results);
+  }
+  return GetSingleSelectionRowIndices(state, display_results);
 }
 
 struct CsvColumnVisibility {
@@ -349,14 +398,10 @@ void HandleDebouncedMarkKey(ImGuiKey key,
   }
 }
 
-// Render the shared header (separator + "Filter in results: " label + query + match count).
+// Render the shared header ("Filter in results: " label + query + match count).
 // empty_query_placeholder is shown when the query string is empty.
 void RenderIncrementalSearchCommon(const IncrementalSearchState& incremental_search,
                                    const char* empty_query_placeholder) {
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
-
   const std::string_view query = incremental_search.Query();
   const int match_count = incremental_search.MatchCount();
 
@@ -409,9 +454,10 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
   IncrementalSearchState& incremental_search,
   float current_table_scroll_y,
   const std::vector<SearchResult>& base_results) {
-  const bool window_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
   const ImGuiIO& io = ImGui::GetIO();
-  if (const bool want_text_input = io.WantTextInput; !window_focused || want_text_input) {
+  const bool window_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+  const bool results_table_keyboard_active = window_focused && !io.WantTextInput;
+  if (!results_table_keyboard_active) {
     return;
   }
 
@@ -440,18 +486,27 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
     }
 
     if (query_changed) {
+      int selected_row_for_incremental = state.GetPrimarySelectedRow();
       incremental_search.UpdateQuery(new_query,
                                      base_results,
-                                     state.selectedRow,
+                                     selected_row_for_incremental,
                                      state.scrollToSelectedRow);
+      state.SetSelectedRow(selected_row_for_incremental);
+      state.RequestFocusForRow(selected_row_for_incremental);
     }
 
     if (const int match_count = incremental_search.MatchCount(); match_count > 0) {
       if (KeyPressedOnce(ImGuiKey_DownArrow) || KeyPressedOnce(ImGuiKey_N)) {
-        incremental_search.NavigateNext(state.selectedRow, state.scrollToSelectedRow);
+        int selected_row_for_incremental = state.GetPrimarySelectedRow();
+        incremental_search.NavigateNext(selected_row_for_incremental, state.scrollToSelectedRow);
+        state.SetSelectedRow(selected_row_for_incremental);
+        state.RequestFocusForRow(selected_row_for_incremental);
       } else if (KeyPressedOnce(ImGuiKey_UpArrow) ||
                  (KeyPressedOnce(ImGuiKey_P) && !IsPrimaryShortcutModifierDown(io))) {
-        incremental_search.NavigatePrev(state.selectedRow, state.scrollToSelectedRow);
+        int selected_row_for_incremental = state.GetPrimarySelectedRow();
+        incremental_search.NavigatePrev(selected_row_for_incremental, state.scrollToSelectedRow);
+        state.SetSelectedRow(selected_row_for_incremental);
+        state.RequestFocusForRow(selected_row_for_incremental);
       }
     }
 
@@ -462,7 +517,10 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
         KeyPressedOnce(ImGuiKey_Escape) ||
         (IsPrimaryShortcutModifierDown(io) && KeyPressedOnce(ImGuiKey_G));
       if (cancel_pressed) {
-        incremental_search.Cancel(state.selectedRow, state.scrollToSelectedRow);
+        int selected_row_for_incremental = state.GetPrimarySelectedRow();
+        incremental_search.Cancel(selected_row_for_incremental, state.scrollToSelectedRow);
+        state.SetSelectedRow(selected_row_for_incremental);
+        state.RequestFocusForRow(selected_row_for_incremental);
       }
     }
     // While the prompt is visible, do not fall through to normal shortcuts.
@@ -473,7 +531,10 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
   // Cmd/Ctrl+G cancels incremental search and restores selection/scroll.
   if (incremental_search.IsFilterActive() && IsPrimaryShortcutModifierDown(io) &&
       KeyPressedOnce(ImGuiKey_G)) {
-    incremental_search.Cancel(state.selectedRow, state.scrollToSelectedRow);
+    int selected_row_for_incremental = state.GetPrimarySelectedRow();
+    incremental_search.Cancel(selected_row_for_incremental, state.scrollToSelectedRow);
+    state.SetSelectedRow(selected_row_for_incremental);
+    state.RequestFocusForRow(selected_row_for_incremental);
     return;
   }
 
@@ -490,7 +551,7 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
 
   if (activate_search && !display_results.empty()) {
     incremental_search.Begin(display_results,
-                             state.selectedRow,
+                             state.GetPrimarySelectedRow(),
                              current_table_scroll_y,
                              state.resultsBatchNumber);
     // Do not return here; activation is not a shortcut that needs early exit.
@@ -518,20 +579,26 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
     state.showBulkDeletePopup = true;
   }
 
-  const bool has_selection =
-    state.selectedRow >= 0 &&
-    state.selectedRow < static_cast<int>(display_results.size());
+  const int primary_row = state.GetPrimarySelectedRow(display_results);
+  const bool has_selection = (primary_row >= 0);
   const std::string_view selected_path =
-    has_selection ? display_results[static_cast<size_t>(state.selectedRow)].fullPath  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by has_selection check above
+    has_selection ? display_results[static_cast<size_t>(primary_row)].fullPath  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by has_selection check above
                   : std::string_view{};
 
-  // Delete - single file delete (opens confirmation popup; modal is rendered in ResultsTable)
-  if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
-      KeyPressedOnce(ImGuiKey_Delete) && has_selection) {
-    state.fileToDelete.assign(
-      display_results[static_cast<size_t>(state.selectedRow)].fullPath);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by has_selection
-    state.showDeletePopup = true;
-    LOG_INFO_BUILD("Opening delete popup for: " << state.fileToDelete);
+  // Delete - selected file(s) delete (opens confirmation popup; modal is rendered in ResultsTable)
+  if (results_table_keyboard_active && KeyPressedOnce(ImGuiKey_Delete) && has_selection) {
+    state.filesToDelete.clear();
+    const auto result_count = static_cast<int>(display_results.size());
+    for (const int sel_row : state.GetSelectedRows()) {
+      if (sel_row >= 0 && sel_row < result_count) {
+        state.filesToDelete.emplace_back(
+          display_results[static_cast<size_t>(sel_row)].fullPath);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by range check above
+      }
+    }
+    if (!state.filesToDelete.empty()) {
+      state.showDeletePopup = true;
+      LOG_INFO_BUILD("Opening delete popup for " << state.filesToDelete.size() << " item(s)");
+    }
   }
 
   // Enter / Ctrl+Enter / Ctrl+Shift+C - Open selected, reveal in Explorer, copy path (order: specific before plain Enter).
@@ -602,21 +669,26 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
                            }
                          });
 
-  // Arrow key / dired navigation
-  // P without Ctrl is "previous row"; Ctrl+Shift+P is Pin to Quick Access (Windows), so exclude Ctrl when treating P as navigation.
-  if (KeyPressedOnce(ImGuiKey_DownArrow) || KeyPressedOnce(ImGuiKey_N)) {
-    if (state.selectedRow < static_cast<int>(display_results.size()) - 1) {
-      ++state.selectedRow;
-      state.scrollToSelectedRow = true;
-    } else if (state.selectedRow == -1 && !display_results.empty()) {
-      state.selectedRow = 0;
-      state.scrollToSelectedRow = true;
-    }
-  } else if ((KeyPressedOnce(ImGuiKey_UpArrow) ||
-              (KeyPressedOnce(ImGuiKey_P) && !IsPrimaryShortcutModifierDown(io))) &&
-             state.selectedRow > 0) {
-    --state.selectedRow;
-    state.scrollToSelectedRow = true;
+  // Plain Down/Up and N/P: handled manually because NoAutoSelect prevents ImGui from
+  // generating SetRange requests on plain nav. MoveSelectionAndFocusInDirection keeps
+  // the focus rect in sync via SetSelectedRowAndFocus + RequestFocusForRow.
+  // P without Ctrl is "previous row"; Ctrl+Shift+P is Pin to Quick Access (Windows).
+  // Shift+Arrow is intentionally NOT handled here: ImGui's EndMultiSelect generates
+  // SetAll(false)+SetRange(RangeSrcItem, nav_dest) for Shift+nav even with NoAutoSelect,
+  // and our ApplyMultiSelectRequests applies it correctly. Handling it manually would call
+  // RequestFocusForRow → SetKeyboardFocusHere fires as plain nav next frame →
+  // apply_to_range_src=true → storage->RangeSrcItem drifts → anchor corrupted.
+  // Shift+N/P: ExtendSelectionInDirection calls SetSelectionRange without RequestFocusForRow,
+  // so RangeSrcItem is never touched → anchor stays correct for subsequent Shift+Arrow too.
+  if (!shift && (KeyPressedOnce(ImGuiKey_DownArrow) || KeyPressedOnce(ImGuiKey_N))) {
+    MoveSelectionAndFocusInDirection(state, display_results, +1);
+  } else if (shift && KeyPressedOnce(ImGuiKey_N)) {
+    ExtendSelectionInDirection(state, display_results, +1);
+  } else if (!shift && (KeyPressedOnce(ImGuiKey_UpArrow) ||
+                        (KeyPressedOnce(ImGuiKey_P) && !IsPrimaryShortcutModifierDown(io)))) {
+    MoveSelectionAndFocusInDirection(state, display_results, -1);
+  } else if (shift && (KeyPressedOnce(ImGuiKey_P) && !IsPrimaryShortcutModifierDown(io))) {
+    ExtendSelectionInDirection(state, display_results, -1);
   }
 }
 

@@ -1,88 +1,139 @@
 #pragma once
 
-#include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
-#include <mutex>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "index/LazyValue.h"
 #include "utils/FileSystemUtils.h"
 #include "utils/HashMapAliases.h"
-#include "utils/StringUtils.h"
 
-// String pool for interning extensions to reduce memory and speed up
-// comparisons.
+// Bump-pointer arena for the temporary name cache used during index build.
 //
-// NOTE:
-// We use hash_set_stable_t here instead of hash_set_t because StringPool
-// stores and returns raw pointers to the underlying std::string instances:
+// All name strings are stored in a single contiguous buffer (arena_). The
+// index_ maps each file ID to a {offset, length} slot within that buffer.
 //
-//     const std::string* Intern(const std::string& str);
+// STABILITY CONTRACT: string_view values returned by Find() point directly into
+// arena_. They are valid only as long as arena_ is not grown (i.e. no call to
+// InsertOrAssign() or UpdateIfPresent() that appends to the buffer). On
+// reallocation the buffer moves, leaving any live string_view dangling. In
+// practice: InsertOrAssign() is called only during the build loop; Find() is
+// called only from PathRecomputer::RecomputeAllPaths(), which runs after the
+// build loop completes. No views are held across an insert, so stability is
+// guaranteed. Do NOT hold a Find() result across any mutating call.
 //
-// For correctness, those pointers must remain stable across insertions and
-// rehashes. hash_set_stable_t maps to:
-//   - boost::unordered_set when FAST_LIBS_BOOST is enabled (node-based, stable)
-//   - std::unordered_set otherwise (node-based, stable)
-//
-// Both are node-based containers that maintain pointer stability across rehashes.
-//
-// See docs/design/STRING_POOL_DESIGN.md for detailed documentation.
-class StringPool {
+// This replaces hash_map_t<uint64_t, std::string> to eliminate:
+//   - One heap allocation per file name (~500K malloc calls at build time)
+//   - ~500K free() calls in ReleaseNameCache()
+//   - Scattered heap nodes that hurt cache locality in PathBuilder parent-chain walks
+class NameArena {
 public:
-  // Thread-safe variant: acquires pool_mutex_ before inserting.
-  // Use from contexts that do NOT already hold the index exclusive lock.
-  const std::string* Intern(std::string_view str) {
-    const std::scoped_lock lock(pool_mutex_);
-    return InternImpl(str);
+  // Optional: pre-reserve to prevent all reallocations during the build loop.
+  void Reserve(size_t entry_count, size_t total_name_bytes) {
+    arena_.reserve(total_name_bytes);
+    index_.reserve(entry_count);
   }
 
-  // Lock-free variant: caller must already hold the index exclusive lock,
-  // which serializes all writers — pool_mutex_ would be uncontended anyway.
-  // Use from InsertLocked / RenameLocked to avoid 500k+ redundant mutex ops.
-  const std::string* InternUnderLock(std::string_view str) {
-    return InternImpl(str);
+  // Insert or replace the name for id.
+  // New id: appends name to arena.
+  // Existing id, name fits in slot: updates in-place (no arena growth).
+  // Existing id, name longer: appends new copy; old bytes become dead space
+  //   (acceptable — renames during build are rare; the whole arena is freed by Release()).
+  void InsertOrAssign(uint64_t id, std::string_view name) {
+    assert(name.size() <= std::numeric_limits<uint16_t>::max() &&
+           "File name exceeds uint16_t slot capacity");
+    // Single hash operation: try_emplace returns the iterator and whether a new
+    // entry was created. For the new-entry path (hot path during build loop),
+    // this avoids the double lookup that find() + insert_or_assign() would incur.
+    const auto [it, inserted] = index_.try_emplace(
+        id, Slot{static_cast<uint32_t>(arena_.size()),
+                 static_cast<uint16_t>(name.size())});
+    if (inserted) {
+      // Offset was pre-computed above as arena_.size() before this append.
+      arena_.insert(arena_.end(), name.begin(), name.end());
+      return;
+    }
+    // Existing entry: update in-place if the name fits, otherwise append a new copy.
+    auto& slot = it->second;
+    if (name.size() <= slot.length) {
+      std::memcpy(arena_.data() + slot.offset, name.data(), name.size());
+      slot.length = static_cast<uint16_t>(name.size());
+    } else {
+      const auto new_offset = static_cast<uint32_t>(arena_.size());
+      arena_.insert(arena_.end(), name.begin(), name.end());
+      slot = {new_offset, static_cast<uint16_t>(name.size())};
+    }
+  }
+
+  // Update an existing entry in-place (or append if longer). No-op if id is
+  // absent — e.g. after Release(), so USN rename events arriving post-release
+  // are silently ignored, matching the old find()-guarded behaviour.
+  void UpdateIfPresent(uint64_t id, std::string_view new_name) {
+    assert(new_name.size() <= std::numeric_limits<uint16_t>::max() &&
+           "File name exceeds uint16_t slot capacity");
+    const auto it = index_.find(id);
+    if (it == index_.end()) {
+      return;
+    }
+    auto& slot = it->second;
+    if (new_name.size() <= slot.length) {
+      std::memcpy(arena_.data() + slot.offset, new_name.data(), new_name.size());
+      slot.length = static_cast<uint16_t>(new_name.size());
+    } else {
+      const auto new_offset = static_cast<uint32_t>(arena_.size());
+      arena_.insert(arena_.end(), new_name.begin(), new_name.end());
+      slot = {new_offset, static_cast<uint16_t>(new_name.size())};
+    }
+  }
+
+  // Return a string_view into the arena for id, or {} if not found.
+  // File names are never legitimately empty, so callers may treat {} as "not found".
+  [[nodiscard]] std::string_view Find(uint64_t id) const {
+    if (const auto it = index_.find(id); it != index_.end()) {
+      const auto& slot = it->second;
+      return {arena_.data() + slot.offset, slot.length};
+    }
+    return {};
+  }
+
+  [[nodiscard]] bool Empty() const { return index_.empty(); }
+
+  // Free all memory. Called by ReleaseNameCache() and ClearLocked().
+  void Release() {
+    std::vector<char>{}.swap(arena_);
+    flat_hash_map_t<uint64_t, Slot>{}.swap(index_);
   }
 
 private:
-  // Shared implementation: fast path skips ToLower alloc when str is already
-  // lowercase (the common case for file extensions such as .txt, .exe, .dll).
-  const std::string* InternImpl(std::string_view str) {
-    if (const bool already_lower = std::all_of(  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
-            str.begin(), str.end(),
-            [](unsigned char c) { return c < 'A' || c > 'Z'; });
-        already_lower) {
-      std::string key(str);
-      if (auto it = interned_strings_.find(key); it != interned_strings_.end()) {
-        return &(*it);  // pool hit — no ToLower alloc needed
-      }
-      return &(*interned_strings_.insert(std::move(key)).first);
-    }
-    // Slow path: normalize to lowercase before inserting.
-    return &(*interned_strings_.insert(ToLower(str)).first);
-  }
+  struct Slot {
+    uint32_t offset = 0;
+    uint16_t length = 0;
+  };
 
-  std::mutex pool_mutex_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention
-  hash_set_stable_t<std::string> interned_strings_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention
+  std::vector<char> arena_;                    // NOLINT(readability-identifier-naming) - snake_case_ per project convention
+  flat_hash_map_t<uint64_t, Slot> index_;      // NOLINT(readability-identifier-naming) - snake_case_ per project convention
 };
+
 
 // Represents a single file or directory in the index.
 // NOTE: name is NOT stored here. Use FileIndexStorage::GetNameCache() during
 // RecomputeAllPaths, or derive from PathStorage after the build phase.
 //
 // Layout: members ordered by alignment (largest first) to minimize padding.
-// Current size 48 bytes; previous order had 13 bytes padding (56 bytes total).
-// Saves ~8 bytes per entry (~8 MB at 1M entries), improving L3 cache hit rate.
+// sizeof(FileEntry) is typically 40 bytes on 64-bit (extension pointer removed; name_length removed).
 struct FileEntry {
   uint64_t parentID = 0;     // NOLINT(readability-identifier-naming) - camelCase kept for backward compatibility
-  const std::string* extension = nullptr;  // Interned extension pointer
   mutable LazyFileSize fileSize{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
   mutable LazyFileTime lastModificationTime{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - explicit default for clarity
   // Index into PathStorage SoA for this entry's path. SIZE_MAX = not set (e.g. before path inserted).
   size_t path_storage_index = static_cast<size_t>(-1);  // NOLINT(readability-identifier-naming) - project convention: snake_case_
-  uint16_t name_length = 0;  // Length of filename component; derive name as last name_length chars of PathStorage path
   bool isDirectory = false;   // NOLINT(readability-identifier-naming) - see comment above
 };
 
@@ -92,7 +143,6 @@ struct FileEntry {
 // Responsibilities:
 // - Core CRUD operations (Insert, Remove, Rename, Move)
 // - Entry lookup and metadata access
-// - String interning for extensions (StringPool)
 // - Directory path cache
 // - Size tracking
 //
@@ -107,8 +157,7 @@ public:
   // Note: These methods assume the caller holds the appropriate lock
   // (InsertLocked, RemoveLocked, etc. are called from FileIndex which manages locking)
   void InsertLocked(uint64_t id, uint64_t parent_id, std::string_view name,
-                    bool is_directory, FILETIME modification_time,
-                    std::string_view extension);
+                    bool is_directory, FILETIME modification_time);
   void RemoveLocked(uint64_t id);
   [[nodiscard]] bool RenameLocked(uint64_t id, std::string_view new_name, [[maybe_unused]] std::string& old_full_path, [[maybe_unused]] std::string& new_full_path);
   [[nodiscard]] bool MoveLocked(uint64_t id, uint64_t new_parent_id, [[maybe_unused]] std::string& old_full_path, [[maybe_unused]] std::string& new_full_path);
@@ -116,7 +165,7 @@ public:
   // Lookup operations
   [[nodiscard]] const FileEntry* GetEntry(uint64_t id) const;
   FileEntry* GetEntryMutable(uint64_t id); // For modifications (assumes lock is held, fields are mutable)
-  [[nodiscard]] size_t Size() const { return entry_count_.load(std::memory_order_relaxed); }
+  [[nodiscard]] size_t Size() const { return entry_count_.load(); }
 
   // Update operations (assume lock is already held, methods are const because FileEntry fields are mutable)
   void UpdateFileSize(uint64_t id, uint64_t size);
@@ -126,14 +175,11 @@ public:
   // Caller must hold unique_lock on mutex.
   void SetPathStorageIndex(uint64_t id, size_t index);
 
-  // String pool for extensions
-  const std::string* InternExtension(std::string_view ext);
-
   // Temporary name cache — populated by InsertLocked/RenameLocked during index build,
   // consumed by PathRecomputer::RecomputeAllPaths to walk parent chains, then released.
-  // After ReleaseNameCache(), derive names from PathStorage (last name_length chars of path).
-  [[nodiscard]] const hash_map_t<uint64_t, std::string>& GetNameCache() const { return name_cache_; }
-  void ReleaseNameCache() { hash_map_t<uint64_t, std::string>{}.swap(name_cache_); }
+  // After ReleaseNameCache(), derive names from PathStorage (e.g. final path segment).
+  [[nodiscard]] const NameArena& GetNameCache() const { return name_cache_; }
+  void ReleaseNameCache() { name_cache_.Release(); }
 
   // Directory cache operations
   [[nodiscard]] inline uint64_t GetDirectoryId(std::string_view path) const {
@@ -186,10 +232,6 @@ private:
   // No FileEntry* may be held across an insert. See LazyAttributeLoader check helpers.
   flat_hash_map_t<uint64_t, FileEntry> id_to_entry_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention
 
-  // String pool for extension interning
-  // See docs/design/STRING_POOL_DESIGN.md for detailed documentation
-  StringPool extension_string_pool_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention
-
   // Directory path cache (path -> ID mapping for fast directory lookups)
   // string_key_map_t: with FAST_LIBS_BOOST uses transparent hash/equal to allow find(string_view);
   // otherwise falls back to std::unordered_map<std::string, V>.
@@ -199,8 +241,8 @@ private:
   // Populated by InsertLocked/RenameLocked during index build.
   // Used by PathRecomputer::RecomputeAllPaths to walk parent chains.
   // Freed by ReleaseNameCache() after RecomputeAllPaths completes.
-  // Node-based (hash_map_t); pointers to values are stable across inserts.
-  hash_map_t<uint64_t, std::string> name_cache_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention
+  // Arena-backed: one contiguous buffer + flat index; ~500K fewer malloc calls vs node-based map.
+  NameArena name_cache_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention
 
   // Lock-free size counter for performance
   std::atomic<size_t> entry_count_{0};  // NOLINT(readability-identifier-naming) - snake_case_ per project convention

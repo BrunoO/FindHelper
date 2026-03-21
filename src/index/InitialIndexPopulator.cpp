@@ -191,8 +191,7 @@ static bool ProcessUsnRecord(PUSN_RECORD_V2 record, int& file_count,
   if (const auto now = std::chrono::steady_clock::now();
       now - ctx.last_progress_update_time >= std::chrono::seconds(1)) {
     if (ctx.indexed_file_count != nullptr) {
-      ctx.indexed_file_count->store(static_cast<size_t>(file_count),
-                                    std::memory_order_relaxed);
+      ctx.indexed_file_count->store(static_cast<size_t>(file_count));
     }
     LOG_INFO_BUILD("Enumerated " << file_count << " files...");
     ctx.last_progress_update_time = now;
@@ -376,7 +375,7 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
 
   // Ensure the counter matches the final index size after all inserts.
   if (indexed_file_count != nullptr) {
-    indexed_file_count->store(file_index.Size(), std::memory_order_relaxed);
+    indexed_file_count->store(file_index.Size());
   }
 
   return true;

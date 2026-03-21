@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 /**
  * DragDropUtils - Windows Shell drag-and-drop helper
@@ -21,18 +22,11 @@
  *   intended to be called directly from main_gui.cpp in response to user
  *   interactions (mouse drag gestures).
  *
- * CURRENT SCOPE (FIRST ITERATION):
- * - Single-file drag only (no multi-selection).
- * - Files only: directories are rejected by the helper.
+ * CURRENT SCOPE:
+ * - Single-file and multi-file drag (via overloads).
+ * - Files only: directories are rejected by the helpers.
  * - COPY semantics: the shell is asked to perform a copy (DROPEFFECT_COPY),
- *   leaving the original file untouched.
- *
- * FUTURE EXTENSIONS:
- * - Multi-file drag: accept a list of paths and build a multi-entry CF_HDROP.
- * - Optional MOVE semantics: allow callers to request DROPEFFECT_MOVE where
- *   appropriate.
- * - Additional formats: add support for text/URL formats if needed by other
- *   consumers.
+ *   leaving the original files untouched.
  */
 namespace drag_drop {
 
@@ -62,6 +56,17 @@ namespace drag_drop {
    * - Assumes COM has been initialized for the calling thread (CoInitialize).
    */
   bool StartFileDragDrop(std::string_view full_path_utf8);
+
+  /**
+   * StartFileDragDrop (multi-file overload)
+   *
+   * Initiates a shell drag-and-drop operation for multiple file paths.
+   * Paths that do not exist or refer to directories are skipped with a warning.
+   * Returns false if no valid paths remain after filtering.
+   *
+   * Same threading and COM requirements as the single-path overload.
+   */
+  bool StartFileDragDrop(const std::vector<std::string_view>& full_paths_utf8);
 
 } // namespace drag_drop
 

@@ -1,6 +1,6 @@
 # Running clang-tidy on macOS
 
-This guide explains how to run clang-tidy static analysis on macOS for the USN_WINDOWS project.
+This guide explains how to run clang-tidy static analysis on macOS for the FindHelper project.
 
 In the commands below, `$PROJECT_ROOT` is the path to your clone of the repository (the directory containing `CMakeLists.txt`). For example: `export PROJECT_ROOT=$(pwd)` when you are in the repo root.
 

@@ -154,7 +154,7 @@ public:
       ResultsContainer& local_results,
       const SearchContext& context,
       size_t storage_size,
-      const lightweight_callable::LightweightCallable<bool, const char*>& filename_matcher,
+      const lightweight_callable::LightweightCallable<bool, std::string_view>& filename_matcher,
       const lightweight_callable::LightweightCallable<bool, std::string_view>& path_matcher);
 
   /**
@@ -182,7 +182,7 @@ public:
       std::vector<uint64_t>& local_results,
       const SearchContext& context,
       size_t storage_size,
-      const lightweight_callable::LightweightCallable<bool, const char*>& filename_matcher,
+      const lightweight_callable::LightweightCallable<bool, std::string_view>& filename_matcher,
       const lightweight_callable::LightweightCallable<bool, std::string_view>& path_matcher);
 
   /**
@@ -275,7 +275,7 @@ public:
    */
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - both members default-constructed; path_matcher set by CreatePatternMatchers
   struct PatternMatchers {
-    lightweight_callable::LightweightCallable<bool, const char*> filename_matcher;
+    lightweight_callable::LightweightCallable<bool, std::string_view> filename_matcher;
     lightweight_callable::LightweightCallable<bool, std::string_view> path_matcher;
   };
 
@@ -455,7 +455,7 @@ inline bool MatchesExtensionFilter(const PathStorage::SoAView& soaView,  // NOLI
  * @param index Item index
  * @param path_len Full path length (excluding null terminator)
  * @param context SearchContext containing search parameters
- * @param filename_matcher Pre-created filename matcher (may be empty)
+ * @param filename_matcher Pre-created filename matcher (may be empty); receives bounded last-segment view
  * @param path_matcher Pre-created path matcher (may be empty)
  * @return true if item matches patterns (or no patterns), false otherwise
  */
@@ -463,14 +463,17 @@ inline bool MatchesPatterns(const PathStorage::SoAView& soaView,  // NOLINT(read
                             size_t index,
                             size_t path_len,
                             [[maybe_unused]] const SearchContext& context,
-                            const lightweight_callable::LightweightCallable<bool, const char*>& filename_matcher,
+                            const lightweight_callable::LightweightCallable<bool, std::string_view>& filename_matcher,
                             const lightweight_callable::LightweightCallable<bool, std::string_view>& path_matcher) {
   const char* path = soaView.path_storage + soaView.path_offsets[index];
   const size_t filename_offset = soaView.filename_start[index];
+  assert(filename_offset <= path_len && "filename_start must not exceed path length");
 
-  if (const char* filename = path + filename_offset;
-      filename_matcher && !filename_matcher(filename)) {
-    return false;
+  if (filename_matcher) {
+    const std::string_view filename(path + filename_offset, path_len - filename_offset);
+    if (!filename_matcher(filename)) {
+      return false;
+    }
   }
 
   if (path_matcher && !path_matcher(std::string_view(path, path_len))) {
@@ -516,7 +519,7 @@ inline void ParallelSearchEngine::ProcessChunkRange(  // NOSONAR(cpp:S3776) NOLI
     ResultsContainer& local_results,
     const SearchContext& context,
     size_t storage_size,
-    const lightweight_callable::LightweightCallable<bool, const char*>& filename_matcher,
+    const lightweight_callable::LightweightCallable<bool, std::string_view>& filename_matcher,
     const lightweight_callable::LightweightCallable<bool, std::string_view>& path_matcher) {
   const size_t array_size = soaView.size;
   size_t validated_chunk_end = chunk_end;
@@ -539,7 +542,7 @@ inline void ParallelSearchEngine::ProcessChunkRange(  // NOSONAR(cpp:S3776) NOLI
   for (size_t i = chunk_start; i < validated_chunk_end; ++i) {
     // Check for cancellation periodically (every kCancellationCheckInterval items)
     if (has_cancel_flag && ((items_checked & kCancellationCheckMask) == 0U) &&  // NOSONAR(cpp:S1066) - Merge if: separate conditions for readability
-        context.cancel_flag->load(std::memory_order_acquire)) {
+        context.cancel_flag->load()) {
       LOG_INFO_BUILD("ProcessChunkRange: Cancelled at item " << i);
       return;
     }

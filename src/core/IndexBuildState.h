@@ -57,22 +57,22 @@ struct IndexBuildState {
    * thread is launched.
    */
   void MarkStarting() {
-    active.store(true, std::memory_order_release);
-    completed.store(false, std::memory_order_release);
-    failed.store(false, std::memory_order_release);
-    cancel_requested.store(false, std::memory_order_release);
+    active.store(true);
+    completed.store(false);
+    failed.store(false);
+    cancel_requested.store(false);
   }
 
   void Reset() {
-    active.store(false, std::memory_order_relaxed);
-    completed.store(false, std::memory_order_relaxed);
-    failed.store(false, std::memory_order_relaxed);
-    cancel_requested.store(false, std::memory_order_relaxed);
-    finalizing_population.store(false, std::memory_order_relaxed);
-    entries_processed.store(0, std::memory_order_relaxed);
-    files_processed.store(0, std::memory_order_relaxed);
-    dirs_processed.store(0, std::memory_order_relaxed);
-    errors.store(0, std::memory_order_relaxed);
+    active.store(false);
+    completed.store(false);
+    failed.store(false);
+    cancel_requested.store(false);
+    finalizing_population.store(false);
+    entries_processed.store(0);
+    files_processed.store(0);
+    dirs_processed.store(0);
+    errors.store(0);
     {
       const std::scoped_lock lock(last_error_mutex);
       last_error_message.clear();
@@ -97,8 +97,8 @@ struct IndexBuildState {
    * Used when index building finishes successfully.
    */
   void MarkCompleted() {
-    completed.store(true, std::memory_order_release);
-    failed.store(false, std::memory_order_release);
+    completed.store(true);
+    failed.store(false);
   }
 
   /**
@@ -108,8 +108,8 @@ struct IndexBuildState {
    * Used when index building fails or encounters an error.
    */
   void MarkFailed() {
-    failed.store(true, std::memory_order_release);
-    completed.store(false, std::memory_order_release);
+    failed.store(true);
+    completed.store(false);
   }
 
   /**
@@ -119,7 +119,7 @@ struct IndexBuildState {
    * Used at the end of worker threads to signal completion.
    */
   void MarkInactive() {
-    active.store(false, std::memory_order_release);
+    active.store(false);
   }
 };
 

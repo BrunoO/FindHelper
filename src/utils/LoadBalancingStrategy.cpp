@@ -274,7 +274,7 @@ inline void ProcessDynamicChunksLoop(const DynamicChunksLoopParams& params,
   bool should_continue = true;
   while (should_continue) {
     // Check for cancellation before claiming each chunk
-    if (params.context.cancel_flag != nullptr && params.context.cancel_flag->load(std::memory_order_acquire)) {
+    if (params.context.cancel_flag != nullptr && params.context.cancel_flag->load()) {
       should_continue = false;
       continue;
     }
@@ -284,7 +284,7 @@ inline void ProcessDynamicChunksLoop(const DynamicChunksLoopParams& params,
     size_t current_chunk_size = params.context.dynamic_chunk_size;
     if (params.thread_count_ > 0 && params.min_chunk_size_ > 0) {
       // Guided Scheduling: Calculate chunk size dynamically based on remaining items
-      const size_t current_processed = params.next_chunk_start_->load(std::memory_order_relaxed);
+      const size_t current_processed = params.next_chunk_start_->load();
       const size_t remaining =
         (params.total_items_ > current_processed) ? (params.total_items_ - current_processed) : 0;
       const size_t divisor = 2 * static_cast<size_t>(params.thread_count_);
@@ -294,7 +294,7 @@ inline void ProcessDynamicChunksLoop(const DynamicChunksLoopParams& params,
 
     // Atomically claim the next chunk with the calculated size
     const size_t chunk_start =
-      params.next_chunk_start_->fetch_add(current_chunk_size, std::memory_order_relaxed);
+      params.next_chunk_start_->fetch_add(current_chunk_size);
 
     // Stop if we've claimed beyond the end of available work
     if (chunk_start >= params.total_items_) {
@@ -571,7 +571,7 @@ inline std::vector<SearchResultData> ExecuteInterleavedStrategyTask(
   for (auto chunk_idx = static_cast<size_t>(params.thread_idx_); chunk_idx < params.num_sub_chunks_;
        chunk_idx += static_cast<size_t>(params.thread_count_)) {
     // Check for cancellation before processing each chunk
-    if (params.context.cancel_flag != nullptr && params.context.cancel_flag->load(std::memory_order_acquire)) {
+    if (params.context.cancel_flag != nullptr && params.context.cancel_flag->load()) {
       break;
     }
     // Calculate chunk boundaries

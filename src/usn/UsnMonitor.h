@@ -312,36 +312,36 @@ struct UsnMonitorMetrics {
 
   [[nodiscard]] Snapshot GetSnapshot() const {
     Snapshot snapshot;
-    snapshot.buffers_read = buffers_read.load(std::memory_order_acquire);
+    snapshot.buffers_read = buffers_read.load();
     snapshot.buffers_processed =
-        buffers_processed.load(std::memory_order_acquire);
+        buffers_processed.load();
     snapshot.records_processed =
-        records_processed.load(std::memory_order_acquire);
-    snapshot.files_created = files_created.load(std::memory_order_acquire);
-    snapshot.files_deleted = files_deleted.load(std::memory_order_acquire);
-    snapshot.files_renamed = files_renamed.load(std::memory_order_acquire);
-    snapshot.files_modified = files_modified.load(std::memory_order_acquire);
-    snapshot.max_queue_depth = max_queue_depth.load(std::memory_order_acquire);
-    snapshot.buffers_dropped = buffers_dropped.load(std::memory_order_acquire);
+        records_processed.load();
+    snapshot.files_created = files_created.load();
+    snapshot.files_deleted = files_deleted.load();
+    snapshot.files_renamed = files_renamed.load();
+    snapshot.files_modified = files_modified.load();
+    snapshot.max_queue_depth = max_queue_depth.load();
+    snapshot.buffers_dropped = buffers_dropped.load();
     snapshot.current_queue_depth =
-        current_queue_depth.load(std::memory_order_acquire);
+        current_queue_depth.load();
     snapshot.errors_encountered =
-        errors_encountered.load(std::memory_order_acquire);
+        errors_encountered.load();
     snapshot.journal_wrap_errors =
-        journal_wrap_errors.load(std::memory_order_acquire);
+        journal_wrap_errors.load();
     snapshot.invalid_param_errors =
-        invalid_param_errors.load(std::memory_order_acquire);
-    snapshot.other_errors = other_errors.load(std::memory_order_acquire);
+        invalid_param_errors.load();
+    snapshot.other_errors = other_errors.load();
     snapshot.consecutive_errors =
-        consecutive_errors.load(std::memory_order_acquire);
+        consecutive_errors.load();
     snapshot.max_consecutive_errors =
-        max_consecutive_errors.load(std::memory_order_acquire);
+        max_consecutive_errors.load();
     snapshot.total_read_time_ms =
-        total_read_time_ms.load(std::memory_order_acquire);
+        total_read_time_ms.load();
     snapshot.total_process_time_ms =
-        total_process_time_ms.load(std::memory_order_acquire);
+        total_process_time_ms.load();
     snapshot.last_update_time_ms =
-        last_update_time_ms.load(std::memory_order_acquire);
+        last_update_time_ms.load();
     return snapshot;
   }
 };
@@ -364,7 +364,7 @@ public:
       return false;
     }
     queue_.push(std::move(buffer));
-    size_.fetch_add(1, std::memory_order_relaxed); // Update atomic counter
+    size_.fetch_add(1); // Update atomic counter
     cv_.notify_one();
     return true;
   }
@@ -379,7 +379,7 @@ public:
 
     buffer = std::move(queue_.front());
     queue_.pop();
-    size_.fetch_sub(1, std::memory_order_relaxed); // Update atomic counter
+    size_.fetch_sub(1); // Update atomic counter
     return true;
   }
 
@@ -393,7 +393,7 @@ public:
   // This avoids mutex contention for frequent size queries (e.g., logging every
   // 100 buffers) The counter is maintained in sync with the actual queue size
   // via Push()/Pop()
-  [[nodiscard]] size_t Size() const { return size_.load(std::memory_order_acquire); }
+  [[nodiscard]] size_t Size() const { return size_.load(); }
 
   [[nodiscard]] size_t GetDroppedCount() const {
     std::scoped_lock lock(mutex_);
@@ -443,10 +443,10 @@ public:
 
   // Status queries - thread-safe
   [[nodiscard]] bool IsActive() const {
-    return monitoring_active_.load(std::memory_order_acquire);
+    return monitoring_active_.load();
   }
   [[nodiscard]] bool IsPopulatingIndex() const {
-    return is_populating_index_.load(std::memory_order_acquire);
+    return is_populating_index_.load();
   }
   /**
    * @brief True if initial population or post-population step (e.g. privilege drop) failed.
@@ -454,10 +454,10 @@ public:
    * population ends due to failure rather than success.
    */
   [[nodiscard]] bool InitialPopulationFailed() const {
-    return initial_population_failed_.load(std::memory_order_acquire);
+    return initial_population_failed_.load();
   }
   [[nodiscard]] size_t GetIndexedFileCount() const {
-    return indexed_file_count_.load(std::memory_order_acquire);
+    return indexed_file_count_.load();
   }
   [[nodiscard]] size_t GetQueueSize() const;
   [[nodiscard]] size_t GetDroppedBufferCount() const;
@@ -472,7 +472,7 @@ public:
    * @return true if privilege dropping failed, false otherwise
    */
   bool DidPrivilegeDropFail() const {
-    return privilege_drop_failed_.load(std::memory_order_acquire);
+    return privilege_drop_failed_.load();
   }
 
   // Metrics access - thread-safe

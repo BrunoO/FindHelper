@@ -1,6 +1,6 @@
 # macOS Profiling Guide
 
-This guide explains how to profile the USN_WINDOWS application on macOS using various profiling tools.
+This guide explains how to profile the FindHelper application on macOS using various profiling tools.
 
 ## Table of Contents
 

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <array>  // NOLINT(clang-diagnostic-error) - False positive on macOS header analysis
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <future>
+#include <iterator>
 #include <memory>
 #include <set>
 #include <string>
@@ -49,7 +52,7 @@ using SortGeneration = uint64_t;
 //
 // Naming: Public members use camelCase (not snake_case_) by design. This matches
 // common UI/widget naming (e.g. ImGui, JavaScript UI state) and keeps access
-// at call sites readable (e.g. state.selectedRow, state.timeFilter). A few
+// at call sites readable (e.g. state.selected_row_, state.timeFilter). A few
 // internal members use snake_case_ with trailing underscore per project
 // convention (e.g. sort_cancellation_token_, gemini_description_input_).
 // See docs/standards/CXX17_NAMING_CONVENTIONS.md; this is the documented
@@ -260,13 +263,18 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
   SortGeneration completed_sort_generation_ = 0;  // Generation of the last completed sort
 
   // Selection and Deletion state
-  // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
-  int selectedRow = -1;
+  // scrollToSelectedRow, filesToDelete, pendingDeletions, markedFileIds remain public because
+  // they are simple flags/containers consumed directly by rendering and keyboard code.
+  // The three core selection fields are private below to enforce mutation through helpers.
+  //
+  // Read-only accessors (defined in the Selection helpers section):
+  //   GetSelectedRow()       – primary row mirror (scalar backward-compat)
+  //   GetSelectedRows()      – full sorted, unique selection vector
   // If true, the results table will scroll to the selected row in the next frame
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   bool scrollToSelectedRow = false;
-  // NOLINTNEXTLINE(readability-identifier-naming,readability-redundant-string-init) - POD-like struct for UI state, camelCase is intentional, = "" makes intent explicit
-  std::string fileToDelete = "";
+  // NOLINTNEXTLINE(readability-identifier-naming,readability-redundant-member-init) - POD-like struct for UI state, camelCase is intentional, {} makes intent explicit
+  std::vector<std::string> filesToDelete{};
   std::set<std::string, std::less<>>
     pendingDeletions;  // NOLINT(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional - Transparent comparator for string_view lookups
   // Set of file IDs that are marked for bulk operations (dired-style)
@@ -349,6 +357,242 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
   void MarkInputChanged();
   void ClearInputs();
 
+  [[nodiscard]] bool IsPendingDeletion(std::string_view path) const {
+    return pendingDeletions.find(path) != pendingDeletions.end();
+  }
+
+  // --- Selection helpers (Phase 0 facade → Phase 1 multi-selection) ---
+
+  [[nodiscard]] bool HasSelection() const {
+    return selected_row_ >= 0;
+  }
+
+  [[nodiscard]] int GetSelectedRow() const {
+    return selected_row_;
+  }
+
+  // Read-only access to the full sorted, unique selection vector.
+  [[nodiscard]] const std::vector<int>& GetSelectedRows() const {
+    return selected_rows_;
+  }
+
+
+  // Replace current selection with a single row. Clears multi-selection state.
+  void SetSelectedRow(int row) {
+    selected_row_ = row;
+    selected_rows_.clear();
+    selection_anchor_row_ = -1;
+    if (row >= 0) {
+      selected_rows_.push_back(row);
+      selection_anchor_row_ = row;
+    }
+    AssertSelectionInvariant();
+  }
+
+  // Clear all selection state (single-row mirror, multi-selection vector, and anchor).
+  void ClearSelection() {
+    selected_row_ = -1;
+    selected_rows_.clear();
+    selection_anchor_row_ = -1;
+    AssertSelectionInvariant();
+  }
+
+  // Add a row to the multi-selection (sorted, unique). Updates anchor to row.
+  void SelectRow(int row) {
+    if (const auto it = std::lower_bound(selected_rows_.begin(), selected_rows_.end(), row);  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+        it == selected_rows_.end() || *it != row) {
+      selected_rows_.insert(it, row);
+    }
+    selection_anchor_row_ = row;
+    selected_row_ = row;
+    AssertSelectionInvariant();
+  }
+
+
+  // Returns true when row is present in the multi-selection.
+  [[nodiscard]] bool IsRowSelected(int row) const {
+    return std::binary_search(selected_rows_.begin(), selected_rows_.end(), row);  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+  }
+
+  // Asserts that selected_rows_ is sorted and unique, and that selection_anchor_row_ is either
+  // -1 or a member of selected_rows_. Active only in debug builds (assert is a no-op in Release).
+  void AssertSelectionInvariant() const {
+    for (std::size_t i = 1; i < selected_rows_.size(); ++i) {
+      assert(selected_rows_[i - 1] < selected_rows_[i]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i and i-1 are bounded by loop condition
+    }
+    assert(selection_anchor_row_ == -1 || IsRowSelected(selection_anchor_row_));
+  }
+
+  // Replace selection with the contiguous range [lo, hi]. anchor_row and primary_row
+  // must both lie within [lo, hi]. Triggers AssertSelectionInvariant on exit.
+  void SetSelectionRange(int lo, int hi, int anchor_row, int primary_row) {
+    assert(lo <= hi);
+    assert(anchor_row >= lo && anchor_row <= hi);
+    assert(primary_row >= lo && primary_row <= hi);
+    selected_rows_.clear();
+    selected_rows_.reserve(static_cast<std::size_t>(hi - lo) + 1U);  // hi >= lo asserted above
+    for (int i = lo; i <= hi; ++i) {
+      selected_rows_.push_back(i);
+    }
+    selection_anchor_row_ = anchor_row;
+    selected_row_ = primary_row;
+    AssertSelectionInvariant();
+  }
+
+  // Merge the contiguous range [lo, hi] into the existing selection without clearing it.
+  // Used for ImGui SetRange(Selected=true) requests that have no preceding SetAll(false):
+  // - Ctrl+Click to add a row  → SetRange(row, row, true) with no prior Clear
+  // - Shift+Click after Clear  → SetAll(false) empties first; AddSelectionRange then adds range
+  // Plain click and Shift+Click both arrive as SetAll(false) + SetRange, so the Clear runs first
+  // and AddSelectionRange fills from empty — identical to SetSelectionRange in that case.
+  void AddSelectionRange(int lo, int hi, int anchor_row, int primary_row) {
+    for (int i = lo; i <= hi; ++i) {
+      if (const auto it = std::lower_bound(selected_rows_.begin(), selected_rows_.end(), i);  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+          it == selected_rows_.end() || *it != i) {
+        selected_rows_.insert(it, i);
+      }
+    }
+    selection_anchor_row_ = anchor_row;
+    selected_row_ = primary_row;
+    AssertSelectionInvariant();
+  }
+
+  // Returns the "primary" selected row: anchor if valid and selected, else first selected, else -1.
+  [[nodiscard]] int GetPrimarySelectedRow() const {
+    if (selection_anchor_row_ >= 0 && IsRowSelected(selection_anchor_row_)) {
+      return selection_anchor_row_;
+    }
+    if (!selected_rows_.empty()) {
+      return selected_rows_.front();
+    }
+    return -1;
+  }
+
+  // Bounds-checked variant: returns -1 if the primary row is out of range.
+  template <typename DisplayResults>
+  [[nodiscard]] int GetPrimarySelectedRow(const DisplayResults& display_results) const {
+    if (const int primary = GetPrimarySelectedRow();
+        primary >= 0 && primary < static_cast<int>(std::size(display_results))) {
+      return primary;
+    }
+    return -1;
+  }
+
+  // Ensure at least one row is selected when results are non-empty.
+  template <typename DisplayResults>
+  void EnsureSomeSelection(const DisplayResults& display_results) {
+    if (!HasSelection() && !std::empty(display_results)) {
+      SelectRow(0);
+    }
+  }
+
+  // Remove selection indices >= row_count and clamp the anchor.
+  void ClampSelectionToRowCount(std::size_t row_count) {
+    const auto count = static_cast<int>(row_count);
+    const auto first_oob = std::lower_bound(selected_rows_.begin(), selected_rows_.end(), count);  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+    selected_rows_.erase(first_oob, selected_rows_.end());
+    if (selection_anchor_row_ >= count) {
+      selection_anchor_row_ = -1;
+    }
+    selected_row_ = GetPrimarySelectedRow();
+    AssertSelectionInvariant();
+  }
+
+  // Rebuild selected_rows_ so the same logical items remain selected after display_results
+  // has been re-sorted or regenerated (entity-based, matched by fullPath).
+  template <typename DisplayResults>
+  void RemapSelectionAfterDisplayResultsChange(const DisplayResults& old_results,
+                                               const DisplayResults& new_results) {
+    if (selected_rows_.empty()) {
+      selection_anchor_row_ = -1;
+      selected_row_ = -1;
+      return;
+    }
+    // Snapshot paths of currently selected items and the anchor.
+    std::vector<std::string_view> selected_paths;
+    selected_paths.reserve(selected_rows_.size());
+    std::string_view anchor_path;
+    for (const int row : selected_rows_) {
+      if (row >= 0 && row < static_cast<int>(old_results.size())) {
+        selected_paths.push_back(
+          old_results[static_cast<std::size_t>(row)].fullPath);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by range check above
+      }
+    }
+    if (selection_anchor_row_ >= 0 && selection_anchor_row_ < static_cast<int>(old_results.size())) {
+      anchor_path =
+        old_results[static_cast<std::size_t>(selection_anchor_row_)].fullPath;  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by range check above
+    }
+    // Rebuild from new results (iteration order is already sorted).
+    selected_rows_.clear();
+    selection_anchor_row_ = -1;
+    const auto row_count = static_cast<int>(std::size(new_results));
+    for (int new_row = 0; new_row < row_count; ++new_row) {
+      const std::string_view path =
+        new_results[static_cast<std::size_t>(new_row)].fullPath;  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounded by row_count
+      const bool was_selected =
+        std::find(selected_paths.begin(), selected_paths.end(), path) !=  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+        selected_paths.end();
+      if (was_selected) {
+        selected_rows_.push_back(new_row);  // already sorted (new_results traversed in order)
+        if (!anchor_path.empty() && path == anchor_path) {
+          selection_anchor_row_ = new_row;
+        }
+      }
+    }
+    selected_row_ = GetPrimarySelectedRow();
+    AssertSelectionInvariant();
+  }
+
+  // --- Focus synchronization helpers ---
+  // focusRowRequest: when >= 0, the render pass will call SetKeyboardFocusHere(0) before the
+  // Filename Selectable of that row, keeping ImGui's focus rectangle in sync with the
+  // GuiState selection after keyboard-driven navigation. Consumed by ConsumeFocusRequest().
+  // Set only from keyboard handlers (never from mouse paths). See design doc:
+  // internal-docs/design/2026-03-17_RESULTS_TABLE_FOCUS_AND_SELECTION_SYNC.md
+
+  // Request that the given row receives ImGui keyboard focus on the next rendered frame.
+  void RequestFocusForRow(int row) { focus_row_request_ = row; }
+
+  // Request focus for whichever row GetPrimarySelectedRow() currently returns.
+  void RequestFocusForPrimaryRow() { focus_row_request_ = GetPrimarySelectedRow(); }
+
+  // Returns the pending focus-row index and resets it to -1.
+  // Called once per frame by the row-render path before the clipper loop.
+  [[nodiscard]] int ConsumeFocusRequest() {
+    const int row = focus_row_request_;
+    focus_row_request_ = -1;
+    return row;
+  }
+
+  // Replace current selection with a single row AND request ImGui focus for that row.
+  // Use this in keyboard navigation paths instead of the bare SetSelectedRow so the
+  // focus rectangle tracks the selection automatically. Do NOT use from mouse handlers
+  // or data-change paths (sort/filter remap) — those must not steal ImGui focus.
+  void SetSelectedRowAndFocus(int row) {
+    SetSelectedRow(row);
+    RequestFocusForRow(row);
+  }
+
+  // --- ImGui multi-select integration helpers ---
+  // Called by ApplyMultiSelectRequests (ResultsTable.cpp) to translate ImGui
+  // SetRange requests into GuiState selection mutations.
+
+  // Remove all rows in [lo, hi] from the multi-selection. Updates selected_row_
+  // and selection_anchor_row_ if they fall inside the removed range.
+  void RemoveSelectionRange(int lo, int hi) {
+    selected_rows_.erase(
+        std::remove_if(selected_rows_.begin(), selected_rows_.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+                       [lo, hi](int row) { return row >= lo && row <= hi; }),
+        selected_rows_.end());
+    if (selected_row_ >= lo && selected_row_ <= hi) {
+      selected_row_ = selected_rows_.empty() ? -1 : selected_rows_.front();
+    }
+    if (selection_anchor_row_ >= lo && selection_anchor_row_ <= hi) {
+      selection_anchor_row_ = -1;
+    }
+    AssertSelectionInvariant();
+  }
+
   /**
    * Build SearchParams from current GuiState values.
    *
@@ -377,4 +621,15 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
    * so the next manual search will return all indexed entries.
    */
   void ApplyShowAllPreset();
+
+ private:
+  // These three fields are private to enforce mutation through the selection helpers above.
+  // All read access goes through GetSelectedRow(), GetSelectedRows().
+  // All writes go through SetSelectedRow(), ClearSelection(), SelectRow(),
+  // SetSelectionRange(), AddSelectionRange(), RemoveSelectionRange(),
+  // ClampSelectionToRowCount(), RemapSelectionAfterDisplayResultsChange().
+  int selected_row_ = -1;                // NOLINT(readability-identifier-naming) - snake_case_ intentional for private selection fields
+  std::vector<int> selected_rows_{};     // NOLINT(readability-identifier-naming,readability-redundant-member-init) - snake_case_ intentional; {} makes intent explicit
+  int selection_anchor_row_ = -1;        // NOLINT(readability-identifier-naming) - snake_case_ intentional for private selection fields
+  int focus_row_request_ = -1;           // NOLINT(readability-identifier-naming) - snake_case_ intentional; -1 = no pending focus sync
 };

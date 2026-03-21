@@ -4,20 +4,19 @@
 #include <cstdint>
 
 #include "index/FileIndexStorage.h"
-#include "utils/FileTimeTypes.h"
 #include "path/PathOperations.h"
 #include "path/PathStorage.h"
+#include "utils/FileTimeTypes.h"
 
 // Fixture: PathOperations needs FileIndexStorage (for path_storage_index) and PathStorage.
 struct PathOpsFixture {
-  std::shared_mutex mutex_{};
+  std::shared_mutex mutex_;
   FileIndexStorage storage_{mutex_};
-  PathStorage path_storage_{};
+  PathStorage path_storage_;
   PathOperations ops{storage_, path_storage_};
 
   void AddEntry(uint64_t id, uint64_t parent_id, const std::string& name, bool is_dir) {
-    const std::string ext = is_dir ? "" : "txt";
-    storage_.InsertLocked(id, parent_id, name, is_dir, kFileTimeNotLoaded, ext);
+    storage_.InsertLocked(id, parent_id, name, is_dir, kFileTimeNotLoaded);
   }
 };
 

@@ -100,6 +100,7 @@ void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
     // What's new — high-level user-facing features (from RELEASE_NOTES.md; newest first)
     // Use BulletWrapped() because BulletText() does not wrap long lines
     if (ImGui::CollapsingHeader("What's new")) {
+      BulletWrapped("2026-03-21: Multi-file drag-and-drop: drag selected rows to Explorer, Finder, Desktop, or any shell target. Dragging an unselected row snaps selection to it (single-file drag); dragging a selected row drags all eligible selected files at once. Directories and files pending deletion are excluded. Windows & macOS.");
       BulletWrapped("2026-03-15: Status bar progress bar when the app is busy (indexing, searching, loading attributes, or computing folder sizes).");
       BulletWrapped("2026-03-15: Folder rows show last modified time and aggregate size instead of placeholder \"Folder\" values.");
       BulletWrapped("2026-03-15: Linux: status bar shows process memory (VmRSS) and uses cgroup-aware thread count when in containers.");
@@ -151,7 +152,7 @@ void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
 #endif  // __APPLE__
     RenderShortcutBullet(FindShortcut(ShortcutAction::ExportCsv));
     ShortcutBullet("Delete - Delete selected file (opens confirmation)");
-    ShortcutBullet("Drag row - Drag and drop file to other applications (Windows & macOS)");
+    ShortcutBullet("Drag row - Drag file(s) to other apps; drags all selected files if row is selected (Windows & macOS)");
     ShortcutBullet("Double-click filename - Open file with default application");
     ShortcutBullet("Double-click full path - Open parent folder in Explorer");
     ShortcutBullet("Enter - Open selected file or folder");

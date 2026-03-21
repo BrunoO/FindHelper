@@ -78,7 +78,7 @@ FolderCrawler::~FolderCrawler() {
 
 void FolderCrawler::StopWorkerThreads() {
   // Signal all threads to stop
-  should_stop_.store(true, std::memory_order_release);
+  should_stop_.store(true);
   {
     const std::scoped_lock idle_lock(idle_mutex_);
     idle_cv_.notify_all();
@@ -111,16 +111,15 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
     LOG_INFO_BUILD("Starting folder crawl from: " << root_path);
 
     // Reset statistics (in case Crawl() is called multiple times)
-    files_processed_.store(0, std::memory_order_relaxed);
-    dirs_processed_.store(0, std::memory_order_relaxed);
-    error_count_.store(0, std::memory_order_relaxed);
-    should_stop_.store(false, std::memory_order_release);
-    total_queued_.store(0, std::memory_order_relaxed);
+    files_processed_.store(0);
+    dirs_processed_.store(0);
+    error_count_.store(0);
+    should_stop_.store(false);
+    total_queued_.store(0);
     last_progress_update_ms_.store(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch())
-            .count(),
-        std::memory_order_relaxed);
+            .count());
 
     // Determine thread count (Linux: GetLogicalProcessorCount uses sysconf when hardware_concurrency() is 0)
     size_t thread_count = config_.thread_count;
@@ -152,7 +151,7 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
       const std::scoped_lock wq_lock(*wq_mutexes_[0]);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - index 0 valid: num_workers_ >= 1
       wq_items_[0].emplace_back(root_path);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     }
-    total_queued_.fetch_add(1, std::memory_order_release);
+    total_queued_.fetch_add(1);
     {
       const std::scoped_lock idle_lock(idle_mutex_);
       idle_cv_.notify_one();
@@ -171,30 +170,30 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
       // Use wait_for with timeout to poll for cancellation even if not notified.
       while (!completion_cv_.wait_for(comp_lock, std::chrono::milliseconds(kWaitPollIntervalMs),
              [this, cancel_flag]() {
-               if (cancel_flag && cancel_flag->load(std::memory_order_acquire)) {
+               if (cancel_flag && cancel_flag->load()) {
                  return true;  // Exit on cancellation
                }
-               return total_queued_.load(std::memory_order_acquire) == 0 &&
-                      active_workers_.load(std::memory_order_acquire) == 0;
+               return total_queued_.load() == 0 &&
+                      active_workers_.load() == 0;
              })) {
         // Timeout - loop repeats to check predicate
       }
 
       // Log periodic progress (final state when woken)
       auto now = std::chrono::steady_clock::now();
-      if (const size_t total_processed = files_processed_.load(std::memory_order_relaxed) +
-                                         dirs_processed_.load(std::memory_order_relaxed);
+      if (const size_t total_processed = files_processed_.load() +
+                                         dirs_processed_.load();
           now - last_log_time >= log_interval && total_processed > last_logged_count) {
         LOG_INFO_BUILD("Crawling progress - Files: "
                        << files_processed_.load() << ", Dirs: " << dirs_processed_.load()
-                       << ", Active workers: " << active_workers_.load(std::memory_order_acquire)
-                       << ", Total queued: " << total_queued_.load(std::memory_order_acquire));
+                       << ", Active workers: " << active_workers_.load()
+                       << ", Total queued: " << total_queued_.load());
         last_logged_count = total_processed;  // NOSONAR(cpp:S1854) - Value is used in condition above
         last_log_time = now;
       }
 
       // Signal workers to stop
-      should_stop_.store(true, std::memory_order_release);
+      should_stop_.store(true);
     }
 
     // Wake all idle workers so they see should_stop_ and exit
@@ -204,7 +203,7 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
     }
 
     // Check if cancelled
-    const bool cancelled = (cancel_flag != nullptr && cancel_flag->load(std::memory_order_acquire));
+    const bool cancelled = (cancel_flag != nullptr && cancel_flag->load());
     LOG_INFO(cancelled ? "Folder crawl cancelled by user" : "All work completed, threads stopping");
 
     // Wait for all threads to finish
@@ -239,16 +238,16 @@ bool FolderCrawler::Crawl(std::string_view root_path, std::atomic<size_t>* index
 namespace {
 // Helper function to check if worker should stop
 bool ShouldStopWorker(const std::atomic<bool>* cancel_flag, const std::atomic<bool>& should_stop) {
-  if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_acquire)) {
+  if (cancel_flag != nullptr && cancel_flag->load()) {
     return true;
   }
-  return should_stop.load(std::memory_order_acquire);
+  return should_stop.load();
 }
 
 // Helper function to signal stop to all workers
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,readability-identifier-naming) - free function in anonymous namespace, PascalCase per project
 void SignalStop(std::atomic<bool>& should_stop, std::condition_variable& idle_cv) {
-  should_stop.store(true, std::memory_order_release);
+  should_stop.store(true);
   idle_cv.notify_all();
 }
 
@@ -268,20 +267,20 @@ bool EnumerateDirectorySafe(
     (void)e;                    // Suppress unused variable warning in Release mode
     LOG_ERROR_BUILD("FolderCrawler: Exception in EnumerateDirectory for: " << dir_path << " - "
                                                                            << e.what());
-    error_count.fetch_add(1, std::memory_order_relaxed);
-    active_workers.fetch_sub(1, std::memory_order_relaxed);
+    error_count.fetch_add(1);
+    active_workers.fetch_sub(1);
     return false;
   } catch (...) {  // NOSONAR(cpp:S2738) - Catch-all needed for non-standard exceptions from
                    // platform-specific EnumerateDirectory
     LOG_ERROR_BUILD("FolderCrawler: Unknown exception in EnumerateDirectory for: " << dir_path);
-    error_count.fetch_add(1, std::memory_order_relaxed);
-    active_workers.fetch_sub(1, std::memory_order_relaxed);
+    error_count.fetch_add(1);
+    active_workers.fetch_sub(1);
     return false;
   }
 
   if (!enum_success) {
-    error_count.fetch_add(1, std::memory_order_relaxed);
-    active_workers.fetch_sub(1, std::memory_order_relaxed);
+    error_count.fetch_add(1);
+    active_workers.fetch_sub(1);
     return false;
   }
   return true;
@@ -313,9 +312,9 @@ void ProcessEntry(  // NOSONAR(cpp:S107) - Function has 10 parameters
   // replacing O(subdirs) lock acquisitions with a single scoped_lock.
   if (entry.is_directory) {
     pending_subdirs.push_back(full_path);
-    dirs_processed.fetch_add(1, std::memory_order_relaxed);
+    dirs_processed.fetch_add(1);
   } else {
-    files_processed.fetch_add(1, std::memory_order_relaxed);
+    files_processed.fetch_add(1);
   }
 
   // Flush batch if full
@@ -326,10 +325,10 @@ void ProcessEntry(  // NOSONAR(cpp:S107) - Function has 10 parameters
     } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Catch-all safety net for FlushBatch (already catches std::bad_alloc and std::runtime_error internally)
       (void)e;       // Suppress unused variable warning in Release mode
       LOG_ERROR_BUILD("FolderCrawler: Exception in FlushBatch: " << e.what());
-      error_count.fetch_add(1, std::memory_order_relaxed);
+      error_count.fetch_add(1);
     } catch (...) {  // NOSONAR(cpp:S2738) - Catch-all needed for non-standard exceptions from FlushBatch
       LOG_ERROR_BUILD("FolderCrawler: Unknown exception in FlushBatch");
-      error_count.fetch_add(1, std::memory_order_relaxed);
+      error_count.fetch_add(1);
     }
     batch.clear();
   }
@@ -351,7 +350,7 @@ bool ProcessEntries(  // NOSONAR(cpp:S107) - Function has 13 parameters
 
   for (const auto& entry : entries) {
     if (ShouldStopWorker(cancel_flag, should_stop)) {
-      if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_acquire)) {
+      if (cancel_flag != nullptr && cancel_flag->load()) {
         SignalStop(should_stop, idle_cv);
       }
       return false;
@@ -388,7 +387,7 @@ void FolderCrawler::WorkerThread(size_t worker_idx,
     while (!should_exit) {
       // Check for cancellation or stop signal
       if (ShouldStopWorker(cancel_flag, should_stop_)) {
-        if (cancel_flag != nullptr && cancel_flag->load(std::memory_order_acquire)) {
+        if (cancel_flag != nullptr && cancel_flag->load()) {
           SignalStop(should_stop_, idle_cv_);
         }
         should_exit = true;
@@ -420,16 +419,16 @@ void FolderCrawler::WorkerThread(size_t worker_idx,
         should_exit = true;
       }
 
-      active_workers_.fetch_sub(1, std::memory_order_release);
+      active_workers_.fetch_sub(1);
       SignalCompletionIfLastWorker();
     }
   } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Catch-all safety net for entire WorkerThread operation
     (void)e;       // Suppress unused variable warning in Release mode
     LOG_ERROR_BUILD("FolderCrawler: Fatal exception in WorkerThread: " << e.what());
-    error_count_.fetch_add(1, std::memory_order_relaxed);
+    error_count_.fetch_add(1);
   } catch (...) {  // NOSONAR(cpp:S2738) - Catch-all needed for non-standard exceptions from worker thread operations
     LOG_ERROR_BUILD("FolderCrawler: Unknown fatal exception in WorkerThread");
-    error_count_.fetch_add(1, std::memory_order_relaxed);
+    error_count_.fetch_add(1);
   }
 
   // Flush remaining batch (with exception handling)
@@ -439,17 +438,17 @@ void FolderCrawler::WorkerThread(size_t worker_idx,
     } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Catch-all safety net for final FlushBatch (already catches std::bad_alloc and std::runtime_error internally)
       (void)e;       // Suppress unused variable warning in Release mode
       LOG_ERROR_BUILD("FolderCrawler: Exception in final FlushBatch: " << e.what());
-      error_count_.fetch_add(1, std::memory_order_relaxed);
+      error_count_.fetch_add(1);
     } catch (...) {  // NOSONAR(cpp:S2738) - Catch-all needed for non-standard exceptions from final FlushBatch
       LOG_ERROR_BUILD("FolderCrawler: Unknown exception in final FlushBatch");
-      error_count_.fetch_add(1, std::memory_order_relaxed);
+      error_count_.fetch_add(1);
     }
   }
 }
 
 void FolderCrawler::SignalCompletionIfLastWorker() {
-  if (total_queued_.load(std::memory_order_acquire) == 0 &&
-      active_workers_.load(std::memory_order_acquire) == 0) {
+  if (total_queued_.load() == 0 &&
+      active_workers_.load() == 0) {
     const std::scoped_lock lock(completion_mutex_);
     completion_cv_.notify_all();
   }
@@ -464,27 +463,26 @@ void FolderCrawler::FlushBatch(const std::vector<std::pair<std::string, bool>>& 
 
   // Update progress counter
   if (indexed_file_count != nullptr) {
-    const size_t total = files_processed_.load(std::memory_order_relaxed) +
-                         dirs_processed_.load(std::memory_order_relaxed);
+    const size_t total = files_processed_.load() +
+                         dirs_processed_.load();
     const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                std::chrono::steady_clock::now().time_since_epoch())
                                .count();
-    int64_t last_update = last_progress_update_ms_.load(std::memory_order_relaxed);
+    int64_t last_update = last_progress_update_ms_.load();
 
     if (now_ms - last_update >= static_cast<int64_t>(config_.progress_update_interval_ms) &&
-        last_progress_update_ms_.compare_exchange_strong(last_update, now_ms,
-                                                        std::memory_order_relaxed)) {
-      indexed_file_count->store(total, std::memory_order_relaxed);
+        last_progress_update_ms_.compare_exchange_strong(last_update, now_ms)) {
+      indexed_file_count->store(total);
       LOG_INFO_BUILD("Crawled " << total << " entries...");
     }
   }
 }
 
 void FolderCrawler::AcquireWorkItem() {
-  const size_t prev_active = active_workers_.fetch_add(1, std::memory_order_relaxed);  // BEFORE sub
+  const size_t prev_active = active_workers_.fetch_add(1);  // BEFORE sub
   // Invariant: active workers never exceed the pool size (one slot per thread).
   assert(prev_active < num_workers_ && "Active worker count must not exceed pool size");
-  total_queued_.fetch_sub(1, std::memory_order_relaxed);
+  total_queued_.fetch_sub(1);
 }
 
 // Pop work from own queue; on empty, attempt to steal from peers (try_lock, no blocking).
@@ -530,7 +528,7 @@ void FolderCrawler::PushSubdirs(size_t worker_idx, std::vector<std::string>& sub
       wq_items_[worker_idx].push_back(std::move(s));  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     }
   }
-  total_queued_.fetch_add(n, std::memory_order_release);
+  total_queued_.fetch_add(n);
   {
     const std::scoped_lock idle_lock(idle_mutex_);
     idle_cv_.notify_all();

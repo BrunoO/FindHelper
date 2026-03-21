@@ -323,10 +323,11 @@ namespace parallel_search_detail {
 // Filename matcher always receives the filename only (last path segment).
 // Path matcher always receives the full path. Extracted to reduce nesting depth (cpp:S134).
 inline bool CheckMatchers(const char* path, [[maybe_unused]] size_t path_len, size_t filename_offset,
-                   const lightweight_callable::LightweightCallable<bool, const char*>& filename_matcher,
+                   const lightweight_callable::LightweightCallable<bool, std::string_view>& filename_matcher,
                    const lightweight_callable::LightweightCallable<bool, std::string_view>& path_matcher) {
   if (filename_matcher) {
-    const char* filename = path + filename_offset;
+    assert(filename_offset <= path_len && "filename_start must not exceed path length");
+    const std::string_view filename(path + filename_offset, path_len - filename_offset);
     if (!filename_matcher(filename)) {
       return false;
     }
@@ -372,7 +373,7 @@ void ParallelSearchEngine::ProcessChunkRangeIds(  // NOSONAR(cpp:S3776, cpp:S107
     std::vector<uint64_t>& local_results,
     const SearchContext& context,
     size_t storage_size,
-    const lightweight_callable::LightweightCallable<bool, const char*>& filename_matcher,
+    const lightweight_callable::LightweightCallable<bool, std::string_view>& filename_matcher,
     const lightweight_callable::LightweightCallable<bool, std::string_view>& path_matcher) {
   // NOLINTNEXTLINE(readability-simplify-boolean-expr) - Combined assert documents full chunk range invariant in a single place
   assert(chunk_start <= chunk_end && chunk_end <= soaView.size);
@@ -392,7 +393,7 @@ void ParallelSearchEngine::ProcessChunkRangeIds(  // NOSONAR(cpp:S3776, cpp:S107
     // Check for cancellation periodically (every kCancellationCheckInterval items)
     // NOLINTNEXTLINE(readability-simplify-boolean-expr) - Explicit conjunction keeps cancellation mask check and atomic flag load clearly separated in hot loop
     if (has_cancel_flag && ((i & kCancellationCheckMask) == 0U) &&  // NOSONAR(cpp:S1066) - Merge if: separate conditions for readability
-        context.cancel_flag->load(std::memory_order_acquire)) {
+        context.cancel_flag->load()) {
       return;
     }
 

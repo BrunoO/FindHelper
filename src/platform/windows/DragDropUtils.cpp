@@ -4,6 +4,7 @@
 #include <memory>
 #include <objidl.h>
 #include <shellapi.h>
+#include <vector>
 #include <windows.h>  // NOSONAR(cpp:S3806) - Windows-only include; path case matches filesystem
 
 #include "platform/FileOperations.h"
@@ -325,12 +326,17 @@ class BasicDropSource final : public IDropSource, public ComBase {  // NOLINT(cp
   }
 };
 
-HGLOBAL CreateHDropForPath(const std::wstring& path) {
-  const size_t char_count = path.length() + 1;  // include terminating null
-  const SIZE_T bytes_for_path = char_count * sizeof(wchar_t);
+// Build a CF_HDROP HGLOBAL for one or more wide-string paths.
+// The DROPFILES structure is immediately followed by null-terminated wide paths,
+// ending with an extra null (double-null terminator as required by the shell).
+HGLOBAL CreateHDropForPaths(const std::vector<std::wstring>& wide_paths) {
+  SIZE_T total_chars = 0;
+  for (const auto& p : wide_paths) {
+    total_chars += p.length() + 1;  // +1 for each path's null terminator
+  }
+  total_chars += 1;  // double-null terminator
 
-  const SIZE_T total_size = sizeof(DROPFILES) + bytes_for_path + sizeof(wchar_t);
-
+  const SIZE_T total_size = sizeof(DROPFILES) + total_chars * sizeof(wchar_t);
   HGLOBAL h_global = GlobalAlloc(GHND, total_size);
   if (!h_global) {
     return nullptr;
@@ -349,13 +355,44 @@ HGLOBAL CreateHDropForPath(const std::wstring& path) {
   drop_files->fWide = TRUE;
 
   auto* buffer = reinterpret_cast<wchar_t*>(drop_files + 1);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast) NOSONAR(cpp:S3630) - DROPFILES layout defined by Win32; reinterpret_cast from struct tail to wchar_t buffer follows documented pattern
-  memcpy(buffer, path.c_str(), bytes_for_path);
-
-  // Double-null terminate the list.
-  buffer[char_count] = L'\0';
+  SIZE_T offset = 0;
+  for (const auto& p : wide_paths) {
+    const SIZE_T len = p.length() + 1;  // include null terminator
+    memcpy(buffer + offset, p.c_str(), len * sizeof(wchar_t));
+    offset += len;
+  }
+  buffer[offset] = L'\0';  // double-null terminator
 
   GlobalUnlock(h_global);
   return h_global;
+}
+
+// Execute DoDragDrop with an already-constructed HDROP. Logs result and returns success.
+bool DoDragDropWithHDrop(HGLOBAL h_drop, const std::string& label) {
+  auto* data_object = new FileDropDataObject(h_drop);  // NOSONAR(cpp:S5025) NOLINT(cppcoreguidelines-owning-memory) - COM DoDragDrop takes raw pointers, Release() transfers
+  auto* const drop_source = new BasicDropSource();  // NOSONAR(cpp:S5025) NOLINT(cppcoreguidelines-owning-memory) - COM; pointee modified by DoDragDrop
+
+  DWORD effect = DROPEFFECT_NONE;
+  const HRESULT hr = DoDragDrop(data_object, drop_source,
+                                DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect);
+
+  data_object->Release();
+  drop_source->Release();
+
+  if (FAILED(hr)) {
+    LOG_ERROR_BUILD("StartFileDragDrop: DoDragDrop failed with HRESULT="
+                    << static_cast<long>(hr) << " for " << label);
+    return false;
+  }
+
+  const std::string
+    msg =  // NOLINT(bugprone-unused-local-non-trivial-variable) - passed to LOG_INFO macro
+    (effect == DROPEFFECT_NONE)
+      ? ("StartFileDragDrop: Drag cancelled or no drop target accepted for " + label)
+      : ("StartFileDragDrop: Drag completed with effect=" +
+         std::to_string(static_cast<long>(effect)) + " for " + label);
+  LOG_INFO(msg);
+  return true;
 }
 
 bool StartFileDragDrop(std::string_view full_path_utf8) {
@@ -368,50 +405,56 @@ bool StartFileDragDrop(std::string_view full_path_utf8) {
     LOG_ERROR("StartFileDragDrop: Failed to convert path to wide string: " + path);
     return false;
   }
-  DWORD attributes = GetFileAttributesW(wide_path.c_str());
+  const DWORD attributes = GetFileAttributesW(wide_path.c_str());
   if (attributes == INVALID_FILE_ATTRIBUTES) {
     LOG_WARNING("StartFileDragDrop: Path does not exist: " + path);
     return false;
   }
-  if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
+  if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
     LOG_WARNING("StartFileDragDrop: Directories are not supported for drag-and-drop: " + path);
     return false;
   }
-  HGLOBAL h_drop = CreateHDropForPath(wide_path);
+  HGLOBAL h_drop = CreateHDropForPaths({wide_path});
   if (!h_drop) {
     LOG_ERROR("StartFileDragDrop: Failed to create HDROP for path: " + path);
     return false;
   }
+  return DoDragDropWithHDrop(h_drop, "path: " + path);
+}
 
-  auto* data_object = new FileDropDataObject(h_drop);  // NOSONAR(cpp:S5025) NOLINT(cppcoreguidelines-owning-memory) - COM DoDragDrop takes raw pointers, Release() transfers
-  auto* const drop_source = new BasicDropSource();  // NOSONAR(cpp:S5025) NOLINT(cppcoreguidelines-owning-memory) - COM; pointee modified by DoDragDrop
-
-  DWORD effect = DROPEFFECT_NONE;
-  // Allow the drop target to choose among common effects; most will pick COPY.
-  HRESULT hr = DoDragDrop(data_object, drop_source,
-                          DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect);
-
-  data_object->Release();
-  drop_source->Release();
-
-  if (FAILED(hr)) {
-    LOG_ERROR_BUILD("StartFileDragDrop: DoDragDrop failed with HRESULT="
-                    << static_cast<long>(hr) << " for path: " << path);
+bool StartFileDragDrop(const std::vector<std::string_view>& full_paths_utf8) {
+  std::vector<std::wstring> wide_paths;
+  wide_paths.reserve(full_paths_utf8.size());
+  for (const std::string_view sv : full_paths_utf8) {
+    if (!file_operations::internal::ValidatePath(sv, "StartFileDragDrop")) {
+      continue;
+    }
+    const std::wstring wide_path = Utf8ToWide(sv);
+    if (wide_path.empty() && !sv.empty()) {
+      LOG_WARNING("StartFileDragDrop: Failed to convert path to wide string: " + std::string(sv));
+      continue;
+    }
+    const DWORD attributes = GetFileAttributesW(wide_path.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+      LOG_WARNING("StartFileDragDrop: Path does not exist: " + std::string(sv));
+      continue;
+    }
+    if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+      LOG_WARNING("StartFileDragDrop: Directories are not supported for drag-and-drop: " + std::string(sv));
+      continue;
+    }
+    wide_paths.push_back(std::move(wide_path));
+  }
+  if (wide_paths.empty()) {
+    LOG_WARNING("StartFileDragDrop: No valid paths to drag");
     return false;
   }
-
-  // Treat both successful drop and user cancel as non-fatal.
-  const std::string
-    msg =  // NOLINT(bugprone-unused-local-non-trivial-variable) - passed to LOG_INFO macro
-    (effect == DROPEFFECT_NONE)
-      ? (std::string(
-           "StartFileDragDrop: Drag cancelled or no drop target accepted for path: ") +
-         path)
-      : (std::string("StartFileDragDrop: Drag completed with effect=") +
-         std::to_string(static_cast<long>(effect)) + " for path: " + path);
-  LOG_INFO(msg);
-
-  return true;
+  HGLOBAL h_drop = CreateHDropForPaths(wide_paths);
+  if (!h_drop) {
+    LOG_ERROR("StartFileDragDrop: Failed to create HDROP");
+    return false;
+  }
+  return DoDragDropWithHDrop(h_drop, std::to_string(wide_paths.size()) + " file(s)");
 }
 
 }  // namespace drag_drop

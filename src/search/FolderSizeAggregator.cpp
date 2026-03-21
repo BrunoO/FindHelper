@@ -168,7 +168,7 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
   index_.ForEachEntryWithPath(
       [this, &file_ids_per_dir, &prefix_to_id, &lookup_key](
           uint64_t id, const FileEntry& entry, std::string_view path) {
-        if (cancelled_.load(std::memory_order_relaxed)) {
+        if (cancelled_.load()) {
           return false;
         }
         if (entry.isDirectory) {
@@ -185,7 +185,7 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
   for (const auto& [folder_id, file_ids] : file_ids_per_dir) {
     uint64_t total = 0;
     for (const uint64_t fid : file_ids) {
-      if (cancelled_.load(std::memory_order_relaxed)) {
+      if (cancelled_.load()) {
         break;
       }
       const uint64_t size = index_.GetFileSizeById(fid);

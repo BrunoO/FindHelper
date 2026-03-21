@@ -8,7 +8,6 @@
 #include "path/PathOperations.h"
 #include "path/PathUtils.h"
 #include "utils/FileTimeTypes.h"
-#include "utils/StringUtils.h"
 
 /**
  * @file IndexOperations.h
@@ -22,7 +21,7 @@
  * - Takes references to necessary components (storage, path_operations)
  * - Provides clean interface: Insert, Remove, Rename, Move
  * - All methods assume lock is already held (caller responsible for locking)
- * - Handles extension extraction, path computation, directory cache updates
+ * - Handles path computation, directory cache updates
  * - Tracks statistics (remove counts) via atomic references
  *
  * THREAD SAFETY:
@@ -59,9 +58,8 @@ public:
    *
    * Coordinates between FileIndexStorage and PathStorage:
    * 1. Computes full path by walking parent chain
-   * 2. Extracts extension for interning
-   * 3. Inserts into storage
-   * 4. Updates path arrays
+   * 2. Inserts into storage
+   * 3. Updates path arrays
    *
    * @param id File ID
    * @param parentID Parent directory ID

@@ -59,14 +59,8 @@ void IndexOperations::Insert(uint64_t id,
     full_path = std::string(name);  // USN out-of-order / Windows root placeholder
   }
 
-  // Extract extension for interning
-  std::string extension;
-  if (!is_directory) {
-    extension = GetExtension(name);
-  }
-
-  // Insert into storage (handles extension interning and size tracking)
-  storage_.InsertLocked(id, parent_id, name, is_directory, modification_time, extension);
+  // Insert into storage
+  storage_.InsertLocked(id, parent_id, name, is_directory, modification_time);
 
   // Update path arrays (lock already held)
   path_operations_.InsertPath(id, full_path, is_directory);
@@ -86,7 +80,7 @@ void IndexOperations::Remove(uint64_t id) {
     // Mark path entry as deleted first (needs entry.path_storage_index)
     if (!path_operations_.RemovePath(id)) {
       // File exists in storage but not in path_storage_ - data inconsistency
-      remove_inconsistency_count_.fetch_add(1, std::memory_order_relaxed);
+      remove_inconsistency_count_.fetch_add(1);
       LOG_WARNING_BUILD("IndexOperations::Remove: File "
                        << id
                        << " in storage but not in path_storage_ (data inconsistency)");
@@ -98,7 +92,7 @@ void IndexOperations::Remove(uint64_t id) {
     // File not in index - delete event for file that was never indexed
     // This is expected for files created/deleted before initial indexing, or
     // filtered files. Track this for diagnostics.
-    remove_not_in_index_count_.fetch_add(1, std::memory_order_relaxed);
+    remove_not_in_index_count_.fetch_add(1);
     LOG_INFO_BUILD("IndexOperations::Remove: File "
                    << id
                    << " not in index (delete event for unindexed file)");
@@ -125,7 +119,7 @@ bool IndexOperations::Rename(uint64_t id, std::string_view new_name) {
   }
   const std::string new_full_path = full_path;
 
-  // Update entry in storage (handles extension interning)
+  // Update entry in storage
   // Convert string_view to string when storing (ensures lifetime)
   const std::string new_name_str(new_name);
   std::string old_path_dummy;

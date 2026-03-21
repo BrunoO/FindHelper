@@ -26,11 +26,9 @@ void PathRecomputer::RecomputeAllPaths() {
   std::string full_path;
   full_path.reserve(256);
 
-  static const std::string kEmptyName;
   size_t onedrive_reset_count = 0;
   for (const auto& [id, entry] : storage_) {
-    const auto name_it = name_cache.find(id);
-    const std::string_view leaf_name = (name_it != name_cache.end()) ? std::string_view{name_it->second} : std::string_view{kEmptyName};
+    const std::string_view leaf_name = name_cache.Find(id);
     full_path = PathBuilder::BuildFullPathWithLogging(
         id, entry.parentID, leaf_name, storage_, name_cache);
 
