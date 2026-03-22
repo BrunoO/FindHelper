@@ -9,7 +9,7 @@ void PathOperations::InsertPath(uint64_t id, std::string_view path, bool isDirec
   if (entry != nullptr && entry->path_storage_index != kPathStorageIndexInvalid) {
     existing_index = entry->path_storage_index;
   }
-  const size_t idx = path_storage_.InsertPath(id, std::string(path), isDirectory, existing_index);
+  const size_t idx = path_storage_.InsertPath(id, path, isDirectory, existing_index);
   storage_.SetPathStorageIndex(id, idx);
 }
 

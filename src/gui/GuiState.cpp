@@ -26,9 +26,7 @@
 
 #include "gui/GuiState.h"
 
-#include <algorithm>
 #include <cstring>
-#include <sstream>
 
 #include "api/GeminiApiUtils.h"
 #include "filters/SizeFilter.h"
@@ -128,14 +126,21 @@ SearchParams GuiState::BuildCurrentSearchParams() const {
  * @return Semicolon-separated string (e.g., "pdf;doc;docx")
  */
 static std::string BuildExtensionString(const std::vector<std::string>& extensions) {
-  std::ostringstream ext_stream;
+  std::string result;
+  // Pre-compute total length to avoid reallocations: sum of all extension lengths
+  // plus one separator per gap between extensions.
+  size_t total = extensions.empty() ? 0 : extensions.size() - 1;  // separators
+  for (const auto& ext : extensions) {
+    total += ext.size();
+  }
+  result.reserve(total);
   for (size_t i = 0; i < extensions.size(); ++i) {
     if (i > 0) {
-      ext_stream << ";";
+      result += ';';
     }
-    ext_stream << extensions[i];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounds checked by loop condition i < extensions.size()
+    result += extensions[i];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - bounds checked by loop condition i < extensions.size()
   }
-  return ext_stream.str();
+  return result;
 }
 
 void GuiState::ApplySearchConfig(const gemini_api_utils::SearchConfig &config) {

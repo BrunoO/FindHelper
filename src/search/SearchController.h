@@ -69,5 +69,5 @@ private:
                                      const SearchWorker &search_worker) const;
 
   // Constants
-  static constexpr int kDebounceDelayMs = 400; // 400ms debounce delay
+  static constexpr int kDebounceDelayMs = 200; // 200ms debounce; search ~35ms so 400ms was idle wait
 };

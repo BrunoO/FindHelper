@@ -118,7 +118,11 @@ private:
   std::unordered_map<std::string, CachedRegex> cache_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
 
   [[nodiscard]] std::string MakeKey(std::string_view pattern, bool case_sensitive) const {
-    return (case_sensitive ? "1:" : "0:") + std::string(pattern);
+    std::string key;
+    key.reserve(2 + pattern.size());
+    key = case_sensitive ? "1:" : "0:";
+    key += pattern;
+    return key;
   }
 };
 

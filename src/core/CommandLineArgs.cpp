@@ -228,7 +228,7 @@ void ShowHelp(const char* program_name) {
   std::cout << "  --thread-pool-size=<n>        Override thread pool size (0=auto, 1-"
             << settings_defaults::kMaxThreadPoolSize << ")\n";
   std::cout << "  --load-balancing=<strategy>   Override load balancing strategy\n";
-  std::cout << "                                (static, hybrid, dynamic, interleaved"
+  std::cout << "                                (static, hybrid"
 #if defined(FAST_LIBS_BOOST)
             << ", work_stealing"
 #endif  // FAST_LIBS_BOOST
@@ -249,7 +249,7 @@ void ShowHelp(const char* program_name) {
   std::cout << "Examples:\n";
   std::cout << "  " << program_name << " --help\n";
   std::cout << "  " << program_name << " --thread-pool-size=8\n";
-  std::cout << "  " << program_name << " --load-balancing=dynamic --window-width=1920\n";
+  std::cout << "  " << program_name << " --load-balancing=hybrid --window-width=1920\n";
   std::cout << "  " << program_name << " --dump-index-to=index_paths.txt\n";
   std::cout << "\n";
 }

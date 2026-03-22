@@ -3,6 +3,7 @@
 #include <algorithm>  // For std::min
 #include <cctype>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -157,11 +158,13 @@ inline bool ShortPatternSearch(const std::string_view& text,
   return false;  // NOSONAR(cpp:S935) - All paths return (false positive from template analysis)
 }
 
-// Helper to check ASCII and try AVX2 path
+// Helper to check ASCII and try AVX2 path.
+// Returns std::nullopt if AVX2 was not used (caller should fall back to scalar).
+// Returns a bool value if AVX2 ran — trust the result, skip scalar entirely.
 template<typename AVX2Func>
-inline bool TryAVX2Path([[maybe_unused]] const std::string_view& text,    // Used when STRING_SEARCH_AVX2_AVAILABLE
-                        [[maybe_unused]] const std::string_view& pattern,  // Used when STRING_SEARCH_AVX2_AVAILABLE
-                        AVX2Func avx2_func [[maybe_unused]]) {
+inline std::optional<bool> TryAVX2Path([[maybe_unused]] const std::string_view& text,    // Used when STRING_SEARCH_AVX2_AVAILABLE
+                                       [[maybe_unused]] const std::string_view& pattern,  // Used when STRING_SEARCH_AVX2_AVAILABLE
+                                       AVX2Func avx2_func [[maybe_unused]]) {
   #if STRING_SEARCH_AVX2_AVAILABLE
   if (text.length() >= 32 && pattern.length() >= 4 && cpu_features::GetAVX2Support()) {
     // Quick ASCII check (first 64 bytes) - AVX2 fast path is ASCII-only
@@ -179,20 +182,22 @@ inline bool TryAVX2Path([[maybe_unused]] const std::string_view& text,    // Use
     }
   }
   #endif  // STRING_SEARCH_AVX2_AVAILABLE
-  return false;  // AVX2 not used
+  return std::nullopt;  // AVX2 not used
 }
 
-// Helper for StrStrCaseInsensitive (uses char* instead of string_view)
+// Helper for StrStrCaseInsensitive (uses char* instead of string_view).
+// Returns std::nullopt if AVX2 was not used (caller should fall back to scalar).
+// Returns a const char* value if AVX2 ran — trust the result, skip scalar entirely.
 template<typename AVX2Func>
-inline const char* TryAVX2PathStrStr(const char* haystack [[maybe_unused]],
-                                     [[maybe_unused]] size_t haystack_len,  // Used when STRING_SEARCH_AVX2_AVAILABLE
-                                     [[maybe_unused]] size_t needle_len,    // Used when STRING_SEARCH_AVX2_AVAILABLE
-                                     AVX2Func avx2_func [[maybe_unused]]) {
+inline std::optional<const char*> TryAVX2PathStrStr(const char* haystack [[maybe_unused]],
+                                                    [[maybe_unused]] size_t haystack_len,  // Used when STRING_SEARCH_AVX2_AVAILABLE
+                                                    [[maybe_unused]] size_t needle_len,    // Used when STRING_SEARCH_AVX2_AVAILABLE
+                                                    AVX2Func avx2_func [[maybe_unused]]) {
   #if STRING_SEARCH_AVX2_AVAILABLE
   if (haystack_len >= 32 && needle_len >= 4 && cpu_features::GetAVX2Support()) {
     // Quick ASCII check (first 64 bytes) - AVX2 fast path is ASCII-only
     bool is_ascii = true;
-    size_t check_len = haystack_len < 64 ? haystack_len : 64;
+    const size_t check_len = haystack_len < 64 ? haystack_len : 64;
     for (size_t i = 0; i < check_len; ++i) {
       if (static_cast<unsigned char>(haystack[i]) > 127) {
         is_ascii = false;
@@ -201,19 +206,21 @@ inline const char* TryAVX2PathStrStr(const char* haystack [[maybe_unused]],
     }
 
     if (is_ascii) {
-      return avx2_func();  // Call AVX2 function
+      return avx2_func();  // AVX2 ran — wrap result (match pointer or nullptr) in optional
     }
   }
   #endif  // STRING_SEARCH_AVX2_AVAILABLE
-  return nullptr;  // AVX2 not used
+  return std::nullopt;  // AVX2 not used
 }
 
 // NEON dispatch helper for string_view overloads (arm64 only, no runtime detection needed).
+// Returns std::nullopt if NEON was not used (caller should fall back to scalar).
+// Returns a bool value if NEON ran — trust the result, skip scalar entirely.
 // Threshold: 16 bytes (NEON register width) vs 32 for AVX2.
 template<typename NEONFunc>
-inline bool TryNEONPath([[maybe_unused]] const std::string_view& text,  // NOLINT(misc-no-recursion) - static call graph ContainsSubstringI→TryNEONPath→ContainsSubstringINEON→ContainsSubstringI looks recursive but is guarded by length checks; no actual recursion
-                        [[maybe_unused]] const std::string_view& pattern,
-                        NEONFunc neon_func [[maybe_unused]]) {
+inline std::optional<bool> TryNEONPath([[maybe_unused]] const std::string_view& text,  // NOLINT(misc-no-recursion) - static call graph ContainsSubstringI→TryNEONPath→ContainsSubstringINEON→ContainsSubstringI looks recursive but is guarded by length checks; no actual recursion
+                                       [[maybe_unused]] const std::string_view& pattern,
+                                       NEONFunc neon_func [[maybe_unused]]) {
   #if STRING_SEARCH_NEON_AVAILABLE
   constexpr size_t kMaxAscii = 127;
   constexpr size_t kAsciiCheckLen = 64;
@@ -234,15 +241,17 @@ inline bool TryNEONPath([[maybe_unused]] const std::string_view& text,  // NOLIN
     }
   }
   #endif  // STRING_SEARCH_NEON_AVAILABLE
-  return false;
+  return std::nullopt;
 }
 
 // NEON dispatch helper for char* overloads (StrStrCaseInsensitive).
+// Returns std::nullopt if NEON was not used (caller should fall back to scalar).
+// Returns a const char* value if NEON ran — trust the result, skip scalar entirely.
 template<typename NEONFunc>
-inline const char* TryNEONPathStrStr([[maybe_unused]] const char* haystack,  // NOLINT(misc-no-recursion) - static call graph StrStrCaseInsensitive→TryNEONPathStrStr→StrStrCaseInsensitiveNEON→StrStrCaseInsensitive looks recursive but is guarded by length checks; no actual recursion
-                                     [[maybe_unused]] size_t haystack_len,
-                                     [[maybe_unused]] size_t needle_len,
-                                     NEONFunc neon_func [[maybe_unused]]) {
+inline std::optional<const char*> TryNEONPathStrStr([[maybe_unused]] const char* haystack,  // NOLINT(misc-no-recursion) - static call graph StrStrCaseInsensitive→TryNEONPathStrStr→StrStrCaseInsensitiveNEON→StrStrCaseInsensitive looks recursive but is guarded by length checks; no actual recursion
+                                                    [[maybe_unused]] size_t haystack_len,
+                                                    [[maybe_unused]] size_t needle_len,
+                                                    NEONFunc neon_func [[maybe_unused]]) {
   #if STRING_SEARCH_NEON_AVAILABLE
   constexpr size_t kMaxAscii = 127;
   constexpr size_t kAsciiCheckLen = 64;
@@ -256,11 +265,11 @@ inline const char* TryNEONPathStrStr([[maybe_unused]] const char* haystack,  // 
       }
     }
     if (is_ascii) {
-      return neon_func();
+      return neon_func();  // NEON ran — wrap result (match pointer or nullptr) in optional
     }
   }
   #endif  // STRING_SEARCH_NEON_AVAILABLE
-  return nullptr;
+  return std::nullopt;  // NEON not used
 }
 
 // Template function for fuzzy matching
@@ -311,25 +320,25 @@ inline bool ContainsSubstring(const std::string_view &text,
   }
 
   // AVX2 optimization: Use for longer strings
-  if (string_search_detail::TryAVX2Path(text, pattern, [&text, &pattern]() {  // NOSONAR(cpp:S1481) - text, pattern used when AVX2 path taken
+  if (const auto avx2_result = string_search_detail::TryAVX2Path(text, pattern, [&text, &pattern]() {  // NOSONAR(cpp:S1481) - text, pattern used when AVX2 path taken
     #if STRING_SEARCH_AVX2_AVAILABLE
     return string_search::avx2::ContainsSubstringAVX2(text, pattern);
     #else
     return false;
     #endif  // STRING_SEARCH_AVX2_AVAILABLE
   })) {
-    return true;
+    return *avx2_result;  // AVX2 ran — trust result (both true and false), skip scalar
   }
 
   // NEON optimization: arm64 (Apple Silicon, ARM64 Linux/Windows)
-  if (string_search_detail::TryNEONPath(text, pattern, [&text, &pattern]() {  // NOSONAR(cpp:S1481) - text, pattern used when NEON path taken
+  if (const auto neon_result = string_search_detail::TryNEONPath(text, pattern, [&text, &pattern]() {  // NOSONAR(cpp:S1481) - text, pattern used when NEON path taken
     #if STRING_SEARCH_NEON_AVAILABLE
     return string_search::neon::ContainsSubstringNEON(text, pattern);
     #else
     return false;
     #endif  // STRING_SEARCH_NEON_AVAILABLE
   })) {
-    return true;
+    return *neon_result;  // NEON ran — trust result (both true and false), skip scalar
   }
 
   // For longer patterns (>5 chars), use reverse comparison
@@ -368,19 +377,19 @@ inline const char* StrStrCaseInsensitive(const char* haystack, const char* needl
   size_t haystack_len = strlen(haystack);  // NOSONAR(cpp:S1081) - Safe: function parameter expected to be null-terminated C string (standard contract)
   size_t needle_len = strlen(needle);  // NOSONAR(cpp:S6004,cpp:S1081) - Variable used after if block; safe: function parameter expected to be null-terminated C string
 
-  if (const char* avx2_result = string_search_detail::TryAVX2PathStrStr(haystack, haystack_len, needle_len, [&haystack, &needle]() {
+  if (const auto avx2_result = string_search_detail::TryAVX2PathStrStr(haystack, haystack_len, needle_len, [&haystack, &needle]() {
     return string_search::avx2::StrStrCaseInsensitiveAVX2(haystack, needle);
-  }); avx2_result != nullptr) {
-    return avx2_result;  // AVX2 found a match
+  }); avx2_result.has_value()) {
+    return *avx2_result;  // AVX2 ran — trust result (match pointer or nullptr), skip scalar
   }
   #elif STRING_SEARCH_NEON_AVAILABLE
   const size_t haystack_len = strlen(haystack);  // NOSONAR(cpp:S1081) - Safe: null-terminated C-string contract
   const size_t needle_len   = strlen(needle);    // NOSONAR(cpp:S1081) - Safe: null-terminated C-string contract
 
-  if (const char* neon_result = string_search_detail::TryNEONPathStrStr(haystack, haystack_len, needle_len, [&haystack, &needle]() {
+  if (const auto neon_result = string_search_detail::TryNEONPathStrStr(haystack, haystack_len, needle_len, [&haystack, &needle]() {
     return string_search::neon::StrStrCaseInsensitiveNEON(haystack, needle);
-  }); neon_result != nullptr) {
-    return neon_result;  // NEON found a match
+  }); neon_result.has_value()) {
+    return *neon_result;  // NEON ran — trust result (match pointer or nullptr), skip scalar
   }
   #endif  // STRING_SEARCH_AVX2_AVAILABLE / STRING_SEARCH_NEON_AVAILABLE
 
@@ -414,25 +423,25 @@ inline bool ContainsSubstringI(const std::string_view &text,
   }
 
   // AVX2 optimization: Use for longer strings
-  if (string_search_detail::TryAVX2Path(text, pattern, [&text, &pattern]() {  // NOSONAR(cpp:S1481) - text, pattern used when AVX2 path taken
+  if (const auto avx2_result = string_search_detail::TryAVX2Path(text, pattern, [&text, &pattern]() {  // NOSONAR(cpp:S1481) - text, pattern used when AVX2 path taken
     #if STRING_SEARCH_AVX2_AVAILABLE
     return string_search::avx2::ContainsSubstringIAVX2(text, pattern);
     #else
     return false;
     #endif  // STRING_SEARCH_AVX2_AVAILABLE
   })) {
-    return true;
+    return *avx2_result;  // AVX2 ran — trust result (both true and false), skip scalar
   }
 
   // NEON optimization: arm64 (Apple Silicon, ARM64 Linux/Windows)
-  if (string_search_detail::TryNEONPath(text, pattern, [&text, &pattern]() {  // NOSONAR(cpp:S1481) - text, pattern used when NEON path taken
+  if (const auto neon_result = string_search_detail::TryNEONPath(text, pattern, [&text, &pattern]() {  // NOSONAR(cpp:S1481) - text, pattern used when NEON path taken
     #if STRING_SEARCH_NEON_AVAILABLE
     return string_search::neon::ContainsSubstringINEON(text, pattern);
     #else
     return false;
     #endif  // STRING_SEARCH_NEON_AVAILABLE
   })) {
-    return true;
+    return *neon_result;  // NEON ran — trust result (both true and false), skip scalar
   }
 
   // Fast path: Check if pattern is a prefix (very common case)

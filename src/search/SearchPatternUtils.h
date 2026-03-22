@@ -342,7 +342,7 @@ CreatePathMatcher(  // NOLINT(readability-identifier-naming,cppcoreguidelines-av
  */
 inline bool ExtensionMatches(std::string_view ext_view,
                              const ExtensionSet& extension_set,
-                             bool case_sensitive) {
+                             bool case_sensitive) noexcept {
   if (ext_view.empty()) {
     return (extension_set.find(std::string_view("")) != extension_set.end());  // NOLINT(readability-container-contains) - C++17: no .contains()
   }

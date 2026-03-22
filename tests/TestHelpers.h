@@ -939,7 +939,7 @@ std::set<uint64_t> CollectIdsFromFutures(
  * @return Total results collected (may be partial due to cancellation)
  */
 size_t TestCancellation(
-    const std::string& strategy = "dynamic",
+    const std::string& strategy = "hybrid",
     size_t file_count = 10000,
     bool cancel_immediately = true,
     size_t max_expected_results = 9000);

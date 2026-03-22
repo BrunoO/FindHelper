@@ -294,18 +294,25 @@ std::string JoinPath(std::string_view base, std::string_view component) {
 
   // Check if base ends with separator
   const bool base_has_sep =
-    (!base.empty() && (base.back() == kPathSeparator || base.back() == '/' || base.back() == '\\'));
+    (base.back() == kPathSeparator || base.back() == '/' || base.back() == '\\');
 
   // Check if component starts with separator
   const bool comp_has_sep =
-    (!component.empty() && (component.front() == kPathSeparator || component.front() == '/' ||
-                            component.front() == '\\'));
+    (component.front() == kPathSeparator || component.front() == '/' ||
+     component.front() == '\\');
 
   const bool trim_leading = (base_has_sep && comp_has_sep);
   const bool add_sep = (!base_has_sep && !comp_has_sep);
-  const std::string component_part = (add_sep ? kPathSeparatorStr : "") +
-                                     std::string(trim_leading ? component.substr(1) : component);
-  return std::string(base) + component_part;
+  const std::string_view comp = trim_leading ? component.substr(1) : component;
+
+  std::string result;
+  result.reserve(base.size() + (add_sep ? 1U : 0U) + comp.size());
+  result.append(base);
+  if (add_sep) {
+    result += kPathSeparator;
+  }
+  result.append(comp);
+  return result;
 }
 
 std::string JoinPath(const std::vector<std::string>& components) {

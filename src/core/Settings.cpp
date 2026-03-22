@@ -9,6 +9,8 @@
  * STORAGE:
  * - Primary: {USER_HOME}/.FindHelper/settings.json
  *   (Windows: %USERPROFILE%\.FindHelper\settings.json; macOS/Linux: $HOME/.FindHelper/settings.json)
+ * - Recent searches: {same directory}/recent_searches.json (same shape as the old
+ *   "recentSearches" key in settings.json; migrated from that key on load if present).
  * - Failsafe: if primary is unavailable (HOME unset, directory not writable, etc.),
  *   falls back to legacy: Windows = next to executable or CWD; macOS/Linux = CWD.
  * - Migration: on first run with new logic, if no file at primary but one at legacy,
@@ -70,6 +72,7 @@ constexpr int kMaxHybridInitialWorkPercent = 95;
 // Settings file location (DRY: single definition per spec)
 constexpr std::string_view kSettingsSubfolder = ".FindHelper";
 constexpr std::string_view kSettingsFileName = "settings.json";
+constexpr std::string_view kRecentSearchesFileName = "recent_searches.json";
 }  // namespace
 
 // Test-only: In-memory settings support
@@ -170,11 +173,11 @@ static void LoadLoadBalancingStrategy(const json& j, AppSettings& out) {
     return;
   }
   const auto strategy = j["loadBalancingStrategy"].get<std::string>();
-  if (strategy == "static" || strategy == "hybrid" || strategy == "dynamic" || strategy == "interleaved") {
+  if (strategy == "static" || strategy == "hybrid" || strategy == "work_stealing") {
     out.loadBalancingStrategy = strategy;
   } else {
     LOG_WARNING_BUILD("Invalid loadBalancingStrategy value: " << strategy
-        << ". Valid options: static, hybrid, dynamic, interleaved. Using default (hybrid).");
+        << ". Valid options: static, hybrid, work_stealing. Using default (hybrid).");
   }
 }
 
@@ -216,7 +219,22 @@ static void LoadHybridInitialWorkPercent(const json& j, AppSettings& out) {
     out.hybridInitialWorkPercent = percent;
   } else {
     LOG_WARNING_BUILD("Invalid hybridInitialWorkPercent value: " << percent
-        << ". Valid range: 50-95. Using default (75).");
+        << ". Valid range: 50-95. Using default (80).");
+  }
+}
+
+// Helper: Load and validate guided scheduling divisor
+static void LoadGuidedSchedulingDivisor(const json& j, AppSettings& out) {
+  if (!j.contains("guidedSchedulingDivisor") || !j["guidedSchedulingDivisor"].is_number_integer()) {
+    return;
+  }
+  const int divisor = j["guidedSchedulingDivisor"];
+  if (divisor >= settings_defaults::kMinGuidedSchedulingDivisor &&
+      divisor <= settings_defaults::kMaxGuidedSchedulingDivisor) {
+    out.guidedSchedulingDivisor = divisor;
+  } else {
+    LOG_WARNING_BUILD("Invalid guidedSchedulingDivisor value: " << divisor
+        << ". Valid range: 1-8. Using default (2).");
   }
 }
 
@@ -226,6 +244,7 @@ static void LoadSearchConfigSettings(const json& j, AppSettings& out) {
   LoadThreadPoolSize(j, out);
   LoadDynamicChunkSize(j, out);
   LoadHybridInitialWorkPercent(j, out);
+  LoadGuidedSchedulingDivisor(j, out);
 }
 
 // Helper: Validate Windows volume format (e.g., "C:", "D:") - single letter + colon
@@ -498,6 +517,119 @@ static std::string ResolveSettingsFilePath(bool for_save) {
   return legacy;
 }
 
+// Path to recent_searches.json in the same directory as the resolved settings.json path.
+static std::string ResolveRecentSearchesFilePath(bool for_save) {
+  const std::string settings_path = ResolveSettingsFilePath(for_save);
+  const std::filesystem::path p(settings_path);
+  const std::filesystem::path parent = p.parent_path();
+  if (parent.empty()) {
+    return std::string(kRecentSearchesFileName);
+  }
+  return (parent / std::string(kRecentSearchesFileName)).string();
+}
+
+// Legacy: recent_searches.json next to legacy settings.json (may differ from primary).
+static std::string GetLegacyRecentSearchesPath() {
+  const std::string legacy_settings = GetLegacySettingsFilePath();
+  const std::filesystem::path legacy_parent = std::filesystem::path(legacy_settings).parent_path();
+  if (legacy_parent.empty()) {
+    return std::string(kRecentSearchesFileName);
+  }
+  return (legacy_parent / std::string(kRecentSearchesFileName)).string();
+}
+
+// recent_searches.json adjacent to a concrete settings.json path (after save fallback).
+static std::string GetRecentSearchesPathAdjacentToSettingsFile(std::string_view settings_file_path) {
+  const std::filesystem::path p(settings_file_path);
+  return (p.parent_path() / std::string(kRecentSearchesFileName)).string();
+}
+
+// Read recent_searches.json from path into out; returns false on missing file or parse failure.
+static bool ReadRecentSearchesJsonFromFile(const std::string& path, AppSettings& o) {
+  std::ifstream f(path, std::ios::in | std::ios::binary);
+  if (!f.is_open()) {
+    return false;
+  }
+  try {
+    json j;
+    f >> j;
+    LoadRecentSearches(j, o);
+    return true;
+  } catch (const json::parse_error& e) {
+    (void)e;
+    return false;
+  } catch (const json::exception& e) {
+    (void)e;
+    return false;
+  } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - After json::*; catch allocator/stream failures
+    (void)e;
+    return false;
+  }
+}
+
+// Parse JSON from an open stream into out; resets out to {} on failure.
+static bool ParseJsonFromOpenStream(std::ifstream& file, json& out) {
+  if (!file.is_open()) {
+    return false;
+  }
+  try {
+    file >> out;
+    return true;
+  } catch (const json::parse_error& e) {
+    (void)e;
+    out = json::object();
+    return false;
+  } catch (const json::exception& e) {
+    (void)e;
+    out = json::object();
+    return false;
+  } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - After json::*; catch allocator/stream failures
+    (void)e;
+    out = json::object();
+    return false;
+  }
+}
+
+// Try primary recent path, then legacy — mirrors settings file discovery.
+static bool TryLoadRecentSearchesFromDedicatedFile(AppSettings& out) {
+  const std::string primary_recent = ResolveRecentSearchesFilePath(false);
+  if (ReadRecentSearchesJsonFromFile(primary_recent, out)) {
+    return true;
+  }
+  if (const std::string legacy_recent = GetLegacyRecentSearchesPath();
+      legacy_recent != primary_recent && ReadRecentSearchesJsonFromFile(legacy_recent, out)) {
+    return true;
+  }
+  return false;
+}
+
+// Same paths as TryLoadRecentSearchesFromDedicatedFile; used to merge disk into memory when empty.
+static bool TryParseExistingRecentFile(json& j) {
+  const std::string primary_recent = ResolveRecentSearchesFilePath(false);
+  if (std::ifstream primary_file(primary_recent, std::ios::in | std::ios::binary);
+      ParseJsonFromOpenStream(primary_file, j)) {
+    return true;
+  }
+  j = json::object();
+  const std::string legacy_recent = GetLegacyRecentSearchesPath();
+  if (legacy_recent == primary_recent) {
+    return false;
+  }
+  if (std::ifstream legacy_file(legacy_recent, std::ios::in | std::ios::binary);
+      ParseJsonFromOpenStream(legacy_file, j)) {
+    return true;
+  }
+  return false;
+}
+
+static void FinishLoadRecentSearches(const json& main_j, AppSettings& out) {
+  if (TryLoadRecentSearchesFromDedicatedFile(out)) {
+    return;
+  }
+  // Migration: older releases stored recentSearches inside settings.json only.
+  LoadRecentSearches(main_j, out);
+}
+
 // Helper: Load settings content from an already opened stream.
 // Separated from LoadSettings() to reduce cognitive complexity in the public API.
 static bool LoadSettingsFromJsonStream(std::ifstream& file, AppSettings& out) {
@@ -510,9 +642,9 @@ static bool LoadSettingsFromJsonStream(std::ifstream& file, AppSettings& out) {
   LoadMonitoredVolume(j, out);
   LoadCrawlAndRecrawlSettings(j, out);
 
-  // Load saved and recent searches using helper functions
+  // Load saved searches; recent searches live in recent_searches.json (with migration from main).
   LoadSavedSearches(j, out);
-  LoadRecentSearches(j, out);
+  FinishLoadRecentSearches(j, out);
 
   return true;
 }
@@ -608,14 +740,21 @@ static bool WriteSettingsToPath(std::string_view path, const json& j,
 
 // Write to path; if path was primary and write failed, retry legacy. Returns true if written.
 static bool WriteSettingsWithLegacyFallback(std::string_view path, const json& j,
-                                            const AppSettings& settings) {
+                                            const AppSettings& settings,
+                                            std::string* out_written_settings_path) {
   if (WriteSettingsToPath(path, j, settings)) {
+    if (out_written_settings_path != nullptr) {
+      *out_written_settings_path = std::string(path);
+    }
     return true;
   }
   if (const std::string primary = GetPrimarySettingsPath(); !primary.empty() && path == primary) {
     const std::string legacy = GetLegacySettingsFilePath();
     LOG_INFO_BUILD("Settings: save to primary failed, retrying legacy path: " << legacy);
     if (WriteSettingsToPath(legacy, j, settings)) {
+      if (out_written_settings_path != nullptr) {
+        *out_written_settings_path = legacy;
+      }
       return true;
     }
   }
@@ -639,6 +778,28 @@ static json SerializeSavedSearch(const SavedSearch& s) {
   return search_obj;
 }
 
+static bool WriteRecentSearchesToPath(std::string_view path, const AppSettings& settings) {
+  json j;
+  json arr = json::array();
+  for (const auto& s : settings.recentSearches) {
+    arr.push_back(SerializeSavedSearch(s));
+  }
+  j["recentSearches"] = std::move(arr);
+  std::ofstream file(std::string(path), std::ios::out | std::ios::trunc | std::ios::binary);
+  if (!file.is_open()) {
+    return false;
+  }
+  file << j.dump(2) << "\n";
+  file.flush();
+  const bool ok = file.good();
+  file.close();
+  if (ok) {
+    LOG_INFO_BUILD("Saved recent searches to '" << path << "' ("
+                  << settings.recentSearches.size() << " entries)");
+  }
+  return ok;
+}
+
 // Build json object from AppSettings for serialization.
 static json SettingsToJson(const AppSettings& settings) {
   json j;
@@ -653,6 +814,7 @@ static json SettingsToJson(const AppSettings& settings) {
   j["dynamicChunkSize"] = settings.dynamicChunkSize;
   j["monitoredVolume"] = settings.monitoredVolume;
   j["hybridInitialWorkPercent"] = settings.hybridInitialWorkPercent;
+  j["guidedSchedulingDivisor"] = settings.guidedSchedulingDivisor;
   j["showWorkflowHint"] = settings.showWorkflowHint;
   j["uiMode"] = static_cast<uint8_t>(settings.uiMode);
   j["streamPartialResults"] = settings.streamPartialResults;
@@ -670,14 +832,6 @@ static json SettingsToJson(const AppSettings& settings) {
     j["savedSearches"] = searches_array;
   }
 
-  if (!settings.recentSearches.empty()) {
-    json recent_array = json::array();
-    for (const auto& s : settings.recentSearches) {
-      recent_array.push_back(SerializeSavedSearch(s));
-    }
-    j["recentSearches"] = recent_array;
-  }
-
   return j;
 }
 // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
@@ -688,13 +842,36 @@ bool SaveSettings(const AppSettings& settings) {
     return true;
   }
 
+  AppSettings to_write = settings;
+
+  // Defensive merge: stale in-memory AppSettings must not wipe recent_searches.json on disk.
+  if (to_write.recentSearches.empty()) {
+    json existing_recent;
+    if (TryParseExistingRecentFile(existing_recent)) {
+      AppSettings from_disk;
+      LoadRecentSearches(existing_recent, from_disk);
+      if (!from_disk.recentSearches.empty()) {
+        to_write.recentSearches = std::move(from_disk.recentSearches);
+        LOG_INFO_BUILD("Settings: merged "
+                       << to_write.recentSearches.size()
+                       << " recent search(es) from disk (in-memory recent list was empty)");
+      }
+    }
+  }
+
   LOG_INFO_BUILD("Saving settings ...'");
   const std::string path = ResolveSettingsFilePath(true);
   LOG_INFO_BUILD("Settings file path: " + path);
-  LOG_INFO_BUILD("Number of saved searches to save: " + std::to_string(settings.savedSearches.size()));
+  LOG_INFO_BUILD("Number of saved searches to save: " + std::to_string(to_write.savedSearches.size()));
 
   try {
-    if (const json j = SettingsToJson(settings); WriteSettingsWithLegacyFallback(path, j, settings)) {
+    std::string written_settings_path;
+    if (const json j = SettingsToJson(to_write);
+        WriteSettingsWithLegacyFallback(path, j, to_write, &written_settings_path)) {
+      if (const std::string recent_path = GetRecentSearchesPathAdjacentToSettingsFile(written_settings_path);
+          !WriteRecentSearchesToPath(recent_path, to_write)) {
+        LOG_ERROR("Failed to write recent searches file: " + recent_path);
+      }
       return true;
     }
     LOG_ERROR("Failed to open or write settings file: " + path);

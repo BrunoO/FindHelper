@@ -85,4 +85,22 @@ TEST_SUITE("StringSearch") {
     block32.replace(30, 4, "TEST");
     CHECK(string_search::ContainsSubstringI(block32, "test"));
   }
+
+  TEST_CASE("StrStrCaseInsensitive - SIMD threshold: not found does not fall through to scalar") {
+    // 64-byte ASCII haystack — meets both AVX2 (>=32) and NEON (>=16) thresholds.
+    // Needle is 4 chars so it clears the SIMD needle-length gate.
+    // Before the fix, SIMD returned nullptr ("not found") but the caller fell through
+    // to the scalar tolower loop and re-scanned the whole haystack redundantly.
+    const std::string haystack(64, 'a');
+    CHECK(string_search::StrStrCaseInsensitive(haystack.c_str(), "xyzw") == nullptr);
+  }
+
+  TEST_CASE("StrStrCaseInsensitive - SIMD threshold: found returns correct pointer") {
+    // Same threshold conditions — verifies the optional-wrapped pointer is correctly
+    // dereferenced and points to the first match position.
+    const std::string haystack = std::string(30, 'a') + "XYZW" + std::string(30, 'a');
+    const char* const ptr = string_search::StrStrCaseInsensitive(haystack.c_str(), "xyzw");
+    REQUIRE(ptr != nullptr);
+    CHECK(ptr == haystack.c_str() + 30);
+  }
 }

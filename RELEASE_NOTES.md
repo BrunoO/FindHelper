@@ -1,5 +1,13 @@
 # Release Notes
 
+## March 22, 2026
+
+### Performance
+
+- **Attribute loading:** Replaced the two-task-per-file approach (separate size task + mtime task) with a single combined task that loads both in one `stat()` syscall, eliminating the race where both tasks would call `stat()` on the same file before either wrote to the cache. `FolderSizeAggregator` now reads already-cached file sizes from `FileEntry` during its index scan, skipping `stat()` for files pre-loaded by sort attribute tasks.
+
+---
+
 ## March 21, 2026
 
 ### Added

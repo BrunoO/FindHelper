@@ -30,9 +30,7 @@
 enum class LoadBalancingStrategyType : std::uint8_t {  // NOLINT(performance-enum-size) - explicit uint8_t; checker may still flag in some contexts
   Static = 0,       // Original static chunking (fixed chunks assigned upfront)
   Hybrid = 1,       // Initial large chunks + dynamic small chunks (recommended)
-  Dynamic = 2,      // Pure dynamic chunking (small chunks assigned dynamically)
-  Interleaved = 3,  // Threads process items in an interleaved manner
-  WorkStealing = 4  // Distributed queues with stealing (FAST_LIBS_BOOST only)
+  WorkStealing = 2  // Distributed queues with stealing (FAST_LIBS_BOOST only)
 };
 
 /** Search statistics (duration, counts, thread count). */

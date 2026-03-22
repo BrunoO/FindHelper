@@ -83,7 +83,9 @@ struct SearchContext {
 
     size_t dynamic_chunk_size = 1000;  // NOLINT(readability-magic-numbers) - Default chunk size (1000 items), validated in ValidateAndClamp()
 
-    int hybrid_initial_percent = 75;  // NOLINT(readability-magic-numbers) - Default percentage (75%), validated in ValidateAndClamp()
+    int hybrid_initial_percent = 80;  // NOLINT(readability-magic-numbers) - Default percentage (80%), validated in ValidateAndClamp()
+
+  int guided_scheduling_divisor = 2;  // NOLINT(readability-magic-numbers) - Guided scheduling divisor multiplier (default 2 = standard OpenMP formula), validated in ValidateAndClamp()
     // Load balancing strategy name ("static", "hybrid", "dynamic", "interleaved"); set from settings or default
 
     std::string load_balancing_strategy = "hybrid";
@@ -194,8 +196,12 @@ struct SearchContext {
                 value = max_val;
             }
         };
+        constexpr int min_guided_scheduling_divisor = 1;  // NOLINT(readability-magic-numbers)
+        constexpr int max_guided_scheduling_divisor = 8;  // NOLINT(readability-magic-numbers)
+
         clamp_and_log(dynamic_chunk_size, min_dynamic_chunk_size, max_dynamic_chunk_size, "dynamic_chunk_size");
         clamp_and_log(hybrid_initial_percent, min_hybrid_initial_percent, max_hybrid_initial_percent, "hybrid_initial_percent");
+        clamp_and_log(guided_scheduling_divisor, min_guided_scheduling_divisor, max_guided_scheduling_divisor, "guided_scheduling_divisor");
     }
 };
 

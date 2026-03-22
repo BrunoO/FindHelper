@@ -771,23 +771,39 @@ static std::vector<std::future<void>> StartAttributeLoadingAsync(
     return futures;
   }
 
-  // We might need to fetch size and mod time for each result.
-  futures.reserve(results.size() * 2);
+  // At most one task per result (combined size+time task, or size-only, or time-only).
+  futures.reserve(results.size());
 
   // Enqueue all I/O tasks using index-based access for safety.
   // This prevents use-after-free if the results vector is replaced while tasks are running.
   // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by results.size() in outer loop; lambdas re-validate via ValidateIndexAndCancellation before accessing results[i]
   for (size_t i = 0; i < results.size(); ++i) {
     const auto& result = results[i];
-    if (!result.isDirectory && result.fileSize == kFileSizeNotLoaded) {
+    const bool need_size = !result.isDirectory && result.fileSize == kFileSizeNotLoaded;
+    const bool need_time = IsSentinelTime(result.lastModificationTime);
+
+    if (need_size && need_time) {
+      // Single task loads both in one stat() call: LazyAttributeLoader detects that mtime is
+      // also unloaded when processing size, loads both via one GetFileAttributes() syscall, and
+      // writes both to the cache. The subsequent GetFileModificationTimeById() then hits the
+      // cache — no second stat(). This replaces the old two-task approach where both tasks raced
+      // to stat() the same file before either could write to the cache.
+      futures.emplace_back(thread_pool.enqueue([i, &results, &file_index, &token] {
+        if (!ValidateIndexAndCancellation(token, results, i)) {
+          return;
+        }
+        auto& r = results[i];
+        r.fileSize = file_index.GetFileSizeById(r.fileId);
+        r.lastModificationTime = file_index.GetFileModificationTimeById(r.fileId);
+      }));
+    } else if (need_size) {
       futures.emplace_back(thread_pool.enqueue([i, &results, &file_index, &token] {
         auto& r = results[i];
         r.fileSize = ValidateIndexAndCancellation(token, results, i)
                          ? file_index.GetFileSizeById(r.fileId)
                          : r.fileSize;
       }));
-    }
-    if (IsSentinelTime(result.lastModificationTime)) {
+    } else if (need_time) {
       futures.emplace_back(thread_pool.enqueue([i, &results, &file_index, &token] {
         auto& r = results[i];
         r.lastModificationTime =

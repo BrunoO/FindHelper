@@ -15,12 +15,6 @@ LoadBalancingStrategyType GetLoadBalancingStrategyFromSettings() {
   if (validated_name == "hybrid") {
     return LoadBalancingStrategyType::Hybrid;
   }
-  if (validated_name == "dynamic") {
-    return LoadBalancingStrategyType::Dynamic;
-  }
-  if (validated_name == "interleaved") {
-    return LoadBalancingStrategyType::Interleaved;
-  }
   if (validated_name == "work_stealing") {
     return LoadBalancingStrategyType::WorkStealing;
   }

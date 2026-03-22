@@ -193,7 +193,7 @@ std::string EscapeCsvField(std::string_view value) {
 }
 
 // Build the list of row indices to export as CSV: all marked rows (in visual order) when
-// any marks exist; otherwise, the single selected row (if any).
+// any marks exist; otherwise, all selected rows in visual order (when none marked).
 std::vector<int> GetMarkedRowIndices(const GuiState& state,
                                      const std::vector<SearchResult>& display_results) {
   std::vector<int> row_indices;
@@ -211,11 +211,15 @@ std::vector<int> GetMarkedRowIndices(const GuiState& state,
   return row_indices;
 }
 
-std::vector<int> GetSingleSelectionRowIndices(const GuiState& state,
-                                              const std::vector<SearchResult>& display_results) {
+std::vector<int> GetUnmarkedSelectionRowIndices(const GuiState& state,
+                                                const std::vector<SearchResult>& display_results) {
   std::vector<int> row_indices;
-  if (const int primary = state.GetPrimarySelectedRow(display_results); primary >= 0) {
-    row_indices.push_back(primary);
+  const auto row_count = static_cast<int>(display_results.size());
+  row_indices.reserve(state.GetSelectedRows().size());
+  for (const int row : state.GetSelectedRows()) {
+    if (row >= 0 && row < row_count) {
+      row_indices.push_back(row);
+    }
   }
   return row_indices;
 }
@@ -225,7 +229,7 @@ std::vector<int> BuildCsvRowIndexList(const GuiState& state,
   if (!state.markedFileIds.empty()) {
     return GetMarkedRowIndices(state, display_results);
   }
-  return GetSingleSelectionRowIndices(state, display_results);
+  return GetUnmarkedSelectionRowIndices(state, display_results);
 }
 
 struct CsvColumnVisibility {
@@ -340,7 +344,7 @@ void AppendCsvDataRow(std::string& csv,
   csv.push_back('\n');
 }
 
-// Build CSV for all marked rows (if any) or the currently selected row (if none marked).
+// Build CSV for all marked rows (if any) or all currently selected rows (if none marked).
 void CopySelectedOrMarkedRowsAsCsv(const GuiState& state,
                                    const std::vector<SearchResult>& display_results,
                                    GLFWwindow* glfw_window) {
@@ -607,10 +611,31 @@ void HandleResultsTableKeyboardShortcuts(  // NOSONAR(cpp:S3776) - Cohesive shor
     file_operations::OpenParentFolder(selected_path);
   } else if (has_selection && IsPrimaryShortcutModifierDown(io) && shift &&
              KeyPressedOnce(ImGuiKey_C)) {
-    file_operations::CopyPathToClipboard(glfw_window, selected_path);
-    state.exportNotification = "Path copied";
-    state.exportErrorMessage = "";
-    state.exportNotificationTime = std::chrono::steady_clock::now();
+    std::string all_paths;  // NOLINT(misc-const-correctness) - built incrementally
+    std::size_t copied_count = 0;
+    const auto result_count = static_cast<int>(display_results.size());
+    for (const int sel_row : state.GetSelectedRows()) {
+      if (sel_row < 0 || sel_row >= result_count) {
+        continue;
+      }
+      const std::string path(
+        display_results[static_cast<size_t>(sel_row)].fullPath);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - range guarded above
+      if (!file_operations::internal::ValidatePath(path, "CopyPathToClipboard")) {
+        continue;
+      }
+      all_paths.append(path);
+      all_paths.push_back('\n');
+      ++copied_count;
+    }
+    if (!all_paths.empty()) {
+      if (clipboard_utils::SetClipboardText(glfw_window, all_paths)) {
+        LOG_INFO_BUILD("Copied " << copied_count << " path(s) to clipboard (Ctrl/Cmd+Shift+C)");
+      }
+      state.exportNotification =
+        (copied_count > 1U) ? "Paths copied" : "Path copied";
+      state.exportErrorMessage = "";
+      state.exportNotificationTime = std::chrono::steady_clock::now();
+    }
   } else if (has_selection &&
              (KeyPressedOnce(ImGuiKey_Enter) || KeyPressedOnce(ImGuiKey_KeypadEnter)) &&
              !IsPrimaryShortcutModifierDown(io) && !shift) {

@@ -16,7 +16,10 @@ inline constexpr int kMaxWindowWidth = 4096;
 inline constexpr int kMinWindowHeight = 480;
 inline constexpr int kMaxWindowHeight = 2160;
 inline constexpr int kDefaultDynamicChunkSize = 1000;
-inline constexpr int kDefaultHybridInitialWorkPercent = 75;
+inline constexpr int kDefaultHybridInitialWorkPercent = 80;
+inline constexpr int kDefaultGuidedSchedulingDivisor = 2;
+inline constexpr int kMinGuidedSchedulingDivisor = 1;
+inline constexpr int kMaxGuidedSchedulingDivisor = 8;
 inline constexpr int kDefaultRecrawlIdleThresholdMinutes = 5;
 inline constexpr int kMinRecrawlIntervalMinutes = 1;
 inline constexpr int kMaxRecrawlIntervalMinutes = 60;
@@ -79,6 +82,7 @@ struct AppSettings {
 
   // Recent searches (automatically tracked, up to kMaxRecentSearches, names optional).
   // Unlike savedSearches, these are automatically recorded and don't require names.
+  // Persisted to recent_searches.json next to settings.json (not inside settings.json).
   std::vector<SavedSearch> recentSearches{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - camelCase for JSON/settings API
 
   // Load balancing strategy for parallel search
@@ -114,9 +118,16 @@ struct AppSettings {
   // Range: 50-95 (50% = more dynamic work, 95% = mostly initial chunks)
   // Lower values = more dynamic chunks = better load balancing but less cache locality
   // Higher values = more initial chunks = better cache locality but less load balancing
-  // Recommended: 70-80 for balanced approach
+  // Recommended: 75-85 for balanced approach
   int hybridInitialWorkPercent =  // NOLINT(readability-identifier-naming) - camelCase for JSON/settings API
     settings_defaults::kDefaultHybridInitialWorkPercent;
+
+  // Guided scheduling divisor multiplier (used by Hybrid and Dynamic strategies)
+  // Chunk size formula: remaining / (guidedSchedulingDivisor * thread_count)
+  // Range: 1-8 (smaller = larger initial dynamic chunks, fewer atomics; larger = smaller chunks, better balance)
+  // Recommended: 2 (default, standard OpenMP guided formula)
+  int guidedSchedulingDivisor =  // NOLINT(readability-identifier-naming) - camelCase for JSON/settings API
+    settings_defaults::kDefaultGuidedSchedulingDivisor;
 
   // Volume to monitor for USN Journal (Windows only, ignored on other platforms)
   // Format: "C:", "D:", etc. (without backslashes or "\\\\.\\" prefix)

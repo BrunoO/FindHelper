@@ -80,7 +80,7 @@ struct IndexBuildState {
     source_description.clear();
   }
 
-  void SetLastErrorMessage(const std::string& message) {  // NOSONAR(cpp:S6009) - Message is stored, needs std::string
+  void SetLastErrorMessage(std::string_view message) {
     const std::scoped_lock lock(last_error_mutex);
     last_error_message = message;
   }

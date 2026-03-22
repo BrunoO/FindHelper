@@ -8,9 +8,7 @@
  *
  * STRATEGIES IMPLEMENTED:
  * 1. Static: Fixed-size chunks assigned upfront (simple, predictable)
- * 2. Dynamic: Work-stealing with dynamic chunk sizing (best load balance)
- * 3. Hybrid: Combines static initial work with dynamic stealing
- * 4. Interleaved: Round-robin assignment for cache-friendly access
+ * 2. Hybrid: Combines static initial work with dynamic stealing (recommended)
  *
  * STRATEGY SELECTION:
  * - Selected via settings.loadBalancingStrategy
@@ -19,9 +17,7 @@
  *
  * PERFORMANCE CONSIDERATIONS:
  * - Static: Lowest overhead, best for uniform workloads
- * - Dynamic: Best load balance, higher overhead
  * - Hybrid: Balanced approach, good for mixed workloads
- * - Interleaved: Best cache locality, good for sequential access patterns
  *
  * THREAD SAFETY:
  * - All strategies use SearchThreadPool for thread management
@@ -283,11 +279,13 @@ inline void ProcessDynamicChunksLoop(const DynamicChunksLoopParams& params,
     // context.dynamic_chunk_size)
     size_t current_chunk_size = params.context.dynamic_chunk_size;
     if (params.thread_count_ > 0 && params.min_chunk_size_ > 0) {
-      // Guided Scheduling: Calculate chunk size dynamically based on remaining items
+      // Guided Scheduling: Calculate chunk size dynamically based on remaining items.
+      // Formula: remaining / (guided_scheduling_divisor * thread_count), floored at min_chunk_size.
       const size_t current_processed = params.next_chunk_start_->load();
       const size_t remaining =
         (params.total_items_ > current_processed) ? (params.total_items_ - current_processed) : 0;
-      const size_t divisor = 2 * static_cast<size_t>(params.thread_count_);
+      const auto gsd = static_cast<size_t>(params.context.guided_scheduling_divisor);
+      const size_t divisor = gsd * static_cast<size_t>(params.thread_count_);
       const size_t calculated_size = remaining / divisor;
       current_chunk_size = (std::max)(params.min_chunk_size_, calculated_size);
     }
@@ -440,190 +438,6 @@ inline std::vector<SearchResultData> ExecuteHybridStrategyTask(
   return local_results;
 }
 
-/**
- * @brief Dynamic strategy task parameters
- */
-struct DynamicStrategyTaskParams {
-  const ISearchableIndex& index; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  int thread_idx_ = 0; // NOLINT(readability-identifier-naming)
-  size_t total_items_ = 0; // NOLINT(readability-identifier-naming)
-  size_t initial_chunks_end_ = 0; // NOLINT(readability-identifier-naming)
-  size_t my_initial_start_ = 0; // NOLINT(readability-identifier-naming)
-  size_t my_initial_end_ = 0; // NOLINT(readability-identifier-naming)
-  const std::shared_ptr<std::atomic<size_t>>& next_chunk_start; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  size_t min_chunk_size_ = 0; // NOLINT(readability-identifier-naming)
-  const SearchContext& context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming)
-  int thread_count_ = 0; // NOLINT(readability-identifier-naming)
-};
-
-/**
- * @brief Execute DynamicStrategy task for a single thread
- *
- * Processes initial chunk and then competes for dynamic chunks with guided scheduling.
- * Extracted from lambda to reduce complexity and improve maintainability.
- */
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) - Static function
-inline std::vector<SearchResultData> ExecuteDynamicStrategyTask(
-  const DynamicStrategyTaskParams& params) {
-  const auto start_time = std::chrono::high_resolution_clock::now();
-  std::vector<SearchResultData> local_results;
-  // Reserve space assuming ~5% match rate (heuristic for performance)
-  constexpr size_t k_match_rate_heuristic = 20;
-  const size_t estimated_matches = (std::max)(
-    (params.my_initial_end_ - params.my_initial_start_) / k_match_rate_heuristic,
-    params.min_chunk_size_);
-  local_results.reserve(estimated_matches);
-
-  // CRITICAL: Acquire shared_lock in worker thread to prevent race conditions
-  const std::shared_lock lock(params.index.GetMutex());
-
-  // Get SoA view, storage size, and pattern matchers after acquiring lock
-  const auto setup = load_balancing_detail::SetupThreadWorkAfterLock(params.index, params.context);
-
-  // Track statistics for timing information
-  size_t initial_items = 0;
-  size_t dynamic_chunks_count = 0;
-  size_t total_items_processed = 0;
-  size_t total_bytes_processed = 0;
-
-  // ========== Phase 1: Process Initial Chunk (no contention) ==========
-  if (params.my_initial_start_ < params.my_initial_end_) {
-    load_balancing_detail::ProcessChunkWithExceptionHandling(
-      {setup, params.my_initial_start_, params.my_initial_end_, params.thread_idx_, "DynamicStrategy",
-       "initial chunk"},
-      local_results, params.context);
-
-    initial_items = params.my_initial_end_ - params.my_initial_start_;
-    total_items_processed += initial_items;
-    total_bytes_processed += ParallelSearchEngine::CalculateChunkBytes(
-      setup.soa_view_, params.my_initial_start_, params.my_initial_end_, setup.storage_size_);
-  }
-
-  // ========== Phase 2: Dynamic Scheduling for Remaining Work ==========
-  size_t dynamic_items_total = 0;
-  DynamicChunksLoopOutput dynamic_output{dynamic_chunks_count, dynamic_items_total,  // NOLINT(misc-const-correctness) - passed by non-const ref to ProcessDynamicChunksLoop
-                                         &total_bytes_processed, &total_items_processed};
-  load_balancing_detail::ProcessDynamicChunksLoop(
-    {setup, params.total_items_, params.initial_chunks_end_, params.next_chunk_start.get(),
-     params.context, local_results, params.thread_idx_, "DynamicStrategy", params.thread_count_,
-     params.min_chunk_size_},
-    dynamic_output);
-
-  load_balancing_detail::RecordThreadTimingIfRequested(
-    params.thread_timings_, params.thread_idx_, start_time,
-    {params.my_initial_start_, params.my_initial_end_, initial_items, dynamic_chunks_count,
-     total_items_processed, total_bytes_processed, local_results.size(), &setup.soa_view_,
-     setup.storage_size_, params.my_initial_start_, params.my_initial_end_});
-
-  return local_results;
-}
-
-/**
- * @brief Interleaved strategy task parameters
- */
-struct InterleavedStrategyTaskParams {
-  const ISearchableIndex& index; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  int thread_idx_ = 0; // NOLINT(readability-identifier-naming)
-  size_t total_items_ = 0; // NOLINT(readability-identifier-naming)
-  int thread_count_ = 0; // NOLINT(readability-identifier-naming)
-  size_t sub_chunk_size_ = 0; // NOLINT(readability-identifier-naming)
-  size_t num_sub_chunks_ = 0; // NOLINT(readability-identifier-naming)
-  const SearchContext& context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  std::vector<ThreadTiming>* thread_timings_ = nullptr; // NOLINT(readability-identifier-naming)
-};
-
-/**
- * @brief Execute InterleavedChunkingStrategy task for a single thread
- *
- * Processes chunks in interleaved pattern (thread t gets chunks t, t+N, t+2N, ...).
- * Extracted from lambda to reduce complexity and improve maintainability.
- */
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) - Static function
-inline std::vector<SearchResultData> ExecuteInterleavedStrategyTask(
-  const InterleavedStrategyTaskParams& params) {
-  const auto start_time = std::chrono::high_resolution_clock::now();
-  std::vector<SearchResultData> local_results;
-  // Heuristic: assume up to ~20% of items may match for typical queries.
-  // Use per-thread share of total_items to size the initial capacity and
-  // apply a minimum to avoid reserve(0) to reduce reallocations.
-  const size_t items_per_thread =
-    (params.thread_count_ > 0) ? (params.total_items_ / static_cast<size_t>(params.thread_count_))
-                              : params.total_items_;
-  constexpr size_t k_hit_rate_heuristic_divisor = 5;
-  constexpr size_t k_min_capacity = 16;
-  const size_t initial_capacity = (std::max)(items_per_thread / k_hit_rate_heuristic_divisor, k_min_capacity);
-  local_results.reserve(initial_capacity);
-
-  // CRITICAL: Acquire shared_lock in worker thread to prevent race conditions
-  const std::shared_lock lock(params.index.GetMutex());
-
-  // Get SoA view, storage size, and pattern matchers after acquiring lock
-  const auto setup = load_balancing_detail::SetupThreadWorkAfterLock(params.index, params.context);
-
-  // Track statistics for timing information
-  size_t total_items_processed = 0;
-  size_t chunks_processed = 0;
-  size_t total_bytes_processed = 0;
-
-  // Process chunks in interleaved pattern: thread t gets chunks t, t+N, t+2N, ...
-  // where N is thread_count
-  for (auto chunk_idx = static_cast<size_t>(params.thread_idx_); chunk_idx < params.num_sub_chunks_;
-       chunk_idx += static_cast<size_t>(params.thread_count_)) {
-    // Check for cancellation before processing each chunk
-    if (params.context.cancel_flag != nullptr && params.context.cancel_flag->load()) {
-      break;
-    }
-    // Calculate chunk boundaries
-    const auto chunk_start = chunk_idx * params.sub_chunk_size_;
-    const auto chunk_end = (std::min)(chunk_start + params.sub_chunk_size_,
-                                 params.total_items_);
-
-    // Skip empty chunks (shouldn't happen, but be safe)
-    if (chunk_start >= chunk_end) {
-      continue;
-    }
-
-    // Note: SoA view and matchers are still valid (lock is held for entire lambda)
-    // Process chunk with exception handling
-    load_balancing_detail::ProcessChunkWithExceptionHandling(
-      {setup, chunk_start, chunk_end, params.thread_idx_, "InterleavedChunkingStrategy", "chunk"},
-      local_results, params.context);
-
-    // Update statistics
-    const size_t items_in_chunk = chunk_end - chunk_start;
-    total_items_processed += items_in_chunk;
-    total_bytes_processed += ParallelSearchEngine::CalculateChunkBytes(
-      setup.soa_view_, chunk_start, chunk_end, setup.storage_size_);
-    chunks_processed++;
-  }
-
-  // Record timing information if requested
-  // For interleaved strategy, we process multiple chunks per thread
-  // Record the first chunk start and last chunk end for better visibility
-  const size_t first_chunk_start =
-    (static_cast<size_t>(params.thread_idx_) < params.num_sub_chunks_) ? (static_cast<size_t>(params.thread_idx_) * params.sub_chunk_size_) : 0;
-  size_t last_chunk_end = 0;
-  if (chunks_processed > 0) {
-    // Calculate the last chunk index this thread processed
-    // Formula: last_chunk_idx = t + (chunks_processed - 1) * thread_count
-    const size_t last_chunk_idx = static_cast<size_t>(params.thread_idx_) + ((chunks_processed - 1) * static_cast<size_t>(params.thread_count_));
-    if (last_chunk_idx < params.num_sub_chunks_) {
-      last_chunk_end = (std::min)((last_chunk_idx + 1) * params.sub_chunk_size_, params.total_items_);
-    } else {
-      last_chunk_end = params.total_items_;
-    }
-  }
-
-  load_balancing_detail::RecordThreadTimingIfRequested(
-    params.thread_timings_, params.thread_idx_, start_time,
-    {first_chunk_start, last_chunk_end, 0, chunks_processed, total_items_processed,
-     total_bytes_processed, local_results.size(), &setup.soa_view_, setup.storage_size_,
-     first_chunk_start, last_chunk_end});
-
-  return local_results;
-}
-
 }  // namespace load_balancing_detail
 
 // ============================================================================
@@ -654,7 +468,7 @@ inline std::vector<SearchResultData> ExecuteInterleavedStrategyTask(
  * @note This strategy ignores dynamic_chunk_size and hybrid_initial_percent
  *       parameters as they are not applicable to static chunking.
  */
-// StaticChunkingStrategy, HybridStrategy, and DynamicStrategy are defined in this file
+// StaticChunkingStrategy and HybridStrategy are defined in this file
 // (not in header to reduce compile-time dependencies)
 
 class StaticChunkingStrategy : public LoadBalancingStrategy {
@@ -808,180 +622,12 @@ HybridStrategy::LaunchSearchTasks(const ISearchableIndex& index, const ISearchEx
 }
 
 // ============================================================================
-// Dynamic Strategy (Initial Chunks + Guided Dynamic Scheduling)
-// ============================================================================
-
-/**
- * Dynamic Strategy with Initial Chunks
- *
- * Combines the benefits of Static and Dynamic strategies:
- * 1. Each thread gets an initial chunk (reduces contention, improves cache locality)
- * 2. Remaining work is distributed dynamically with guided scheduling
- *
- * Algorithm:
- * Phase 1 - Initial Chunks:
- *   1. Divide work into initial chunks (one per thread, ~50% of total work)
- *   2. Each thread processes its assigned initial chunk (no contention)
- *
- * Phase 2 - Dynamic Scheduling:
- *   3. Remaining work is claimed dynamically via atomic fetch_add
- *   4. Guided scheduling: chunk size decreases as work depletes
- *   5. Minimum chunk size = dynamic_chunk_size from settings
- *
- * Characteristics:
- * - Pros: Excellent load balance + good cache locality for initial work
- * - Cons: Slightly more complex than pure dynamic
- *
- * Best for:
- * - General-purpose use (recommended default)
- * - Datasets with potential clustering (e.g., files sorted by directory)
- * - When you want both performance and load balance
- *
- * @note Initial chunk size is ~50% of work / thread_count.
- *       This is a fixed ratio optimized for typical file search workloads.
- */
-class DynamicStrategy : public LoadBalancingStrategy {
- public:
-  [[nodiscard]] std::vector<std::future<std::vector<SearchResultData>>> LaunchSearchTasks(
-    const ISearchableIndex& index, const ISearchExecutor& executor, size_t total_items,
-    int thread_count, const SearchContext& context,
-    std::vector<ThreadTiming>* thread_timings) const override;
-
-  [[nodiscard]] std::string GetName() const override {
-    return "dynamic";
-  }
-  [[nodiscard]] std::string GetDescription() const override {
-    return "Dynamic: Initial chunks + guided dynamic scheduling (recommended)";
-  }
-};
-
-[[nodiscard]] std::vector<std::future<std::vector<SearchResultData>>>
-DynamicStrategy::LaunchSearchTasks(const ISearchableIndex& index, const ISearchExecutor& executor,
-                                   size_t total_items, int thread_count,
-                                   const SearchContext& context,
-                                   std::vector<ThreadTiming>* thread_timings) const {
-  std::vector<std::future<std::vector<SearchResultData>>> futures;
-  futures.reserve(static_cast<size_t>(thread_count));
-
-  // ========== Phase 1: Calculate Initial Chunk Distribution ==========
-  // Give each thread ~50% of the work upfront (reduces initial contention)
-  // The remaining 50% is handled dynamically for load balancing
-  constexpr int k_initial_work_percent = 50;
-  const size_t initial_work_items = (total_items * k_initial_work_percent) / 100;
-  const size_t initial_chunk_size = (initial_work_items + static_cast<size_t>(thread_count) - 1) / static_cast<size_t>(thread_count);
-
-  // Calculate where initial chunks end (dynamic chunks start here)
-  const size_t initial_chunks_end = initial_chunk_size * static_cast<size_t>(thread_count);
-  const size_t effective_initial_chunks_end = (std::min)(initial_chunks_end, total_items);
-
-  // ========== Phase 2: Setup Dynamic Chunk Allocation ==========
-  // dynamic_chunk_size acts as the minimum chunk size for guided scheduling
-  const size_t min_chunk_size = context.dynamic_chunk_size;
-  // Atomic counter starts AFTER initial chunks (threads compete for remaining work)
-  auto next_chunk_start = std::make_shared<std::atomic<size_t>>(effective_initial_chunks_end);
-
-  if (!load_balancing_detail::ValidateThreadPool(executor, "DynamicStrategy")) {
-    return futures;  // Return empty futures vector
-  }
-  SearchThreadPool& thread_pool = executor.GetThreadPool();
-
-  for (int t = 0; t < thread_count; ++t) {
-    // Calculate initial chunk boundaries for this thread
-    size_t my_initial_start = static_cast<size_t>(t) * initial_chunk_size;
-    size_t my_initial_end =
-      (t == thread_count - 1) ? effective_initial_chunks_end : my_initial_start + initial_chunk_size;
-
-    // Clamp to valid range
-    my_initial_start = (std::min)(my_initial_start, total_items);
-    my_initial_end = (std::min)(my_initial_end, total_items);
-
-    futures.push_back(thread_pool.Enqueue([&index, t, total_items, effective_initial_chunks_end,  // NOLINT(bugprone-exception-escape) - exceptions propagate to std::future
-                                           my_initial_start, my_initial_end, next_chunk_start,
-                                           min_chunk_size, context, thread_timings, thread_count]() {
-      return load_balancing_detail::ExecuteDynamicStrategyTask(
-        {index, t, total_items, effective_initial_chunks_end, my_initial_start, my_initial_end,
-         next_chunk_start, min_chunk_size, context, thread_timings, thread_count});
-    }));
-  }
-
-  return futures;
-}
-
-// ============================================================================
-// Interleaved Chunking Strategy
-// ============================================================================
-
-/**
- * Interleaved Chunking Strategy Implementation
- *
- * Distributes work by dividing items into small sub-chunks and assigning
- * them to threads in a round-robin interleaved pattern. This provides
- * deterministic chunk assignment without requiring atomic operations.
- *
- * Algorithm:
- * 1. Divide total_items into sub_chunks of size dynamic_chunk_size
- * 2. Thread t processes chunks: t, t+thread_count, t+2*thread_count, ...
- * 3. Each thread processes its assigned chunks sequentially
- *
- * Example with 3 threads and 9 chunks:
- * - Thread 0: chunks 0, 3, 6
- * - Thread 1: chunks 1, 4, 7
- * - Thread 2: chunks 2, 5, 8
- *
- * Characteristics:
- * - Pros: Deterministic, no atomic operations, good load balance
- * - Cons: Less cache locality than static (chunks are spread out)
- *
- * Best for:
- * - When you want deterministic behavior without atomics
- * - Scenarios with moderate work distribution variance
- * - When sub-chunk size can be tuned for optimal performance
- *
- * @note Uses dynamic_chunk_size for sub-chunk size, with fallback to 256
- *       if dynamic_chunk_size < 100.
- */
-[[nodiscard]] std::vector<std::future<std::vector<SearchResultData>>>
-InterleavedChunkingStrategy::LaunchSearchTasks(
-  const ISearchableIndex& index, const ISearchExecutor& executor, size_t total_items,
-  int thread_count, const SearchContext& context,
-  std::vector<ThreadTiming>* thread_timings) const {
-  std::vector<std::future<std::vector<SearchResultData>>> futures;
-  futures.reserve(static_cast<size_t>(thread_count));
-
-  // Validate thread pool before proceeding
-  if (!load_balancing_detail::ValidateThreadPool(executor, "InterleavedChunkingStrategy")) {
-    return futures;  // Return empty futures vector
-  }
-  SearchThreadPool& thread_pool = executor.GetThreadPool();
-
-  // Calculate sub-chunk size: use dynamic_chunk_size if reasonable, otherwise default
-  // Small chunks (< 100) would create too many chunks and overhead
-  constexpr size_t k_min_reasonable_chunk_size = 100;
-  constexpr size_t k_default_sub_chunk_size = 256;
-  const size_t sub_chunk_size = (context.dynamic_chunk_size >= k_min_reasonable_chunk_size) ? context.dynamic_chunk_size : k_default_sub_chunk_size;
-  // Calculate number of sub-chunks using ceiling division
-  const size_t num_sub_chunks = (total_items + sub_chunk_size - 1) / sub_chunk_size;
-
-  for (int t = 0; t < thread_count; ++t) {
-    futures.push_back(thread_pool.Enqueue([&index, t, total_items, thread_count, sub_chunk_size,  // NOLINT(bugprone-exception-escape) - exceptions propagate to std::future
-                                           num_sub_chunks, context, thread_timings]() {
-      return load_balancing_detail::ExecuteInterleavedStrategyTask(
-        {index, t, total_items, thread_count, sub_chunk_size, num_sub_chunks, context,
-         thread_timings});
-    }));
-  }
-
-  return futures;
-}
-
-// ============================================================================
 // Factory Implementation
 // ============================================================================
 
 // ValidateAndNormalizeStrategyName implementation (moved out of namespace for public access)
 std::string ValidateAndNormalizeStrategyName(std::string_view strategy_name) {
-  if (strategy_name == "static" || strategy_name == "hybrid" || strategy_name == "dynamic" ||
-      strategy_name == "interleaved") {
+  if (strategy_name == "static" || strategy_name == "hybrid") {
     return std::string(strategy_name);
   }
 #ifdef FAST_LIBS_BOOST
@@ -994,13 +640,13 @@ std::string ValidateAndNormalizeStrategyName(std::string_view strategy_name) {
 #ifdef FAST_LIBS_BOOST
   LOG_WARNING_BUILD("Invalid load balancing strategy: '"
                     << strategy_name
-                    << "'. Valid options are: 'static', 'hybrid', 'dynamic', "
-                       "'interleaved', 'work_stealing'. Using default (hybrid).");
+                    << "'. Valid options are: 'static', 'hybrid', "
+                       "'work_stealing'. Using default (hybrid).");
 #else
   LOG_WARNING_BUILD("Invalid load balancing strategy: '"
                     << strategy_name
-                    << "'. Valid options are: 'static', 'hybrid', 'dynamic', "
-                       "'interleaved'. Using default (hybrid).");
+                    << "'. Valid options are: 'static', 'hybrid'. "
+                       "Using default (hybrid).");
 #endif  // FAST_LIBS_BOOST
   return GetDefaultStrategyName();
 }
@@ -1011,7 +657,7 @@ std::string ValidateAndNormalizeStrategyName(std::string_view strategy_name) {
  * Creates a new instance of the specified strategy. If the strategy name is
  * unknown, logs a warning and returns the default strategy (hybrid).
  *
- * @param strategy_name Name of the strategy ("static", "hybrid", "dynamic", "interleaved")
+ * @param strategy_name Name of the strategy ("static", "hybrid", "dynamic")
  * @return Unique pointer to the strategy instance. Never returns nullptr.
  *         Returns hybrid strategy (default) if name is invalid.
  *
@@ -1029,14 +675,8 @@ std::unique_ptr<LoadBalancingStrategy> CreateLoadBalancingStrategy(std::string_v
   if (validated_name == "hybrid") {
     return std::make_unique<HybridStrategy>();
   }
-  if (validated_name == "dynamic") {
-    return std::make_unique<DynamicStrategy>();
-  }
   if (validated_name == "work_stealing") {
     return std::make_unique<WorkStealingStrategy>();
-  }
-  if (validated_name == "interleaved") {
-    return std::make_unique<InterleavedChunkingStrategy>();
   }
 
   // Should never reach here (ValidateAndNormalizeStrategyName ensures valid name),
@@ -1050,15 +690,15 @@ std::unique_ptr<LoadBalancingStrategy> CreateLoadBalancingStrategy(std::string_v
  * Returns a vector containing the names of all load balancing strategies
  * that can be created via CreateLoadBalancingStrategy().
  *
- * @return Vector of strategy names: {"static", "hybrid", "dynamic", "interleaved"}
+ * @return Vector of strategy names: {"static", "hybrid", "dynamic"}
  *
  * @see CreateLoadBalancingStrategy()
  */
 std::vector<std::string> GetAvailableStrategyNames() {
 #ifdef FAST_LIBS_BOOST
-  return {"static", "hybrid", "dynamic", "interleaved", "work_stealing"};
+  return {"static", "hybrid", "work_stealing"};
 #else
-  return {"static", "hybrid", "dynamic", "interleaved"};
+  return {"static", "hybrid"};
 #endif  // FAST_LIBS_BOOST
 }
 

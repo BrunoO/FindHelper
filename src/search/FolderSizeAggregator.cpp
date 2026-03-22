@@ -1,6 +1,7 @@
 #include "search/FolderSizeAggregator.h"
 
 #include <cassert>
+#include <shared_mutex>
 #include <vector>
 
 #include "index/FileIndex.h"
@@ -10,13 +11,16 @@
 
 namespace {
 
-// Walk up path levels and add file id to every batch directory that contains it.
+// Walk up path levels and add (file_id, cached_size) to every batch directory that contains it.
+// cached_size is the size read from FileEntry under the index read lock (kFileSizeNotLoaded if not
+// yet cached). Pass 2 uses cached_size directly to avoid stat() for already-loaded files.
 // Reuses lookup_key to avoid per-level allocations. Used by ComputeSizeBatch Pass 1.
 void AccumulateAncestorDirsForFile(
     uint64_t id,
+    uint64_t cached_size,
     std::string_view path,
     const hash_map_t<std::string, uint64_t>& prefix_to_id,
-    hash_map_t<uint64_t, std::vector<uint64_t>>& file_ids_per_dir,
+    hash_map_t<uint64_t, std::vector<std::pair<uint64_t, uint64_t>>>& file_data_per_dir,
     std::string& lookup_key) {
   std::string_view remaining = path;
   while (true) {
@@ -26,7 +30,7 @@ void AccumulateAncestorDirsForFile(
     }
     lookup_key.assign(remaining.data(), slash + 1);  // NOLINT(bugprone-suspicious-stringview-data-usage) - assign(ptr, count) is safe; count is always ≤ remaining.size()
     if (const auto it = prefix_to_id.find(lookup_key); it != prefix_to_id.end()) {
-      file_ids_per_dir[it->second].push_back(id);
+      file_data_per_dir[it->second].emplace_back(id, cached_size);
     }
     remaining = remaining.substr(0, slash);
   }
@@ -67,7 +71,7 @@ void FolderSizeAggregator::Request(uint64_t folder_id, std::string_view folder_p
 }
 
 std::optional<uint64_t> FolderSizeAggregator::GetResult(uint64_t folder_id) const {
-  const std::scoped_lock lock(mutex_);
+  const std::shared_lock lock(mutex_);
   if (auto it = results_.find(folder_id); it != results_.end()) {
     return it->second;
   }
@@ -92,7 +96,7 @@ void FolderSizeAggregator::Reset() {
 }
 
 bool FolderSizeAggregator::HasPendingWork() const {
-  const std::scoped_lock lock(mutex_);
+  const std::shared_lock lock(mutex_);
   return !queue_.empty() || !pending_requests_.empty();
 }
 
@@ -157,16 +161,18 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
   }
 
   // Pass 1: single index scan — for each file, walk up its path to find all
-  // batch directories that contain it and collect their descendant file IDs.
-  // GetFileSizeById must NOT be called inside this callback — it acquires the
-  // same lock held by ForEachEntryWithPath.
+  // batch directories that contain it and collect their descendant (file_id, cached_size) pairs.
+  // cached_size is read from FileEntry under the index read lock held by ForEachEntryWithPath.
+  // If the size is already loaded (e.g. pre-loaded by sort attribute tasks), Pass 2 uses it
+  // directly without a stat() call. GetFileSizeById must NOT be called inside this callback —
+  // it would acquire the same lock already held by ForEachEntryWithPath.
   // Reuse a string buffer across calls to avoid per-level heap allocations.
-  hash_map_t<uint64_t, std::vector<uint64_t>> file_ids_per_dir;
+  hash_map_t<uint64_t, std::vector<std::pair<uint64_t, uint64_t>>> file_data_per_dir;
   std::string lookup_key;
   lookup_key.reserve(256);
 
   index_.ForEachEntryWithPath(
-      [this, &file_ids_per_dir, &prefix_to_id, &lookup_key](
+      [this, &file_data_per_dir, &prefix_to_id, &lookup_key](
           uint64_t id, const FileEntry& entry, std::string_view path) {
         if (cancelled_.load()) {
           return false;
@@ -174,21 +180,28 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
         if (entry.isDirectory) {
           return true;
         }
-        AccumulateAncestorDirsForFile(id, path, prefix_to_id, file_ids_per_dir, lookup_key);
+        // Read the cached size while under the index read lock. IsLoaded() is true when
+        // another thread has already stat()'d this file (e.g. sort attribute loading).
+        const uint64_t cached_size =
+            entry.fileSize.IsLoaded() ? entry.fileSize.GetValue() : kFileSizeNotLoaded;
+        AccumulateAncestorDirsForFile(id, cached_size, path, prefix_to_id, file_data_per_dir, lookup_key);
         return true;
       },
       nullptr);
 
-  // Pass 2: load sizes outside the lock and sum per directory.
+  // Pass 2: sum sizes — use cached values captured in Pass 1 where available,
+  // stat() only for files that were not yet loaded when Pass 1 ran.
   hash_map_t<uint64_t, uint64_t> result;
   result.reserve(jobs.size());
-  for (const auto& [folder_id, file_ids] : file_ids_per_dir) {
+  for (const auto& [folder_id, file_data] : file_data_per_dir) {
     uint64_t total = 0;
-    for (const uint64_t fid : file_ids) {
+    for (const auto& [fid, cached_size] : file_data) {
       if (cancelled_.load()) {
         break;
       }
-      const uint64_t size = index_.GetFileSizeById(fid);
+      const uint64_t size = (cached_size != kFileSizeNotLoaded)
+                                ? cached_size           // Cache hit: already loaded, no stat().
+                                : index_.GetFileSizeById(fid);  // Cache miss: lazy load via stat().
       if (size != kFileSizeNotLoaded && size != kFileSizeFailed) {
         total += size;
       }

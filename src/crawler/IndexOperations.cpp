@@ -47,16 +47,19 @@ void IndexOperations::Insert(uint64_t id,
   //      RecomputeAllPaths will rebuild the correct full path once all entries
   //      are present.
   const auto parent_path = path_operations_.GetPathView(parent_id);
-  std::string full_path;
+  std::string joined_path;  // storage for JoinPath result when a join is needed
+  std::string_view full_path;
   if (!parent_path.empty()) {
-    full_path = path_utils::JoinPath(parent_path, name);
+    joined_path = path_utils::JoinPath(parent_path, name);
+    full_path = joined_path;
 #ifndef _WIN32
   } else if (parent_id == 0) {
     // Non-Windows root-level entry: prepend "/" to get "/home" not "home".
-    full_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), name);
+    joined_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), name);
+    full_path = joined_path;
 #endif  // _WIN32
   } else {
-    full_path = std::string(name);  // USN out-of-order / Windows root placeholder
+    full_path = name;  // USN out-of-order / Windows root placeholder — no allocation needed
   }
 
   // Insert into storage
@@ -71,7 +74,7 @@ void IndexOperations::Remove(uint64_t id) {
   if (entry != nullptr) {
     // If it's a directory, remove from path cache to prevent memory leak
     if (entry->isDirectory) {
-      const std::string path = path_operations_.GetPath(id);
+      const std::string_view path = path_operations_.GetPathView(id);
       if (!path.empty()) {
         storage_.RemoveDirectoryFromCache(path);
       }
@@ -157,7 +160,7 @@ bool IndexOperations::Move(uint64_t id, uint64_t new_parent_id) {
   const std::string_view current_name = (last_sep != std::string::npos)
       ? std::string_view(old_full_path).substr(last_sep + 1)
       : std::string_view(old_full_path);
-  const std::string new_parent_path = path_operations_.GetPath(new_parent_id);
+  const std::string_view new_parent_path = path_operations_.GetPathView(new_parent_id);
   const std::string new_full_path = path_utils::JoinPath(new_parent_path, current_name);
 
   // Update entry in storage

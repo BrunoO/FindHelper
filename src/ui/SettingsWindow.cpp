@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 // GLFW includes
 #define GLFW_INCLUDE_NONE
@@ -224,15 +225,9 @@ int GetStrategyIndexFromString(std::string_view strategy) {
   if (strategy == "hybrid") {
     return 1;
   }
-  if (strategy == "dynamic") {
-    return 2;
-  }
-  if (strategy == "interleaved") {
-    return 3;
-  }
 #if defined(FAST_LIBS_BOOST)
   if (strategy == "work_stealing") {
-    return 4;
+    return 2;
   }
 #endif  // FAST_LIBS_BOOST
   // Default to hybrid if invalid
@@ -247,36 +242,24 @@ std::string GetStrategyStringFromIndex(int index) {
   if (index == 1) {
     return "hybrid";
   }
-  if (index == 2) {
-    return "dynamic";
-  }
 #if defined(FAST_LIBS_BOOST)
-  if (index == 3) {
-    return "interleaved";
-  }
-  if (index == 4) {
+  if (index == 2) {
     return "work_stealing";
   }
-  // Default to hybrid if index is out of range (defensive; ImGui::Combo clamps index)
-  return "hybrid";
-#else
-  if (index == 3) {
-    return "interleaved";
-  }
-  // Default to hybrid if index is out of range (defensive; ImGui::Combo clamps index)
-  return "hybrid";
 #endif  // FAST_LIBS_BOOST
+  // Default to hybrid if index is out of range (defensive; ImGui::Combo clamps index)
+  return "hybrid";
 }
 
 // Helper function to render load balancing strategy selector (reduces cognitive complexity)
 int RenderLoadBalancingStrategy(AppSettings& settings) {
   // Strategy labels must stay in sync with GetStrategyIndexFromString/GetStrategyStringFromIndex
 #if defined(FAST_LIBS_BOOST)
-  static const std::array<const char*, 5> kStrategyLabels = {
-    "Static", "Hybrid", "Dynamic", "Interleaved", "Work Stealing"};
+  static const std::array<const char*, 3> kStrategyLabels = {
+    "Static", "Hybrid", "Work Stealing"};
 #else
-  static const std::array<const char*, 4> kStrategyLabels = {
-    "Static", "Hybrid", "Dynamic", "Interleaved"};
+  static const std::array<const char*, 2> kStrategyLabels = {
+    "Static", "Hybrid"};
 #endif  // FAST_LIBS_BOOST
   int current_strategy_index = GetStrategyIndexFromString(settings.loadBalancingStrategy);
 
@@ -287,8 +270,6 @@ int RenderLoadBalancingStrategy(AppSettings& settings) {
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip("Static: Fixed chunks assigned upfront\n"
                       "Hybrid: Initial large chunks (configurable %%) + dynamic small chunks\n"
-                      "Dynamic: Initial chunks (50%%) + guided dynamic scheduling (recommended)\n"
-                      "Interleaved: Threads process items in an interleaved manner\n"
 #if defined(FAST_LIBS_BOOST)
                       "Work Stealing: Per-thread queues with stealing (requires FAST_LIBS_BOOST)\n"
 #endif  // FAST_LIBS_BOOST
@@ -344,8 +325,7 @@ void RenderDynamicChunkSize(AppSettings& settings) {
     settings.dynamicChunkSize = chunk_size;
   }
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("Chunk size for dynamic load balancing (Hybrid and Dynamic "
-                      "strategies)\n"
+    ImGui::SetTooltip("Chunk size for dynamic load balancing (Hybrid strategy)\n"
                       "Range: 100-100000 items per chunk (100K max for testing)\n"
                       "Larger chunks = less overhead, less fine-grained balancing\n"
                       "Smaller chunks = more overhead, better load balancing\n"
@@ -388,7 +368,27 @@ void RenderHybridInitialWorkPercent(AppSettings& settings) {
                       "locality\n"
                       "Higher = more initial chunks = better cache locality, less load "
                       "balancing\n"
-                      "Recommended: 70-80%%\n"
+                      "Recommended: 75-85%%\n"
+                      "Takes effect on the next search");
+  }
+}
+
+// Helper function to render guided scheduling divisor input
+void RenderGuidedSchedulingDivisor(AppSettings& settings) {
+  if (int divisor = settings.guidedSchedulingDivisor;  // NOSONAR(cpp:S1854) - ImGui pattern: modified by reference, then used after if
+      ImGui::SliderInt("Guided Scheduling Divisor", &divisor,
+                       settings_defaults::kMinGuidedSchedulingDivisor,
+                       settings_defaults::kMaxGuidedSchedulingDivisor)) {  // NOSONAR(cpp:S6004)
+    divisor = (std::max)(divisor, settings_defaults::kMinGuidedSchedulingDivisor);  // NOLINT(readability-use-std-min-max)
+    divisor = (std::min)(divisor, settings_defaults::kMaxGuidedSchedulingDivisor);  // NOLINT(readability-use-std-min-max)
+    settings.guidedSchedulingDivisor = divisor;
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Multiplier in guided scheduling formula: remaining / (divisor * threads)\n"
+                      "Range: 1-8\n"
+                      "Smaller = larger dynamic chunks, fewer atomic operations\n"
+                      "Larger = smaller dynamic chunks, better tail-end load balance\n"
+                      "Recommended: 2 (default, standard OpenMP guided formula)\n"
                       "Takes effect on the next search");
   }
 }
@@ -407,6 +407,12 @@ void RenderPerformanceSettings(AppSettings& settings) {
     if (current_strategy_index == 1) {  // Hybrid strategy
       RenderHybridInitialWorkPercent(settings);
     }
+
+    // Guided scheduling divisor (shown for Hybrid strategy)
+    if (current_strategy_index == 1) {  // Hybrid
+      RenderGuidedSchedulingDivisor(settings);
+    }
+
   }
 
   SeparatorWithSpacing();
@@ -784,8 +790,17 @@ void HandleSaveAction(bool* p_open, AppSettings& settings, const AppSettings& wo
   const bool thread_pool_size_changed =
     (old_settings.searchThreadPoolSize != working_settings.searchThreadPoolSize);
 
+  // The Settings window only edits a subset of AppSettings. `working_settings` is copied from live
+  // `settings` when the window opens; if the user keeps Settings open while searching or saving
+  // named searches, live lists diverge. A full assignment would persist a stale snapshot and clear
+  // recent/saved searches — preserve those from the current live settings.
+  std::vector<SavedSearch> saved_searches_preserve = settings.savedSearches;
+  std::vector<SavedSearch> recent_searches_preserve = settings.recentSearches;
+
   // Apply working settings to live settings before persisting
   settings = working_settings;
+  settings.savedSearches = std::move(saved_searches_preserve);
+  settings.recentSearches = std::move(recent_searches_preserve);
 
   const bool save_ok = SaveSettings(settings);
   assert(save_feedback.has_save_result != nullptr);

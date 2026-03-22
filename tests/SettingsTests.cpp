@@ -20,6 +20,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -56,7 +57,8 @@ TEST_SUITE("Settings") {
     CHECK(settings.loadBalancingStrategy == "hybrid");
     CHECK(settings.searchThreadPoolSize == 0);
     CHECK(settings.dynamicChunkSize == 1000);
-    CHECK(settings.hybridInitialWorkPercent == 75);
+    CHECK(settings.hybridInitialWorkPercent == 80);
+    CHECK(settings.guidedSchedulingDivisor == 2);
     CHECK(settings.uiMode == AppSettings::UIMode::Full);
     CHECK(settings.savedSearches.empty());
   }
@@ -72,7 +74,7 @@ TEST_SUITE("Settings") {
       custom.fontSize = 16.0F;
       custom.windowWidth = 1920;
       custom.windowHeight = 1080;
-      custom.loadBalancingStrategy = "dynamic";
+      custom.loadBalancingStrategy = "hybrid";
       custom.searchThreadPoolSize = 8;
       custom.dynamicChunkSize = 2000;
       custom.hybridInitialWorkPercent = 80;
@@ -88,7 +90,7 @@ TEST_SUITE("Settings") {
       CHECK(loaded.fontSize == 16.0F);
       CHECK(loaded.windowWidth == 1920);
       CHECK(loaded.windowHeight == 1080);
-      CHECK(loaded.loadBalancingStrategy == "dynamic");
+      CHECK(loaded.loadBalancingStrategy == "hybrid");
       CHECK(loaded.searchThreadPoolSize == 8);
       CHECK(loaded.dynamicChunkSize == 2000);
       CHECK(loaded.hybridInitialWorkPercent == 80);
@@ -245,7 +247,7 @@ TEST_SUITE("Settings") {
     TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings validates load balancing strategy") {
 
       // Test all valid strategies
-      auto valid_strategies = std::vector<std::string>{"static", "hybrid", "dynamic", "interleaved"};
+      auto valid_strategies = std::vector<std::string>{"static", "hybrid"};
 
       for (const auto& strategy : valid_strategies) {
         AppSettings custom;
@@ -428,7 +430,7 @@ TEST_SUITE("Settings") {
       original.fontScale = 1.25F;
       original.windowWidth = 1920;
       original.windowHeight = 1080;
-      original.loadBalancingStrategy = "interleaved";
+      original.loadBalancingStrategy = "hybrid";
       original.searchThreadPoolSize = 16;
       original.dynamicChunkSize = 5000;
       original.hybridInitialWorkPercent = 70;
@@ -575,6 +577,137 @@ TEST_SUITE("Settings") {
 
       CHECK(save_ok == true);
       CHECK(primary_exists == true);
+    }
+
+    TEST_CASE_FIXTURE(SettingsFixture,
+                      "SaveSettings merges recentSearches from disk when in-memory list is empty") {
+      namespace fs = std::filesystem;
+      const fs::path tmp_base = fs::temp_directory_path();
+#ifdef _WIN32
+      const int pid = _getpid();
+#else
+      const int pid = getpid();  // NOLINT(concurrency-mt-unsafe) - test only; single-threaded
+#endif
+      const fs::path tmp_dir =
+          tmp_base / ("FindHelper_recent_merge_" + std::to_string(static_cast<std::size_t>(pid)));
+      if (!fs::exists(tmp_dir)) {
+        fs::create_directories(tmp_dir);
+      }
+
+      const std::string tmp_str = tmp_dir.string();
+      std::string old_home;
+#ifdef _WIN32
+      {
+        char* buf = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&buf, &len, "USERPROFILE") == 0 && buf != nullptr) {
+          old_home = buf;
+          free(buf);
+        }
+      }
+      _putenv_s("USERPROFILE", tmp_str.c_str());
+#else
+      if (const char* p = std::getenv("HOME"); p != nullptr) {  // NOLINT(concurrency-mt-unsafe)
+        old_home = p;
+      }
+      setenv("HOME", tmp_str.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - test only
+#endif
+
+      const std::string primary_dir = path_utils::JoinPath(tmp_str, ".FindHelper");
+      const std::string primary_file = path_utils::JoinPath(primary_dir, "settings.json");
+      const std::string recent_file = path_utils::JoinPath(primary_dir, "recent_searches.json");
+      fs::create_directories(primary_dir);
+
+      {
+        std::ofstream out(primary_file);
+        out << R"({"fontFamily":"BeforeMerge"})";
+      }
+      {
+        std::ofstream out(recent_file);
+        out << R"({"recentSearches":[{"name":"","filename":"keep_me","path":"","extensions":"","foldersOnly":false,"caseSensitive":false,"timeFilter":"None","sizeFilter":"None"}]})";
+      }
+
+      AppSettings to_save;
+      to_save.fontFamily = "AfterMerge";
+      const bool save_ok = SaveSettings(to_save);
+
+      AppSettings loaded;
+      const bool load_ok = LoadSettings(loaded);
+
+#ifdef _WIN32
+      _putenv_s("USERPROFILE", old_home.c_str());
+#else
+      setenv("HOME", old_home.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - restore after test
+#endif
+      std::error_code ec;
+      (void)fs::remove_all(tmp_dir, ec);
+
+      CHECK(save_ok == true);
+      CHECK(load_ok == true);
+      CHECK(loaded.fontFamily == "AfterMerge");
+      REQUIRE(loaded.recentSearches.size() == 1U);
+      CHECK(loaded.recentSearches[0].filename == "keep_me");
+    }
+
+    TEST_CASE_FIXTURE(SettingsFixture,
+                      "LoadSettings migrates recentSearches from legacy settings.json when no "
+                      "recent_searches.json exists") {
+      namespace fs = std::filesystem;
+      const fs::path tmp_base = fs::temp_directory_path();
+#ifdef _WIN32
+      const int pid = _getpid();
+#else
+      const int pid = getpid();  // NOLINT(concurrency-mt-unsafe) - test only; single-threaded
+#endif
+      const fs::path tmp_dir =
+          tmp_base / ("FindHelper_recent_mig_" + std::to_string(static_cast<std::size_t>(pid)));
+      if (!fs::exists(tmp_dir)) {
+        fs::create_directories(tmp_dir);
+      }
+
+      const std::string tmp_str = tmp_dir.string();
+      std::string old_home;
+#ifdef _WIN32
+      {
+        char* buf = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&buf, &len, "USERPROFILE") == 0 && buf != nullptr) {
+          old_home = buf;
+          free(buf);
+        }
+      }
+      _putenv_s("USERPROFILE", tmp_str.c_str());
+#else
+      if (const char* p = std::getenv("HOME"); p != nullptr) {  // NOLINT(concurrency-mt-unsafe)
+        old_home = p;
+      }
+      setenv("HOME", tmp_str.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - test only
+#endif
+
+      const std::string primary_dir = path_utils::JoinPath(tmp_str, ".FindHelper");
+      const std::string primary_file = path_utils::JoinPath(primary_dir, "settings.json");
+      fs::create_directories(primary_dir);
+
+      {
+        std::ofstream out(primary_file);
+        out << R"({"fontFamily":"LegacyMerge","recentSearches":[{"name":"","filename":"from_main_json","path":"","extensions":"","foldersOnly":false,"caseSensitive":false,"timeFilter":"None","sizeFilter":"None"}]})";
+      }
+
+      AppSettings loaded;
+      const bool load_ok = LoadSettings(loaded);
+
+#ifdef _WIN32
+      _putenv_s("USERPROFILE", old_home.c_str());
+#else
+      setenv("HOME", old_home.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - restore after test
+#endif
+      std::error_code ec;
+      (void)fs::remove_all(tmp_dir, ec);
+
+      CHECK(load_ok == true);
+      CHECK(loaded.fontFamily == "LegacyMerge");
+      REQUIRE(loaded.recentSearches.size() == 1U);
+      CHECK(loaded.recentSearches[0].filename == "from_main_json");
     }
   }
 }

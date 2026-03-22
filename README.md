@@ -148,7 +148,7 @@ You can pass the following options when starting the app. Run with `--help` (or 
 | `-v`, `--version` | Show version information and exit |
 | `--show-metrics` | Show Metrics button and window (for power users / debugging) |
 | `--thread-pool-size=<n>` | Override thread pool size (0=auto, 1–64) |
-| `--load-balancing=<strategy>` | Override load balancing strategy (`static`, `hybrid`, `dynamic`, `interleaved`; `work_stealing` when built with Boost) |
+| `--load-balancing=<strategy>` | Override load balancing strategy (`static`, `hybrid`; `work_stealing` when built with Boost) |
 | `--window-width=<n>` | Override initial window width (640–4096) |
 | `--window-height=<n>` | Override initial window height (480–2160) |
 | `--dump-index-to=<file>` | Save all indexed paths to file (one per line) |

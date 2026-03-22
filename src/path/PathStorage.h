@@ -96,7 +96,7 @@ public:
    * @param existing_index If set, try in-place update at this index (e.g. rename); else append
    * @return SoA index of the entry (existing or newly appended)
    */
-  [[nodiscard]] size_t InsertPath(uint64_t id, const std::string& path, bool isDirectory,  // NOLINT(readability-identifier-naming) - Public API parameter names
+  [[nodiscard]] size_t InsertPath(uint64_t id, std::string_view path, bool isDirectory,  // NOLINT(readability-identifier-naming) - Public API parameter names
                                   std::optional<size_t> existing_index = std::nullopt);
 
   /**
@@ -227,7 +227,7 @@ private:
   std::atomic<size_t> rebuild_count_{0};  // NOLINT(readability-identifier-naming)
 
   // Helper to append string to contiguous buffer
-  size_t AppendString(const std::string &str);
+  size_t AppendString(std::string_view str);
 
   // Helper to parse path and extract filename/extension offsets
   void ParsePathOffsets(std::string_view path, size_t &filename_start,

@@ -25,9 +25,7 @@ class ParallelSearchEngine;
  *
  * Each strategy implements how work is distributed across threads:
  * - Static: Fixed chunks assigned upfront (original implementation)
- * - Dynamic: Small chunks assigned dynamically as threads finish
  * - Hybrid: Initial large chunks + dynamic small chunks (recommended)
- * - Interleaved: Threads process items in an interleaved manner
  *
  * The strategy pattern allows the search algorithm to be decoupled from the
  * specific load balancing approach, making it easy to add new strategies or
@@ -35,8 +33,6 @@ class ParallelSearchEngine;
  *
  * @see StaticChunkingStrategy
  * @see HybridStrategy
- * @see DynamicStrategy
- * @see InterleavedChunkingStrategy
  */
 class LoadBalancingStrategy {
  public:
@@ -128,7 +124,7 @@ class WorkStealingStrategy : public LoadBalancingStrategy {
  * strategy name is unknown, returns the default strategy (hybrid) and logs
  * a warning.
  *
- * @param strategy_name Name of the strategy ("static", "dynamic", "hybrid", "interleaved")
+ * @param strategy_name Name of the strategy ("static", "hybrid")
  * @return Unique pointer to the strategy instance. Never returns nullptr.
  *         Returns hybrid strategy (default) if name is invalid.
  *
@@ -136,56 +132,13 @@ class WorkStealingStrategy : public LoadBalancingStrategy {
  */
 std::unique_ptr<LoadBalancingStrategy> CreateLoadBalancingStrategy(std::string_view strategy_name);
 
-// ============================================================================
-// Interleaved Chunking Strategy
-// ============================================================================
-
-/**
- * Interleaved Chunking Strategy
- *
- * Distributes work by dividing the total items into small sub-chunks and
- * assigning them to threads in an interleaved pattern. Each thread processes
- * every Nth chunk (where N is the thread count), ensuring better load
- * distribution when work items have varying processing times.
- *
- * Example with 3 threads and 9 chunks:
- * - Thread 0: chunks 0, 3, 6
- * - Thread 1: chunks 1, 4, 7
- * - Thread 2: chunks 2, 5, 8
- *
- * This strategy is particularly effective when:
- * - Work items have unpredictable processing times
- * - Cache locality is less important than load balance
- * - You want deterministic chunk assignment (no atomic operations needed)
- *
- * @note Uses dynamic_chunk_size parameter to determine sub-chunk size.
- *       Falls back to 256 if dynamic_chunk_size < 100.
- */
-class InterleavedChunkingStrategy : public LoadBalancingStrategy {
- public:
-  std::vector<std::future<std::vector<SearchResultData>>>
-  LaunchSearchTasks(  // NOSONAR(cpp:S1206) - Function signature duplication is required for C++
-                      // virtual function overrides; no default args (google-default-arguments)
-    const ISearchableIndex& index, const ISearchExecutor& executor, size_t total_items,
-    int thread_count, const SearchContext& context,
-    std::vector<ThreadTiming>* thread_timings) const override;
-
-  [[nodiscard]] std::string GetName() const override {
-    return "interleaved";
-  }
-  [[nodiscard]] std::string GetDescription() const override {
-    return "Interleaved chunking: Threads process items in an interleaved "
-           "manner";
-  }
-};
-
 /**
  * Get list of all available strategy names.
  *
  * Returns a vector containing the names of all load balancing strategies
  * that can be created via CreateLoadBalancingStrategy().
  *
- * @return Vector of strategy names: {"static", "hybrid", "dynamic", "interleaved"}
+ * @return Vector of strategy names: {"static", "hybrid"}
  *
  * @see CreateLoadBalancingStrategy()
  */

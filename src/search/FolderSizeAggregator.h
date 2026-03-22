@@ -6,6 +6,7 @@
 #include <deque>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -107,8 +108,8 @@ private:
 
   FileIndex& index_;                                     // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
 
-  mutable std::mutex mutex_;                             // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
-  std::condition_variable cv_;                           // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
+  mutable std::shared_mutex mutex_;                      // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
+  std::condition_variable_any cv_;                       // NOLINT(readability-identifier-naming) - condition_variable_any required for shared_mutex compatibility
   std::atomic<bool> cancelled_{false};                   // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
   std::thread worker_thread_;                            // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
 

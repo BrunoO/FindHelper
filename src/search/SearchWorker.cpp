@@ -44,13 +44,18 @@ static std::string FormatBytes(size_t bytes) {
   constexpr size_t k_bytes_per_kb = 1024;
   constexpr size_t k_bytes_per_mb = 1024 * 1024;  // NOLINT(bugprone-implicit-widening-of-multiplication-result) - Intentional: 1024 * 1024 fits in int, then widened to size_t
 
+  std::string result;
   if (bytes < k_bytes_per_kb) {
-    return std::to_string(bytes) + " B";
+    result = std::to_string(bytes);
+    result += " B";
+  } else if (bytes < k_bytes_per_mb) {
+    result = std::to_string(bytes / k_bytes_per_kb);
+    result += " KB";
+  } else {
+    result = std::to_string(bytes / k_bytes_per_mb);
+    result += " MB";
   }
-  if (bytes < k_bytes_per_mb) {
-    return std::to_string(bytes / k_bytes_per_kb) + " KB";
-  }
-  return std::to_string(bytes / k_bytes_per_mb) + " MB";
+  return result;
 }
 
 /**
@@ -84,11 +89,11 @@ static void LogPerThreadTiming(
       // Show dynamic chunking status
       std::string dynamic_info;
       if (timing.dynamic_chunks_processed_ > 0) {
-        dynamic_info = ", " +
-                       std::to_string(timing.dynamic_chunks_processed_) +
-                       " dynamic chunks, " +
-                       std::to_string(timing.total_items_processed_) +
-                       " total items";
+        dynamic_info = ", ";
+        dynamic_info += std::to_string(timing.dynamic_chunks_processed_);
+        dynamic_info += " dynamic chunks, ";
+        dynamic_info += std::to_string(timing.total_items_processed_);
+        dynamic_info += " total items";
       } else {
         dynamic_info = " (no dynamic chunks)";
       }
@@ -513,7 +518,7 @@ void SearchWorker::ProcessStreamingSearchFutures(  // NOLINT(readability-identif
     }
 
     if (!found_ready && !pending_indices.empty()) {
-      constexpr auto k_poll_interval = std::chrono::milliseconds(5);
+      constexpr auto k_poll_interval = std::chrono::milliseconds(1);
       // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - both accesses guarded by !pending_indices.empty(); pending_indices[0] is a valid index into search_futures
       search_futures[pending_indices[0]].wait_for(k_poll_interval);
       // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)

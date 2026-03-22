@@ -314,7 +314,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     // suite below
 
     TEST_CASE("Dynamic strategy processes all work dynamically") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
 
       test_helpers::TestFileIndexFixture index_fixture(10000);
 
@@ -342,7 +342,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles no matches gracefully") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
 
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
@@ -354,7 +354,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     // Additional crash-prevention tests
 
     TEST_CASE("Dynamic strategy handles empty index") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
 
       FileIndex index;
       index.ResetThreadPool();
@@ -366,7 +366,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles single item") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(1);
 
       auto results = CollectSearchResults(index_fixture.GetIndex(), "file_", 4);
@@ -383,7 +383,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles many threads with small dataset") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(50);
 
       // Request many threads (more than items)
@@ -395,7 +395,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles large dataset with many threads") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(50000);
 
       std::vector<ThreadTiming> timings;
@@ -413,7 +413,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles concurrent searches") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(5000);
 
       // Run multiple searches concurrently to test thread safety
@@ -440,7 +440,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles extension filter") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
       // Test with extensions that should match some files
@@ -463,7 +463,7 @@ TEST_SUITE("FileIndex Search Strategies") {
       // The test uses a unique extension that won't match any files. If the
       // SearchContext is captured by reference (dangling), the extension_set
       // would contain garbage data and might incorrectly match some files.
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(500);
 
       // Use a unique extension that doesn't exist in test data
@@ -480,7 +480,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Search in deep hierarchy") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
 
       FileIndex index;
       index.ResetThreadPool();
@@ -493,7 +493,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Search with path query") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
 
       FileIndex index;
       index.ResetThreadPool();
@@ -509,7 +509,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles folders_only filter") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
       auto results = CollectSearchResults(index_fixture.GetIndex(), "dir_", 4, nullptr, true);
@@ -523,7 +523,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     // Additional crash-prevention tests for Windows issues
 
     TEST_CASE("Dynamic strategy handles rapid successive searches") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(5000);
 
       // Run multiple searches in quick succession WITHOUT waiting for
@@ -571,7 +571,7 @@ TEST_SUITE("FileIndex Search Strategies") {
 
     TEST_CASE("Dynamic strategy handles overlapping concurrent searches") {
       // Same crash scenario as hybrid; relaxed assertions when index may change under load.
-      RunOverlappingConcurrentSearchesScenario("dynamic", false);
+      RunOverlappingConcurrentSearchesScenario("hybrid", false);
     }
 
     TEST_CASE("Dynamic strategy handles max iterations limit") {
@@ -589,7 +589,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles array size changes gracefully") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       test_helpers::TestFileIndexFixture index_fixture(1000);
 
       // Start a search
@@ -705,7 +705,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Extension-only mode skips pattern matchers") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
 
       test_helpers::TestFileIndexFixture index_fixture(100);
 
@@ -727,7 +727,7 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Case-sensitive pattern matching") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
 
       test_helpers::TestFileIndexFixture index_fixture(100);
 
@@ -751,7 +751,7 @@ TEST_SUITE("FileIndex Search Strategies") {
   // Uses reduced load and retries to avoid flakiness under ASan/heavy scheduling.
   TEST_SUITE("FileIndex concurrent read+write stress") {
     TEST_CASE("concurrent searches and Insert/Remove complete without crash") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
+      const test_helpers::TestSettingsFixture settings("hybrid");
       constexpr int kWriterIterations = 60;
       constexpr int kReaderIterations = 25;
       constexpr uint64_t kChurnIdBase = 500000;  // High ID range to avoid clashing with fixture data (1..2001)

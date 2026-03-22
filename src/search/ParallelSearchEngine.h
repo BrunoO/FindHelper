@@ -256,10 +256,10 @@ public:
    * Determine optimal thread count
    *
    * Determines the optimal number of threads to use based on:
-   * - Explicit thread_count parameter
-   * - search_thread_pool_size_from_context (from SearchContext, 0 = auto)
-   * - Hardware concurrency
-   * - Data size (bytes per thread)
+   * - Explicit thread_count parameter (respected as-is when > 0)
+   * - search_thread_pool_size_from_context (user setting; respected as-is when > 0)
+   * - Physical core count (auto-detect; prefers physical over HT logical — bandwidth-bound)
+   * - Data size cap (auto-detect only; ~8 MB/thread to avoid over-threading small indexes)
    *
    * @param thread_count Requested thread count (-1 = auto)
    * @param total_bytes Total bytes in path storage
@@ -311,7 +311,7 @@ namespace parallel_search_detail {
  */
 inline size_t GetPathLength(const PathStorage::SoAView& soaView,  // NOLINT(readability-identifier-naming) - soaView matches SoA convention
                             size_t index,
-                            size_t storage_size) {
+                            size_t storage_size) noexcept {
   // Precondition: index must be within the SoA bounds.
   assert(index < soaView.size && "Path index must be within SoA bounds");
   if (index + 1 < soaView.size) {
@@ -338,7 +338,7 @@ inline size_t GetPathLength(const PathStorage::SoAView& soaView,  // NOLINT(read
 inline std::string_view GetExtensionView(
     const PathStorage::SoAView& soaView,  // NOLINT(readability-identifier-naming) - soaView matches SoA convention
     size_t index,
-    size_t path_len) {
+    size_t path_len) noexcept {
   if (soaView.extension_start[index] == SIZE_MAX) {
     return {};
   }
@@ -411,7 +411,7 @@ inline bool ValidateChunkRange(const PathStorage::SoAView& soaView,  // NOLINT(r
  */
 inline bool ShouldSkipItem(const PathStorage::SoAView& soaView,  // NOLINT(readability-identifier-naming) - soaView matches SoA convention
                            size_t index,
-                           bool folders_only) {
+                           bool folders_only) noexcept {
   if (soaView.is_deleted[index] != 0) {
     return true;
   }
@@ -437,7 +437,7 @@ inline bool MatchesExtensionFilter(const PathStorage::SoAView& soaView,  // NOLI
                                    size_t index,
                                    size_t path_len,
                                    bool has_extension_filter,
-                                   const SearchContext& context) {
+                                   const SearchContext& context) noexcept {
   if (!has_extension_filter) {
     return true;  // No filter, always matches
   }

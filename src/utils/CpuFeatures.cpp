@@ -170,8 +170,9 @@ static bool CheckAVX2Support() {  // NOSONAR(cpp:S1144) - Used in DetectAVX2Supp
 
 bool SupportsAVX2() {
     // Double-checked locking pattern for thread safety
-    if (g_avx2_checked.load()) {
-        return g_avx2_supported.load();
+    // acquire: if we see true, the release-store of g_avx2_supported is visible
+    if (g_avx2_checked.load(std::memory_order_acquire)) {  // NOSONAR(cpp:S8417) - acquire pairs with release-store below; seq_cst not needed for correct DCL
+        return g_avx2_supported.load(std::memory_order_relaxed);  // NOSONAR(cpp:S8417) - safe: acquire-load of flag above synchronizes this read
     }
 
     // First call: detect and cache
@@ -185,20 +186,20 @@ bool SupportsAVX2() {
         supported = false;
     #endif  // defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
 
-    // Cache the result
-    g_avx2_supported.store(supported);
-    g_avx2_checked.store(true);
+    // Cache the result: store value first (relaxed), then publish via release-store on the flag
+    g_avx2_supported.store(supported, std::memory_order_relaxed);  // NOSONAR(cpp:S8417) - ordered before the release-store below; readers acquire via the flag
+    g_avx2_checked.store(true, std::memory_order_release);  // NOSONAR(cpp:S8417) - release: makes the relaxed store above visible to any acquire-load of this flag
 
     return supported;
 }
 
 bool GetAVX2Support() {
     // Ensure detection has been performed
-    if (!g_avx2_checked.load()) {
+    if (!g_avx2_checked.load(std::memory_order_acquire)) {  // NOSONAR(cpp:S8417) - acquire pairs with release-store in SupportsAVX2
         return SupportsAVX2();
     }
 
-    return g_avx2_supported.load();
+    return g_avx2_supported.load(std::memory_order_relaxed);  // NOSONAR(cpp:S8417) - safe: acquire-load of flag above synchronizes this read
 }
 
 #ifdef _WIN32
@@ -237,11 +238,12 @@ static bool ProcessProcessorCore(
 // Store error state for hyperthreading detection failure
 // Sets all cache values to indicate detection failed and returns false
 static bool StoreHyperThreadingErrorState() {
-    g_ht_enabled.store(false);
-    g_physical_cores.store(0);
-    g_logical_cores.store(0);
-    g_ht_checked.store(true);
-    g_core_counts_checked.store(true);
+    g_ht_enabled.store(false, std::memory_order_relaxed);          // NOSONAR(cpp:S8417) - ordered before the release-store below
+    g_physical_cores.store(0, std::memory_order_relaxed);          // NOSONAR(cpp:S8417) - ordered before the release-store below
+    g_logical_cores.store(0, std::memory_order_relaxed);           // NOSONAR(cpp:S8417) - ordered before the release-store below
+    // release-store: publishes the data stores above to any acquire-load of these flags
+    g_ht_checked.store(true, std::memory_order_release);           // NOSONAR(cpp:S8417) - release: makes relaxed stores above visible to acquire-loads of this flag
+    g_core_counts_checked.store(true, std::memory_order_release);  // NOSONAR(cpp:S8417) - release: makes relaxed stores above visible to acquire-loads of this flag
     return false;
 }
 
@@ -281,12 +283,12 @@ static bool CheckHyperThreadingEnabled() {
         return StoreHyperThreadingErrorState();
     }
 
-    // Cache results
-    g_ht_enabled.store(hyperThreadingEnabled);
-    g_physical_cores.store(physicalCores);
-    g_logical_cores.store(logicalCores);
-    g_ht_checked.store(true);
-    g_core_counts_checked.store(true);
+    // Cache results: store data first (relaxed), then publish via release-store on flags
+    g_ht_enabled.store(hyperThreadingEnabled, std::memory_order_relaxed);  // NOSONAR(cpp:S8417) - ordered before the release-store below
+    g_physical_cores.store(physicalCores, std::memory_order_relaxed);      // NOSONAR(cpp:S8417) - ordered before the release-store below
+    g_logical_cores.store(logicalCores, std::memory_order_relaxed);        // NOSONAR(cpp:S8417) - ordered before the release-store below
+    g_ht_checked.store(true, std::memory_order_release);                   // NOSONAR(cpp:S8417) - release: makes relaxed stores above visible to acquire-loads of this flag
+    g_core_counts_checked.store(true, std::memory_order_release);          // NOSONAR(cpp:S8417) - release: makes relaxed stores above visible to acquire-loads of this flag
 
     return hyperThreadingEnabled;
 }
@@ -294,16 +296,16 @@ static bool CheckHyperThreadingEnabled() {
 // Non-Windows: Cannot reliably detect hyperthreading
 static bool CheckHyperThreadingEnabled() {
     // On non-Windows, assume false (conservative)
-    g_ht_enabled.store(false);
-    g_ht_checked.store(true);
+    g_ht_enabled.store(false, std::memory_order_relaxed);  // NOSONAR(cpp:S8417) - ordered before the release-store below
+    g_ht_checked.store(true, std::memory_order_release);   // NOSONAR(cpp:S8417) - release: makes relaxed store above visible to acquire-loads of this flag
     return false;
 }
 #endif  // _WIN32
 
 bool IsHyperThreadingEnabled() {
     // Double-checked locking pattern for thread safety
-    if (g_ht_checked.load()) {
-        return g_ht_enabled.load();
+    if (g_ht_checked.load(std::memory_order_acquire)) {  // NOSONAR(cpp:S8417) - acquire pairs with release-store in CheckHyperThreadingEnabled
+        return g_ht_enabled.load(std::memory_order_relaxed);  // NOSONAR(cpp:S8417) - safe: acquire-load of flag above synchronizes this read
     }
 
     // First call: detect and cache
@@ -314,13 +316,13 @@ bool IsHyperThreadingEnabled() {
 
 std::pair<unsigned int, unsigned int> GetCoreCounts() {
     // Ensure detection has been performed
-    if (!g_core_counts_checked.load()) {
+    if (!g_core_counts_checked.load(std::memory_order_acquire)) {  // NOSONAR(cpp:S8417) - acquire pairs with release-store in CheckHyperThreadingEnabled
         IsHyperThreadingEnabled();  // This will populate core counts
     }
 
     return std::make_pair(
-        g_physical_cores.load(),
-        g_logical_cores.load()
+        g_physical_cores.load(std::memory_order_relaxed),  // NOSONAR(cpp:S8417) - safe: acquire-load of flag above synchronizes these reads
+        g_logical_cores.load(std::memory_order_relaxed)    // NOSONAR(cpp:S8417) - safe: acquire-load of flag above synchronizes these reads
     );
 }
 

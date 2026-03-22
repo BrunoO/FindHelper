@@ -10,7 +10,7 @@
 
 namespace {
 
-constexpr std::size_t kMinimumStrategyCount = 4U;
+constexpr std::size_t kMinimumStrategyCount = 2U;
 
 }  // namespace
 
@@ -18,8 +18,6 @@ TEST_SUITE("LoadBalancingStrategy factory and validation") {
   TEST_CASE("ValidateAndNormalizeStrategyName returns same name for valid strategies") {
     CHECK(ValidateAndNormalizeStrategyName("static") == "static");
     CHECK(ValidateAndNormalizeStrategyName("hybrid") == "hybrid");
-    CHECK(ValidateAndNormalizeStrategyName("dynamic") == "dynamic");
-    CHECK(ValidateAndNormalizeStrategyName("interleaved") == "interleaved");
   }
 
   TEST_CASE("ValidateAndNormalizeStrategyName returns default for invalid name") {
@@ -38,8 +36,6 @@ TEST_SUITE("LoadBalancingStrategy factory and validation") {
     REQUIRE(names.size() >= kMinimumStrategyCount);
     CHECK(std::find(names.begin(), names.end(), "static") != names.end());
     CHECK(std::find(names.begin(), names.end(), "hybrid") != names.end());
-    CHECK(std::find(names.begin(), names.end(), "dynamic") != names.end());
-    CHECK(std::find(names.begin(), names.end(), "interleaved") != names.end());
 #ifdef FAST_LIBS_BOOST
     CHECK(std::find(names.begin(), names.end(), "work_stealing") != names.end());
 #endif  // FAST_LIBS_BOOST
@@ -60,22 +56,6 @@ TEST_SUITE("LoadBalancingStrategyUtils") {
     settings.loadBalancingStrategy = "hybrid";
     test_settings::SetInMemorySettings(settings);
     CHECK(GetLoadBalancingStrategyFromSettings() == LoadBalancingStrategyType::Hybrid);
-    test_settings::ClearInMemorySettings();
-  }
-
-  TEST_CASE("GetLoadBalancingStrategyFromSettings returns Dynamic for dynamic setting") {
-    AppSettings settings;
-    settings.loadBalancingStrategy = "dynamic";
-    test_settings::SetInMemorySettings(settings);
-    CHECK(GetLoadBalancingStrategyFromSettings() == LoadBalancingStrategyType::Dynamic);
-    test_settings::ClearInMemorySettings();
-  }
-
-  TEST_CASE("GetLoadBalancingStrategyFromSettings returns Interleaved for interleaved setting") {
-    AppSettings settings;
-    settings.loadBalancingStrategy = "interleaved";
-    test_settings::SetInMemorySettings(settings);
-    CHECK(GetLoadBalancingStrategyFromSettings() == LoadBalancingStrategyType::Interleaved);
     test_settings::ClearInMemorySettings();
   }
 

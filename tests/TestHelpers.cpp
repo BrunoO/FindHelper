@@ -35,7 +35,7 @@
 #include "api/GeminiApiUtils.h"
 #include "core/Settings.h"
 #include "filters/TimeFilterUtils.h"
-#include "utils/FileTimeTypes.h"
+#include "utils/FileTimeTypes.h"  // NOSONAR(cpp:S954) - include order matches llvm-include-order for this TU
 #include "utils/Logger.h"
 #include "utils/StringUtils.h"
 
@@ -236,11 +236,11 @@ std::string CreateTempDirectory(std::string_view prefix) {
   }
   tempTemplate.push_back('\0');
 
-  if (const char* dir_path = mkdtemp(tempTemplate.data());  // NOSONAR(cpp:S995,cpp:S5350) - mkdtemp returns non-const, we do not modify through dir_path
-      dir_path == nullptr) {
+  const char* const dir_path = mkdtemp(tempTemplate.data());  // NOSONAR(cpp:S995) - mkdtemp returns char*; assign to const char* for read-only use
+  if (dir_path == nullptr) {
     throw std::runtime_error("Failed to create temporary directory");  // NOSONAR(cpp:S112) - test helper; std::runtime_error acceptable
   }
-  path = tempTemplate.data();
+  path = dir_path;
 
   // Security: Set restrictive permissions (owner read/write/execute only)
   // Note: mkdtemp creates directory with 0700 permissions by default, but we set it explicitly for
@@ -1156,12 +1156,13 @@ std::vector<ConcurrentSearchResult> RunConcurrentSearches(FileIndex& index,
 }
 
 std::vector<std::string> GetAllStrategies() {
-  return {"static", "hybrid", "dynamic", "interleaved"};
+  return {"static", "hybrid"};
 }
 
 AppSettings CreateDynamicSettings(int chunk_size) {
   AppSettings settings;
-  settings.loadBalancingStrategy = "dynamic";
+  settings.loadBalancingStrategy = "hybrid";
+  settings.hybridInitialWorkPercent = 50;
   settings.dynamicChunkSize = chunk_size;
   return settings;
 }

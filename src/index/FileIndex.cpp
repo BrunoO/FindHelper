@@ -424,6 +424,7 @@ std::vector<std::future<std::vector<SearchResultData>>> FileIndex::SearchAsyncWi
     context.hybrid_initial_percent = optional_settings->hybridInitialWorkPercent;
     context.load_balancing_strategy = optional_settings->loadBalancingStrategy;
     context.search_thread_pool_size = optional_settings->searchThreadPoolSize;
+    context.guided_scheduling_divisor = optional_settings->guidedSchedulingDivisor;
   } else {
     AppSettings settings;
     LoadSettings(settings);
@@ -431,6 +432,7 @@ std::vector<std::future<std::vector<SearchResultData>>> FileIndex::SearchAsyncWi
     context.hybrid_initial_percent = settings.hybridInitialWorkPercent;
     context.load_balancing_strategy = settings.loadBalancingStrategy;
     context.search_thread_pool_size = settings.searchThreadPoolSize;
+    context.guided_scheduling_divisor = settings.guidedSchedulingDivisor;
   }
 
   context.ValidateAndClamp();

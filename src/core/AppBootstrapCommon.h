@@ -316,7 +316,9 @@ inline void InitializeImGuiContext() {
  */
 inline std::string BuildErrorMessage(const char* prefix, const char* what,
                                      std::string_view suffix = std::string_view()) {
-  std::string message = std::string(prefix) + " during initialization: " + what;
+  std::string message = prefix;
+  message += " during initialization: ";
+  message += what;
   if (!suffix.empty()) {
     message += suffix;
   }
@@ -352,7 +354,9 @@ inline std::string BuildRuntimeErrorMessage(const std::runtime_error& e) {
  * @return Formatted error message string
  */
 inline std::string BuildSystemErrorMessage(const std::system_error& e) {
-  const std::string suffix = " (code: " + std::to_string(e.code().value()) + ")";
+  std::string suffix = " (code: ";
+  suffix += std::to_string(e.code().value());
+  suffix += ')';
   return BuildErrorMessage("System error", e.what(), suffix);
 }
 

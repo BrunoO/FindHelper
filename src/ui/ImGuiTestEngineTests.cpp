@@ -911,11 +911,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     const auto& c = kRegressionCases[0];
     RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "hybrid");
   };
-  ImGuiTest* lb_d_0 = IM_REGISTER_TEST(engine, "load_balancing", "dynamic_show_all");
-  lb_d_0->TestFunc = [](ImGuiTestContext* ctx) {
-    const auto& c = kRegressionCases[0];
-    RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "dynamic");
-  };
   ImGuiTest* lb_s_1 = IM_REGISTER_TEST(engine, "load_balancing", "static_filename_tty");
   lb_s_1->TestFunc = [](ImGuiTestContext* ctx) {
     const auto& c = kRegressionCases[1];
@@ -925,11 +920,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   lb_h_1->TestFunc = [](ImGuiTestContext* ctx) {
     const auto& c = kRegressionCases[1];
     RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "hybrid");
-  };
-  ImGuiTest* lb_d_1 = IM_REGISTER_TEST(engine, "load_balancing", "dynamic_filename_tty");
-  lb_d_1->TestFunc = [](ImGuiTestContext* ctx) {
-    const auto& c = kRegressionCases[1];
-    RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "dynamic");
   };
   ImGuiTest* lb_s_2 = IM_REGISTER_TEST(engine, "load_balancing", "static_path_dev");
   lb_s_2->TestFunc = [](ImGuiTestContext* ctx) {
@@ -941,11 +931,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     const auto& c = kRegressionCases[2];
     RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "hybrid");
   };
-  ImGuiTest* lb_d_2 = IM_REGISTER_TEST(engine, "load_balancing", "dynamic_path_dev");
-  lb_d_2->TestFunc = [](ImGuiTestContext* ctx) {
-    const auto& c = kRegressionCases[2];
-    RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "dynamic");
-  };
   ImGuiTest* lb_s_3 = IM_REGISTER_TEST(engine, "load_balancing", "static_ext_conf");
   lb_s_3->TestFunc = [](ImGuiTestContext* ctx) {
     const auto& c = kRegressionCases[3];
@@ -955,11 +940,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   lb_h_3->TestFunc = [](ImGuiTestContext* ctx) {
     const auto& c = kRegressionCases[3];
     RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "hybrid");
-  };
-  ImGuiTest* lb_d_3 = IM_REGISTER_TEST(engine, "load_balancing", "dynamic_ext_conf");
-  lb_d_3->TestFunc = [](ImGuiTestContext* ctx) {
-    const auto& c = kRegressionCases[3];
-    RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "dynamic");
   };
   ImGuiTest* lb_s_4 = IM_REGISTER_TEST(engine, "load_balancing", "static_path_etc_ext_conf");
   lb_s_4->TestFunc = [](ImGuiTestContext* ctx) {
@@ -971,11 +951,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     const auto& c = kRegressionCases[4];
     RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "hybrid");
   };
-  ImGuiTest* lb_d_4 = IM_REGISTER_TEST(engine, "load_balancing", "dynamic_path_etc_ext_conf");
-  lb_d_4->TestFunc = [](ImGuiTestContext* ctx) {
-    const auto& c = kRegressionCases[4];
-    RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "dynamic");
-  };
   ImGuiTest* lb_s_5 = IM_REGISTER_TEST(engine, "load_balancing", "static_folders_only");
   lb_s_5->TestFunc = [](ImGuiTestContext* ctx) {
     const auto& c = kRegressionCases[kLastRegressionCaseIndex];
@@ -986,12 +961,6 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     const auto& c = kRegressionCases[kLastRegressionCaseIndex];
     RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "hybrid");
   };
-  ImGuiTest* lb_d_5 = IM_REGISTER_TEST(engine, "load_balancing", "dynamic_folders_only");
-  lb_d_5->TestFunc = [](ImGuiTestContext* ctx) {
-    const auto& c = kRegressionCases[kLastRegressionCaseIndex];
-    RunRegressionTestCase(ctx, c.case_id, c.filename, c.path, c.extensions, c.folders_only, c.expected, "dynamic");
-  };
-
   // Streaming: one test per (case, stream on/off). Both modes must yield the same final result count.
   ImGuiTest* str_0_on = IM_REGISTER_TEST(engine, "streaming", "show_all_stream_on");
   str_0_on->TestFunc = [](ImGuiTestContext* ctx) {

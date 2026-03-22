@@ -127,11 +127,11 @@ void RenderHelpWindowContent(const size_t* memory_bytes_from_state, bool* p_open
     ShortcutBullet("Enter - Open selected file or folder");
 #ifdef __APPLE__
     ShortcutBullet("Cmd+Enter - Reveal in Explorer (open parent folder, select file)");
-    ShortcutBullet("Cmd+Shift+C - Copy full path of selected row");
+    ShortcutBullet("Cmd+Shift+C - Copy full path(s) of selection (newline-separated if multiple)");
     ShortcutBullet("Cmd+Shift+X - Copy selected / marked rows as CSV (visible columns)");
 #else
     ShortcutBullet("Ctrl+Enter - Reveal in Explorer (open parent folder, select file)");
-    ShortcutBullet("Ctrl+Shift+C - Copy full path of selected row");
+    ShortcutBullet("Ctrl+Shift+C - Copy full path(s) of selection (newline-separated if multiple)");
     ShortcutBullet("Ctrl+Shift+X - Copy selected / marked rows as CSV (visible columns)");
 #endif  // __APPLE__
     ShortcutBullet("Tab - Focus name search (from results table)");

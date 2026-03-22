@@ -10,13 +10,12 @@
 #include "search/SearchTypes.h"
 
 namespace streaming_results_collector_constants {
-constexpr size_t kDefaultBatchSize = 500;
+constexpr size_t kDefaultBatchSize = 2000;  // Raised from 500: fewer mutex cycles on large result sets
 constexpr uint32_t kDefaultNotificationIntervalMs = 50;
 /** Max results to process per UI frame during streaming; keeps UI responsive when many batches arrive.
- *  Set high enough that drain after search completion finishes in a few frames even for large result
- *  sets (100k / 5000 = 20 frames ≈ 330ms). Per-frame work (MergeAndConvertToSearchResults) is
- *  O(batch_size) path-string copies — well within a 16ms frame budget at this size. */
-constexpr size_t kMaxResultsPerFrame = 5000;
+ *  Raised from 5000: 100k / 10000 = 10 frames ≈ 167ms (vs 333ms). Per-frame work is still well
+ *  within a 16ms frame budget (O(batch_size) path-string copies). */
+constexpr size_t kMaxResultsPerFrame = 10000;
 }  // namespace streaming_results_collector_constants
 
 /**

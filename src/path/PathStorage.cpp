@@ -20,7 +20,7 @@ PathStorage::PathStorage() {  // NOLINT(hicpp-use-equals-default,modernize-use-e
   is_directory_.reserve(kInitialPathArrayCapacity);
 }
 
-size_t PathStorage::InsertPath(uint64_t id, const std::string& path,
+size_t PathStorage::InsertPath(uint64_t id, std::string_view path,
                                bool isDirectory,  // NOLINT(readability-identifier-naming) - Public API parameter name
                                std::optional<size_t> existing_index) {
   // Precondition: id 0 is reserved; all real file/dir IDs must be non-zero.
@@ -47,7 +47,8 @@ size_t PathStorage::InsertPath(uint64_t id, const std::string& path,
       }
       goto append_new_entry;  // NOLINT(cppcoreguidelines-avoid-goto,hicpp-avoid-goto) - S134: single exit reduces nesting
     }
-    std::memcpy(&path_storage_[old_offset], path.c_str(), new_len + 1);
+    std::memcpy(&path_storage_[old_offset], path.data(), new_len);
+    path_storage_[old_offset + new_len] = '\0';
     filename_start_[idx] = filename_start_offset;
     extension_start_[idx] = extension_start_offset;
     is_directory_[idx] = isDirectory ? 1 : 0;
@@ -155,18 +156,13 @@ PathStorage::Stats PathStorage::GetStats() const {
   return stats;
 }
 
-size_t PathStorage::AppendString(const std::string &str) {
+size_t PathStorage::AppendString(std::string_view str) {
   const size_t offset = path_storage_.size();
   const size_t len = str.length() + 1; // Include null terminator
 
   path_storage_.resize(path_storage_.size() + len);
-  // Use safe string copy (Windows: strcpy_s, others: memcpy + manual null)
-#ifdef _WIN32
-  strcpy_s(&path_storage_[offset], len, str.c_str());
-#else
-  std::memcpy(&path_storage_[offset], str.c_str(), len - 1);
-  path_storage_[offset + len - 1] = '\0';
-#endif  // _WIN32
+  std::memcpy(&path_storage_[offset], str.data(), str.length());
+  path_storage_[offset + str.length()] = '\0';
 
   return offset;
 }

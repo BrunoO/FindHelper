@@ -13,6 +13,7 @@
 #include "search/SearchPatternUtils.h"
 #include "search/SearchStatisticsCollector.h"
 #include "search/SearchThreadPool.h"
+#include "utils/CpuFeatures.h"
 #include "utils/HashMapAliases.h"
 #include "utils/LoadBalancingStrategy.h"
 #include "utils/Logger.h"
@@ -262,14 +263,22 @@ int ParallelSearchEngine::DetermineThreadCount(int thread_count, size_t total_by
     if (search_thread_pool_size_from_context > 0) {
       thread_count = search_thread_pool_size_from_context;
     } else {
-      thread_count = static_cast<int>(GetLogicalProcessorCount());
-    }
-  }
+      // Search is memory-bandwidth-bound: HT siblings share L1/L2 and the memory
+      // bus, so physical cores are the meaningful unit. Fall back to logical count
+      // when physical-core detection is unavailable (e.g. macOS, Linux cgroups).
+      const auto [physical, logical] = cpu_features::GetCoreCounts();
+      thread_count = (physical > 0) ? static_cast<int>(physical)
+                                    : static_cast<int>(GetLogicalProcessorCount());
 
-  // Limit by data size (minimum chunk size)
-  constexpr size_t kMinChunkBytes = static_cast<size_t>(64) * 1024U;
-  if (auto max_threads_by_bytes = static_cast<int>((total_bytes + kMinChunkBytes - 1) / kMinChunkBytes); max_threads_by_bytes > 0 && thread_count > max_threads_by_bytes) {
-    thread_count = max_threads_by_bytes;
+      // Cap by data size only during auto-detection: ~8 MB per thread saturates
+      // per-core memory bandwidth without wasting threads on small indexes.
+      // Explicit thread counts (user setting or test fixture) are respected as-is.
+      constexpr size_t kBytesPerThread = static_cast<size_t>(8) * 1024U * 1024U;
+      if (const auto max_by_bytes = static_cast<int>((total_bytes + kBytesPerThread - 1) / kBytesPerThread);
+          max_by_bytes > 0 && thread_count > max_by_bytes) {
+        thread_count = max_by_bytes;
+      }
+    }
   }
 
   return thread_count;
