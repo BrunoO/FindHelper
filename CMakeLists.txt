@@ -1579,6 +1579,8 @@ if(BUILD_TESTS)
             tests/ExceptionHandlingTests.cpp
             ${SHARED_UTIL_SOURCES_FOR_TESTS}
             $<TARGET_OBJECTS:test_utils_obj>
+            $<TARGET_OBJECTS:test_path_obj>
+            $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(exception_handling_tests)
         add_test(NAME ExceptionHandlingTests COMMAND exception_handling_tests)

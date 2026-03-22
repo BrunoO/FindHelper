@@ -68,7 +68,9 @@ bool ValidatePathPatternFormat(std::string_view pattern);
 
 // Read an environment variable by name.  Cross-platform: uses _dupenv_s on
 // Windows (safe RAII) and getenv on POSIX.  Returns empty string if unset.
-[[nodiscard]] inline std::string GetEnvironmentVariable(std::string_view name) {
+// Named GetEnvVarString (not GetEnvironmentVariable) to avoid clashing with the
+// Windows API macro GetEnvironmentVariable -> GetEnvironmentVariableW/A.
+[[nodiscard]] inline std::string GetEnvVarString(std::string_view name) {
   const std::string name_str(name);
 #ifdef _WIN32
   // Use RAII wrapper to safely manage memory from _dupenv_s (replaces manual free() calls)
@@ -100,7 +102,7 @@ bool ValidatePathPatternFormat(std::string_view pattern);
 }
 
 // Get the Gemini API key from the GEMINI_API_KEY environment variable.
-// Convenience wrapper around GetEnvironmentVariable("GEMINI_API_KEY").
+// Convenience wrapper around GetEnvVarString("GEMINI_API_KEY").
 [[nodiscard]] std::string GetGeminiApiKeyFromEnv();
 
 // Build a prompt for the Gemini API requesting a complete search configuration in JSON format.

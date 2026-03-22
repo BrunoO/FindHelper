@@ -88,7 +88,7 @@ std::pair<bool, std::string> CallGeminiApiRaw(std::string_view prompt,
 
 
 std::string GetGeminiApiKeyFromEnv() {
-  return GetEnvironmentVariable("GEMINI_API_KEY");
+  return GetEnvVarString("GEMINI_API_KEY");
 }
 
 bool ValidatePathPatternFormat(std::string_view pattern) {

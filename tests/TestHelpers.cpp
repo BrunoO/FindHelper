@@ -712,7 +712,7 @@ test_helpers::TestParallelSearchEngineFixture::TestParallelSearchEngineFixture(i
     : thread_pool_(std::make_shared<SearchThreadPool>(thread_count)), engine_(thread_pool_) {}
 
 TestGeminiApiKeyFixture::TestGeminiApiKeyFixture(std::string_view api_key)
-    : original_key_(gemini_api_utils::GetEnvironmentVariable("GEMINI_API_KEY")),
+    : original_key_(gemini_api_utils::GetEnvVarString("GEMINI_API_KEY")),
       was_set_(!original_key_.empty()) {
   SetEnvironmentVariable("GEMINI_API_KEY", api_key);
 }
