@@ -53,4 +53,22 @@ struct WindowGuard {
   bool show_content_;  // NOLINT(readability-identifier-naming) - Member follows snake_case_ convention
 };
 
+/**
+ * Null-guard + StyleColorGuard + WindowGuard pattern shared by tool windows.
+ * Positioning (SetNextWindowPos/Size or SetupCenteredToolWindow) must be called by the caller
+ * before invoking this function.
+ */
+template <typename ContentFn>
+void RenderToolWindow(const char* title, bool* p_open, const ImVec4& window_bg_color,
+                      ContentFn&& content_fn) {
+  if (p_open == nullptr || !*p_open) {
+    return;
+  }
+  const StyleColorGuard window_bg_guard(ImGuiCol_WindowBg, window_bg_color);
+  const WindowGuard window_guard(title, p_open, ImGuiWindowFlags_None);
+  if (window_guard.ShowContent()) {
+    std::forward<ContentFn>(content_fn)();
+  }
+}
+
 }  // namespace ui::detail

@@ -315,21 +315,7 @@ FILETIME CalculateCutoffTime(TimeFilter filter) {
   }
   case TimeFilter::ThisWeek: {
     // Start of current week (Monday in local timezone)
-    const std::tm now_tm = time_filter_detail::GetLocalTime(now);
-
-    // Calculate days since Monday (0=Monday, 1=Tuesday, ..., 6=Sunday)
-    const int days_since_monday = (now_tm.tm_wday == 0) ? 6 : (now_tm.tm_wday - 1);  // NOLINT(readability-magic-numbers) - 6 is days from Sunday to Monday (tm_wday: 0=Sunday, 6=Saturday)
-
-    // Create time for start of week (Monday at midnight)
-    std::tm week_start = now_tm;
-    week_start.tm_mday -= days_since_monday;
-    week_start.tm_hour = 0;
-    week_start.tm_min = 0;
-    week_start.tm_sec = 0;
-    week_start.tm_isdst = -1;  // Let system determine DST
-
-    auto cutoff_time_t = std::mktime(&week_start);
-    auto cutoff = system_clock::from_time_t(cutoff_time_t);
+    const auto cutoff = system_clock::from_time_t(GetStartOfThisWeekTimeT());
     return ChronoToFileTime(cutoff);
   }
   case TimeFilter::ThisMonth: {

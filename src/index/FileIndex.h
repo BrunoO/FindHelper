@@ -375,6 +375,10 @@ private:
   // Rebuild path_to_id_ from current storage and path_operations (caller holds unique_lock).
   void RebuildPathToIdMapLocked();
 
+  // After Rename/Move succeed: sync path_to_id_ (directory → full rebuild; file → unlink old + link new).
+  void RefreshPathToIdAfterRenameOrMoveLocked(uint64_t id, const std::string& old_path,
+                                              const FileEntry* entry);
+
   // Unlink (h, id) from path_to_id_ chain; caller holds lock.
   void UnlinkPathToIdEntryLocked(size_t h, uint64_t id);
 

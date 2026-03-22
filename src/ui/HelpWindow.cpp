@@ -40,38 +40,7 @@ void SectionHeader(const char* title) {
   ImGui::TextColored(Theme::Colors::Success, "%s", title);
 }
 
-// Renders PGO tooltip when the previous item is hovered (reduces nesting in Render).
-void RenderPgoTooltipIfHovered(char pgo_mode) {
-  if (!ImGui::IsItemHovered()) {
-    return;
-  }
-  if (const char* tooltip = GetAboutPgoTooltip(pgo_mode); tooltip != nullptr) {
-    ImGui::BeginTooltip();
-    ImGui::TextUnformatted(tooltip);
-    ImGui::EndTooltip();
-  }
-}
-
-}  // namespace
-
-void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
-  if (p_open == nullptr || !*p_open) {
-    return;
-  }
-
-  const detail::StyleColorGuard window_bg_guard(ImGuiCol_WindowBg, Theme::Colors::WindowBg);
-
-  const char* window_title = GetAboutHelpWindowTitle();
-
-  constexpr float kDefaultWidth = 450.0F;
-  constexpr float kDefaultHeight = 500.0F;
-  detail::SetupCenteredToolWindow(kDefaultWidth, kDefaultHeight);
-
-  // Do not use SetNextWindowClass/NoAutoMerge: keep Help in the main viewport (like Settings).
-  // That avoids the font scaling issue when resizing, which only affected Help when it had its own OS window.
-
-  const detail::WindowGuard window_guard(window_title, p_open, ImGuiWindowFlags_None);
-  if (window_guard.ShowContent()) {
+void RenderHelpWindowContent(const size_t* memory_bytes_from_state, bool* p_open) {
     // About — version, build info, and host system characteristics (same kind of info as status bar left group + system)
     if (ImGui::CollapsingHeader("About", ImGuiTreeNodeFlags_DefaultOpen)) {
       ImGui::Text("%s", GetAboutAppDisplayName());
@@ -186,7 +155,22 @@ void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
 
     ImGui::Spacing();
     detail::RenderToolWindowCloseButton(p_open);
-  }
+}
+
+}  // namespace
+
+void HelpWindow::Render(bool* p_open, const size_t* memory_bytes_from_state) {
+  constexpr float kDefaultWidth = 450.0F;
+  constexpr float kDefaultHeight = 500.0F;
+  detail::SetupCenteredToolWindow(kDefaultWidth, kDefaultHeight);
+
+  // Do not use SetNextWindowClass/NoAutoMerge: keep Help in the main viewport (like Settings).
+  // That avoids the font scaling issue when resizing, which only affected Help when it had its own OS window.
+
+  detail::RenderToolWindow(GetAboutHelpWindowTitle(), p_open, Theme::Colors::WindowBg,
+                           [memory_bytes_from_state, p_open]() {
+    RenderHelpWindowContent(memory_bytes_from_state, p_open);
+  });
 }
 
 }  // namespace ui

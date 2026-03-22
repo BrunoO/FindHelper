@@ -311,6 +311,27 @@ void FileIndex::Remove(uint64_t id) {
   }
 }
 
+void FileIndex::RefreshPathToIdAfterRenameOrMoveLocked(uint64_t id,
+                                                       const std::string& old_path,
+                                                       const FileEntry* entry) {
+  // Directory Rename/Move calls UpdatePrefix and rewrites all descendant paths.
+  // Rebuild path_to_id_ so it stays consistent; single-id update for files.
+  if (entry != nullptr && entry->isDirectory) {
+    RebuildPathToIdMapLocked();
+    return;
+  }
+  const std::string new_path = GetPathLocked(id);
+  if (!old_path.empty()) {
+    UnlinkPathToIdEntryLocked(PathHashInline(old_path), id);
+  }
+  const size_t h_new = PathHashInline(new_path);
+  const auto head_it = path_to_id_index_.find(h_new);
+  const size_t head =
+      (head_it != path_to_id_index_.end()) ? head_it->second : FileIndex::kPathToIdEnd;
+  path_to_id_chain_.push_back({h_new, id, head});
+  path_to_id_index_[h_new] = path_to_id_chain_.size() - 1;
+}
+
 bool FileIndex::Rename(uint64_t id, std::string_view new_name) {
   const std::unique_lock lock(index_mutex_);
   const std::string old_path = GetPathLocked(id);
@@ -318,21 +339,7 @@ bool FileIndex::Rename(uint64_t id, std::string_view new_name) {
   if (!operations_.Rename(id, new_name)) {
     return false;
   }
-  // Directory Rename calls UpdatePrefix and rewrites all descendant paths.
-  // Rebuild path_to_id_ so it stays consistent; single-id update for files.
-  if (entry != nullptr && entry->isDirectory) {
-    RebuildPathToIdMapLocked();
-  } else {
-    const std::string new_path = GetPathLocked(id);
-    if (!old_path.empty()) {
-      UnlinkPathToIdEntryLocked(PathHashInline(old_path), id);
-    }
-    const size_t h_new = PathHashInline(new_path);
-    const auto head_it = path_to_id_index_.find(h_new);
-    const size_t head = (head_it != path_to_id_index_.end()) ? head_it->second : FileIndex::kPathToIdEnd;
-    path_to_id_chain_.push_back({ h_new, id, head });
-    path_to_id_index_[h_new] = path_to_id_chain_.size() - 1;
-  }
+  RefreshPathToIdAfterRenameOrMoveLocked(id, old_path, entry);
   return true;
 }
 
@@ -343,21 +350,7 @@ bool FileIndex::Move(uint64_t id, uint64_t new_parent_id) {
   if (!operations_.Move(id, new_parent_id)) {
     return false;
   }
-  // Directory Move calls UpdatePrefix and rewrites all descendant paths.
-  // Rebuild path_to_id_ so it stays consistent; single-id update for files.
-  if (entry != nullptr && entry->isDirectory) {
-    RebuildPathToIdMapLocked();
-  } else {
-    const std::string new_path = GetPathLocked(id);
-    if (!old_path.empty()) {
-      UnlinkPathToIdEntryLocked(PathHashInline(old_path), id);
-    }
-    const size_t h_new = PathHashInline(new_path);
-    const auto head_it = path_to_id_index_.find(h_new);
-    const size_t head = (head_it != path_to_id_index_.end()) ? head_it->second : FileIndex::kPathToIdEnd;
-    path_to_id_chain_.push_back({ h_new, id, head });
-    path_to_id_index_[h_new] = path_to_id_chain_.size() - 1;
-  }
+  RefreshPathToIdAfterRenameOrMoveLocked(id, old_path, entry);
   return true;
 }
 
@@ -467,6 +460,13 @@ void FileIndex::SetThreadPool(std::shared_ptr<SearchThreadPool> pool) {  // NOLI
 
 void FileIndex::ResetThreadPool() {
   thread_pool_manager_.ResetThreadPool();
+  // Re-initialize search_engine_ eagerly so concurrent callers of SearchAsync
+  // never race to lazy-init it. Without this, multiple threads entering
+  // GetThreadPool() simultaneously after a reset would all find search_engine_
+  // stale and write it concurrently — a data race leading to heap-use-after-free.
+  // ASSUMPTION: ResetThreadPool() is not called concurrently with searches.
+  const auto pool_ptr = thread_pool_manager_.GetPoolSharedPtr();
+  search_engine_ = std::make_shared<ParallelSearchEngine>(pool_ptr);
 }
 
 // Note: ProcessChunkRangeForSearchIds has been removed as dead code.

@@ -497,6 +497,12 @@ void Application::UpdateIdleStateLogging(bool is_idle, bool& was_idle) const {
 
 int Application::Run() {  // NOLINT(readability-function-cognitive-complexity) - Main loop: event
                           // handling, idle detection, and exception paths
+  const auto handle_fatal_exception = [this]() {
+    if (platform_exit_hook_) {
+      platform_exit_hook_("exception_exit");
+    }
+    return 1;
+  };
   try {
     // Power-saving mode configuration
     // - Minimized: Sleep until event (0% CPU when not visible)
@@ -569,34 +575,22 @@ int Application::Run() {  // NOLINT(readability-function-cognitive-complexity) -
   } catch (const std::bad_alloc& e) {
     (void)e;  // Suppress unused variable warning in Release mode
     LOG_ERROR_BUILD("Memory allocation failure in Application::Run(): " << e.what());
-    if (platform_exit_hook_) {
-      platform_exit_hook_("exception_exit");
-    }
-    return 1;
+    return handle_fatal_exception();
   } catch (const std::runtime_error& e) {  // NOSONAR(cpp:S1181) - Top-level handler for std::runtime_error; more granular
                                            // exception types do not change handling
     (void)e;       // Suppress unused variable warning in Release mode
     LOG_ERROR_BUILD("Runtime error in Application::Run(): " << e.what());
-    if (platform_exit_hook_) {
-      platform_exit_hook_("exception_exit");
-    }
-    return 1;
+    return handle_fatal_exception();
   } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Final standard exception handler;
                                        // more specific granularity not useful at this top level
     (void)e;                           // Suppress unused variable warning in Release mode
     LOG_ERROR_BUILD("Standard exception in Application::Run(): " << e.what());
-    if (platform_exit_hook_) {
-      platform_exit_hook_("exception_exit");
-    }
-    return 1;
+    return handle_fatal_exception();
   } catch (...) {  // NOSONAR(cpp:S2738) - Required top-level catch-all to handle non-standard
                    // exceptions and ensure clean shutdown
     LOG_ERROR("Unknown exception in Application::Run() - possible memory corruption or "
               "non-standard exception");
-    if (platform_exit_hook_) {
-      platform_exit_hook_("exception_exit");
-    }
-    return 1;
+    return handle_fatal_exception();
   }
 }
 

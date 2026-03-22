@@ -114,3 +114,103 @@ TEST_SUITE("SearchPatternUtils - Pattern Matching") {
     // Note: PathPattern matches entire path, so this behavior may differ from Glob
   }
 }
+
+TEST_SUITE("SearchPatternUtils - ExtractPattern") {
+  TEST_CASE("rs: prefix is stripped") {
+    CHECK(search_pattern_utils::ExtractPattern("rs:hello") == "hello");
+  }
+
+  TEST_CASE("pp: prefix is stripped") {
+    CHECK(search_pattern_utils::ExtractPattern("pp:**/*.cpp") == "**/*.cpp");
+  }
+
+  TEST_CASE("fz: prefix is stripped") {
+    CHECK(search_pattern_utils::ExtractPattern("fz:query") == "query");
+  }
+
+  TEST_CASE("plain pattern returned unchanged") {
+    CHECK(search_pattern_utils::ExtractPattern("report") == "report");
+    CHECK(search_pattern_utils::ExtractPattern("*.txt") == "*.txt");
+  }
+
+  TEST_CASE("prefix-only (rs:) returns empty string") {
+    CHECK(search_pattern_utils::ExtractPattern("rs:") == "");
+  }
+
+  TEST_CASE("empty string returns empty string") {
+    CHECK(search_pattern_utils::ExtractPattern("") == "");
+  }
+
+  TEST_CASE("short strings (< 3 chars) are returned unchanged") {
+    CHECK(search_pattern_utils::ExtractPattern("ab") == "ab");
+    CHECK(search_pattern_utils::ExtractPattern("r") == "r");
+  }
+}
+
+TEST_SUITE("SearchPatternUtils - MatchPattern") {
+  TEST_CASE("empty pattern matches any text") {
+    CHECK(search_pattern_utils::MatchPattern("", "anything", false));
+    CHECK(search_pattern_utils::MatchPattern("", "", false));
+  }
+
+  TEST_CASE("substring match (case-insensitive)") {
+    CHECK(search_pattern_utils::MatchPattern("report", "annual_report_2024.pdf", false));
+    CHECK(search_pattern_utils::MatchPattern("REPORT", "annual_report_2024.pdf", false));
+    CHECK_FALSE(search_pattern_utils::MatchPattern("budget", "annual_report_2024.pdf", false));
+  }
+
+  TEST_CASE("substring match (case-sensitive)") {
+    CHECK(search_pattern_utils::MatchPattern("report", "annual_report_2024.pdf", true));
+    CHECK_FALSE(search_pattern_utils::MatchPattern("REPORT", "annual_report_2024.pdf", true));
+  }
+
+  TEST_CASE("glob pattern matches wildcard") {
+    CHECK(search_pattern_utils::MatchPattern("*.txt", "readme.txt", false));
+    CHECK_FALSE(search_pattern_utils::MatchPattern("*.txt", "readme.pdf", false));
+  }
+
+  TEST_CASE("fuzzy match via fz: prefix") {
+    CHECK(search_pattern_utils::MatchPattern("fz:rpt", "report", false));
+    CHECK_FALSE(search_pattern_utils::MatchPattern("fz:xyz", "report", false));
+  }
+
+  TEST_CASE("std regex via rs: prefix") {
+    CHECK(search_pattern_utils::MatchPattern("rs:rep.*", "report", false));
+    CHECK_FALSE(search_pattern_utils::MatchPattern("rs:^budget$", "report", false));
+  }
+
+  TEST_CASE("rs: with empty pattern returns false") {
+    CHECK_FALSE(search_pattern_utils::MatchPattern("rs:", "anything", false));
+  }
+}
+
+TEST_SUITE("SearchPatternUtils - ExtensionMatches") {
+  TEST_CASE("exact match (case-sensitive)") {
+    const ExtensionSet exts{"txt", "cpp", "h"};
+    CHECK(search_pattern_utils::ExtensionMatches("txt", exts, true));
+    CHECK(search_pattern_utils::ExtensionMatches("cpp", exts, true));
+    CHECK_FALSE(search_pattern_utils::ExtensionMatches("TXT", exts, true));
+    CHECK_FALSE(search_pattern_utils::ExtensionMatches("pdf", exts, true));
+  }
+
+  TEST_CASE("case-insensitive match folds to lowercase") {
+    const ExtensionSet exts{"txt", "cpp"};
+    CHECK(search_pattern_utils::ExtensionMatches("TXT", exts, false));
+    CHECK(search_pattern_utils::ExtensionMatches("CPP", exts, false));
+    CHECK_FALSE(search_pattern_utils::ExtensionMatches("pdf", exts, false));
+  }
+
+  TEST_CASE("empty extension matches empty entry in set") {
+    const ExtensionSet with_empty{""};
+    CHECK(search_pattern_utils::ExtensionMatches("", with_empty, true));
+
+    const ExtensionSet without_empty{"txt"};
+    CHECK_FALSE(search_pattern_utils::ExtensionMatches("", without_empty, true));
+  }
+
+  TEST_CASE("empty set never matches") {
+    const ExtensionSet empty_set;
+    CHECK_FALSE(search_pattern_utils::ExtensionMatches("txt", empty_set, true));
+    CHECK_FALSE(search_pattern_utils::ExtensionMatches("txt", empty_set, false));
+  }
+}

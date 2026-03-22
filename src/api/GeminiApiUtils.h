@@ -1,9 +1,14 @@
 #pragma once
 
+#include <cstdlib>
 #include <future>  // NOLINT - false positive on macOS: <future> header exists and compiles fine
 #include <string>
 #include <string_view>
 #include <vector>
+
+#ifdef _WIN32
+#include <memory>
+#endif  // _WIN32
 
 namespace gemini_api_utils {
 
@@ -61,13 +66,42 @@ std::pair<bool, std::string> CallGeminiApiRaw(std::string_view prompt,
 //   true if the pattern has valid format, false otherwise
 bool ValidatePathPatternFormat(std::string_view pattern);
 
+// Read an environment variable by name.  Cross-platform: uses _dupenv_s on
+// Windows (safe RAII) and getenv on POSIX.  Returns empty string if unset.
+[[nodiscard]] inline std::string GetEnvironmentVariable(std::string_view name) {
+  const std::string name_str(name);
+#ifdef _WIN32
+  // Use RAII wrapper to safely manage memory from _dupenv_s (replaces manual free() calls)
+  struct EnvDeleter {
+    void operator()(char* ptr) const noexcept {
+      if (ptr != nullptr) {
+        free(ptr);  // NOSONAR(cpp:S1231) - Required by _dupenv_s C API, custom deleter for unique_ptr is correct pattern
+      }
+    }
+  };
+  using EnvPtr = std::unique_ptr<char, EnvDeleter>;
+
+  char* env_value = nullptr;
+  size_t len = 0;
+  if (errno_t err = _dupenv_s(&env_value, &len, name_str.c_str()); err != 0 || env_value == nullptr || len == 0) {
+    if (env_value != nullptr) {
+      EnvPtr guard(env_value);
+    }
+    return {};
+  }
+  EnvPtr guard(env_value);
+  return std::string(env_value);
+#else
+  if (const char* env_value = std::getenv(name_str.c_str()); env_value != nullptr) {  // NOLINT(concurrency-mt-unsafe) - C++17 init-statement; getenv result copied immediately, config-style read
+    return {env_value};
+  }
+  return {};
+#endif  // _WIN32
+}
+
 // Get the Gemini API key from the GEMINI_API_KEY environment variable.
-//
-// Returns:
-//   API key string if found, empty string if not set
-//
-// Note: The environment variable name is "GEMINI_API_KEY"
-std::string GetGeminiApiKeyFromEnv();
+// Convenience wrapper around GetEnvironmentVariable("GEMINI_API_KEY").
+[[nodiscard]] std::string GetGeminiApiKeyFromEnv();
 
 // Build a prompt for the Gemini API requesting a complete search configuration in JSON format.
 //

@@ -16,6 +16,7 @@
 
 #include "filters/TimeFilter.h"       // TimeFilter enum
 #include "utils/FileTimeTypes.h"    // FILETIME
+#include <ctime>
 #include <string>
 
 // Forward declarations (full headers in .cpp)
@@ -74,6 +75,33 @@ struct AppSettings;
  * @param settings AppSettings to update (will be modified)
  */
 void RecordRecentSearch(const SearchParams &params, const GuiState &state, AppSettings &settings);
+
+/**
+ * @brief Returns the start of the current week (Monday at midnight, local time)
+ *        as a std::time_t.
+ *
+ * Cross-platform inline helper shared by the time filter implementation and
+ * test utilities.  Uses localtime_s (Windows) / localtime_r (POSIX) internally.
+ * Inlined to avoid a link-time dependency on TimeFilterUtils.cpp in test binaries
+ * that include this header but do not link the full filter module.
+ */
+inline std::time_t GetStartOfThisWeekTimeT() {
+  const std::time_t now = std::time(nullptr);
+  std::tm now_tm{};  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zero-init; localtime_s/localtime_r fill all fields
+#ifdef _WIN32
+  localtime_s(&now_tm, &now);
+#else
+  localtime_r(&now, &now_tm);
+#endif  // _WIN32
+  const int days_since_monday = (now_tm.tm_wday == 0) ? 6 : (now_tm.tm_wday - 1);  // NOLINT(readability-magic-numbers) - 6 is days from Sunday to Monday (tm_wday: 0=Sunday, 6=Saturday)
+  std::tm week_start = now_tm;
+  week_start.tm_mday -= days_since_monday;
+  week_start.tm_hour = 0;
+  week_start.tm_min = 0;
+  week_start.tm_sec = 0;
+  week_start.tm_isdst = -1;  // Let system determine DST
+  return std::mktime(&week_start);
+}
 
 /**
  * @brief Platform-specific time filter cutoff calculation

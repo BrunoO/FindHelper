@@ -7,6 +7,11 @@
 #include <cstring>
 #include <ctime>
 #include <exception>
+#if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
+#include <filesystem>
+#else
+#include <experimental/filesystem>
+#endif  // __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -35,10 +40,8 @@
 #include "utils/StringUtils.h"
 
 #if __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
-#include <filesystem>
 namespace fs = std::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: in SafeRemoveFile
 #else
-#include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;  // NOLINT(misc-unused-alias-decls) - used as fs:: in SafeRemoveFile
 #endif  // __cplusplus >= 201703L || (defined(_WIN32) && _MSC_VER >= 1914)
 
@@ -74,35 +77,6 @@ void SaveCurrentSettings(std::string& old_strategy, int& old_chunk_size, int& ol
   settings_were_active = test_settings::IsInMemoryMode();
 }
 
-// Helper to get environment variable value (platform-agnostic)
-std::string GetEnvironmentVariable(const char* name) {
-#ifdef _WIN32
-  // Use RAII wrapper to safely manage memory from _dupenv_s (replaces manual free() calls)
-  struct EnvValueDeleter {
-    void operator()(char* ptr) const noexcept {
-      if (ptr != nullptr) {
-        free(ptr);  // NOSONAR(cpp:S1231) - Required by _dupenv_s C API, custom deleter for
-                    // unique_ptr is correct pattern
-      }
-    }
-  };
-  using EnvValuePtr = std::unique_ptr<char, EnvValueDeleter>;
-
-  char* env_value = nullptr;
-  size_t required_size = 0;
-  if (_dupenv_s(&env_value, &required_size, name) == 0 &&
-      env_value != nullptr) {  // NOSONAR(cpp:S6004): required_size is output parameter, cannot use
-                               // init-statement
-    EnvValuePtr env_guard(env_value);  // RAII: automatically frees on scope exit
-    return std::string(env_value);
-  }
-  return "";
-#else
-  const char* env_value = std::getenv(name);
-  return env_value != nullptr ? std::string(env_value) : "";
-#endif  // _WIN32
-}
-
 // Helper to set environment variable (platform-agnostic)
 // Note: This function is noexcept-safe for use in destructors.
 // Exceptions are caught internally to prevent propagation from destructors.
@@ -122,7 +96,7 @@ void SetEnvironmentVariable(const char* name, std::string_view value) noexcept {
       setenv(name, value_str.c_str(), 1);
     }
 #endif  // _WIN32
-  } catch (...) {  // NOSONAR(cpp:S2738) - Test helper: must catch all exceptions to prevent
+  } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test helper: must catch all exceptions to prevent
                    // propagation from destructors. NOLINT(bugprone-empty-catch) - intentional: noexcept-safe for destructors
     // Silently ignore failures - environment variable setting failures in tests are non-critical
     // This ensures the function is safe for use in destructors (noexcept guarantee)
@@ -649,19 +623,7 @@ int64_t GetStartOfTodayUnix() {
 }
 
 int64_t GetStartOfWeekUnix() {
-  std::tm now_tm = GetCurrentLocalTime();
-
-  // Calculate days since Monday (0=Monday, 1=Tuesday, ..., 6=Sunday)
-  const int days_since_monday = (now_tm.tm_wday == 0) ? 6 : (now_tm.tm_wday - 1);
-
-  std::tm week_start = now_tm;
-  week_start.tm_mday -= days_since_monday;
-  week_start.tm_hour = 0;
-  week_start.tm_min = 0;
-  week_start.tm_sec = 0;
-  week_start.tm_isdst = -1;
-
-  return std::mktime(&week_start);
+  return GetStartOfThisWeekTimeT();
 }
 
 int64_t GetStartOfMonthUnix() {
@@ -750,7 +712,7 @@ test_helpers::TestParallelSearchEngineFixture::TestParallelSearchEngineFixture(i
     : thread_pool_(std::make_shared<SearchThreadPool>(thread_count)), engine_(thread_pool_) {}
 
 TestGeminiApiKeyFixture::TestGeminiApiKeyFixture(std::string_view api_key)
-    : original_key_(GetEnvironmentVariable("GEMINI_API_KEY")),
+    : original_key_(gemini_api_utils::GetEnvironmentVariable("GEMINI_API_KEY")),
       was_set_(!original_key_.empty()) {
   SetEnvironmentVariable("GEMINI_API_KEY", api_key);
 }
@@ -765,7 +727,7 @@ TestGeminiApiKeyFixture::~TestGeminiApiKeyFixture() {  // NOLINT(bugprone-except
     }
   } catch (const std::exception& e) {
     LOG_DEBUG_BUILD("TestGeminiApiKeyFixture: cleanup failed: " << e.what());
-  } catch (...) {  // NOSONAR(cpp:S2738) - Test cleanup: catch all to prevent destructor from throwing
+  } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test cleanup: catch all to prevent destructor from throwing
     LOG_DEBUG_BUILD("TestGeminiApiKeyFixture: cleanup failed (non-std exception)");
   }
 }
@@ -1080,7 +1042,7 @@ size_t TestCancellation(const std::string& strategy, size_t file_count, bool can
     try {
       auto results = future.get();
       total_results += results.size();
-    } catch (...) {  // NOSONAR(cpp:S2738) - Test cancellation: catch-all needed. NOLINT(bugprone-empty-catch) - intentional: accept cancellation exceptions
+    } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test cancellation: catch-all needed. NOLINT(bugprone-empty-catch) - intentional: accept cancellation exceptions
       // Cancellation may cause exceptions, which is acceptable
     }
   }
@@ -1181,7 +1143,7 @@ std::vector<ConcurrentSearchResult> RunConcurrentSearches(FileIndex& index,
       result.completed_successfully = false;
       result.error_message = e.what();
       FAIL("Search " << (i + 1) << " threw exception: " << e.what());
-    } catch (...) {  // NOSONAR(cpp:S2738) - Test error handling: catch-all needed to detect any
+    } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test error handling: catch-all needed to detect any
                      // exception type
       result.completed_successfully = false;
       result.error_message = "Unknown exception";

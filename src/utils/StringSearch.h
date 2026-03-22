@@ -61,6 +61,27 @@ inline char ToLowerChar(unsigned char ch_value) {
   return static_cast<char>(std::tolower(ch_value));
 }
 
+// Scalar byte-range comparison used by SIMD search implementations after a
+// first-character hit.  Templated for case-sensitivity so the case-insensitive
+// branch is eliminated at compile time.  Callers are expected to be inlined
+// into target-attributed functions (AVX2 / NEON), so no target attribute is
+// needed here.
+template <bool CaseSensitive>
+inline bool FullCompare(const char* a, const char* b, size_t len) {
+  if constexpr (CaseSensitive) {
+    return std::memcmp(a, b, len) == 0;
+  } else {
+    // Called only after a first-char match, so per-byte cost is acceptable.
+    for (size_t i = 0; i < len; ++i) {
+      if (ToLowerChar(static_cast<unsigned char>(a[i])) !=
+          ToLowerChar(static_cast<unsigned char>(b[i]))) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
 // Internal implementation details for deduplication
 namespace string_search_detail {
 
@@ -434,6 +455,16 @@ inline bool ContainsSubstringI(const std::string_view &text,
   }
   // For short patterns, use case-insensitive search
   return string_search_detail::ShortPatternSearch<string_search_detail::CaseInsensitive>(text, pattern);
+}
+
+// Case-sensitive dispatch: routes to ContainsSubstringI or ContainsSubstring based on flag.
+// Eliminates the repeated if (case_sensitive) ... else ... pattern across callers.
+inline bool ContainsSubstring(std::string_view text, std::string_view pattern,
+                               bool case_sensitive) {
+  if (case_sensitive) {
+    return ContainsSubstring(text, pattern);
+  }
+  return ContainsSubstringI(text, pattern);
 }
 
 /**

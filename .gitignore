@@ -102,12 +102,15 @@ scan-results/
 duplo
 duplo-macos.zip
 duplo_report.*
+# PMD CPD duplicate-detection report (local / CI artifact)
+duplications.xml
 
 # Generated version file - should not be tracked
 GitVersion.h
 gitversion.h
 
 build_tests/
+build_tests_imgui/
 build_engine/
 
 imgui.ini
@@ -147,3 +150,4 @@ __pycache__/
 clang-tidy-report-*.txt
 nolint_scan.json
 nolint_classified.json
+sonarqube_measures.summary.txt

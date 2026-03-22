@@ -13,22 +13,9 @@
 
 namespace ui {
 
-void SearchHelpWindow::Render(bool *p_open) {
-  if (p_open == nullptr || !*p_open) {
-    return;
-  }
+namespace {
 
-  // Use theme tool-window background
-  const detail::StyleColorGuard window_bg_guard(ImGuiCol_WindowBg, Theme::Colors::WindowBg);
-
-  const char *window_title = "Search Syntax Guide";
-
-  constexpr float kDefaultWidth = 600.0F;
-  constexpr float kDefaultHeight = 700.0F;
-  detail::SetupCenteredToolWindow(kDefaultWidth, kDefaultHeight);
-
-  const detail::WindowGuard window_guard(window_title, p_open, ImGuiWindowFlags_None);
-  if (window_guard.ShowContent()) {
+void RenderSearchHelpWindowContent(bool *p_open) {
     ImGui::TextColored(Theme::Colors::Success, "1. Item name (main search bar)");
     ImGui::Bullet();
     ImGui::TextWrapped("Matches against the item name only (file or folder name; e.g. 'readme' finds readme.txt).");
@@ -151,7 +138,17 @@ void SearchHelpWindow::Render(bool *p_open) {
 
     ImGui::Spacing();
     detail::RenderToolWindowCloseButton(p_open);
-  }
+}
+
+}  // namespace
+
+void SearchHelpWindow::Render(bool *p_open) {
+  constexpr float kDefaultWidth = 600.0F;
+  constexpr float kDefaultHeight = 700.0F;
+  detail::SetupCenteredToolWindow(kDefaultWidth, kDefaultHeight);
+
+  detail::RenderToolWindow("Search Syntax Guide", p_open, Theme::Colors::WindowBg,
+                           [p_open]() { RenderSearchHelpWindowContent(p_open); });
 }
 
 } // namespace ui

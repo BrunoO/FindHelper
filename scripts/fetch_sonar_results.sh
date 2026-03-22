@@ -197,10 +197,9 @@ while true; do
         break
     fi
 
-    # Filter out issues that are already CLOSED (status=CLOSED) — these are stale
-    # entries where SonarCloud's new issueStatus field is out of sync with the actual
-    # closed state. No API transition is possible on them.
-    PAGE_ISSUES=$(echo "$PAGE_ISSUES" | jq -c '[.[] | select(.status != "CLOSED")]')
+    # Do not filter by legacy `status`: SonarCloud often reports issueStatus=OPEN with
+    # status=CLOSED; filtering .status != "CLOSED" incorrectly dropped all open issues.
+    # Trust the API query (e.g. issueStatuses=OPEN,CONFIRMED when using --open-only).
 
     ALL_ISSUES=$(echo "$ALL_ISSUES" | jq -c ". + $PAGE_ISSUES")
     ISSUE_COUNT=$(echo "$PAGE_ISSUES" | jq 'length')

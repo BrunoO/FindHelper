@@ -11,23 +11,6 @@ namespace string_search::neon {
 
 namespace {
 
-// Scalar full-pattern comparison, templated for case sensitivity.
-// Only called after a first-character NEON hit, so the overhead is acceptable.
-template <bool CaseSensitive>
-inline bool FullCompare(const char* a, const char* b, size_t len) {
-    if constexpr (CaseSensitive) {
-        return std::memcmp(a, b, len) == 0;
-    } else {
-        for (size_t i = 0; i < len; ++i) {
-            if (ToLowerChar(static_cast<unsigned char>(a[i])) !=
-                ToLowerChar(static_cast<unsigned char>(b[i]))) {
-                return false;
-            }
-        }
-        return true;
-    }
-}
-
 // Core NEON search: processes the haystack in 16-byte chunks.
 // Strategy: broadcast first char of needle → vceqq_u8 → vmaxvq_u8 for fast
 // zero-chunk skip → vst1q_u8 + scalar scan only when a candidate is found.
@@ -71,7 +54,7 @@ const char* InternalStrStrNEON(const char* haystack, size_t haystack_len,
             if (pos > max_start) {
                 break;
             }
-            if (FullCompare<CaseSensitive>(haystack + pos, needle, needle_len)) {
+            if (string_search::FullCompare<CaseSensitive>(haystack + pos, needle, needle_len)) {
                 return haystack + pos;
             }
         }
@@ -79,7 +62,7 @@ const char* InternalStrStrNEON(const char* haystack, size_t haystack_len,
 
     // Scalar tail: fewer than 16 bytes remain.
     for (size_t k = i; k <= max_start; ++k) {
-        if (FullCompare<CaseSensitive>(haystack + k, needle, needle_len)) {
+        if (string_search::FullCompare<CaseSensitive>(haystack + k, needle, needle_len)) {
             return haystack + k;
         }
     }

@@ -152,6 +152,26 @@ void TestCollectAndValidateCommon(FileIndex& index) {
   ValidateResults(results, "file_", false);
 }
 
+// Shared body for Hybrid vs Dynamic "overlapping concurrent searches" crash scenarios.
+void RunOverlappingConcurrentSearchesScenario(std::string_view strategy,
+                                              bool require_all_non_empty) {
+  const std::string strategy_str(strategy);
+  const test_helpers::TestSettingsFixture settings(strategy_str);
+  test_helpers::TestFileIndexFixture index_fixture(10000);
+
+  const std::vector<std::string> queries = {"file_", "file_", "file_"};
+  const auto results = test_helpers::search_strategy_test_helpers::RunConcurrentSearches(
+    index_fixture.GetIndex(), queries, 4, require_all_non_empty);
+
+  REQUIRE(results.size() == 3);
+  if (!require_all_non_empty) {
+    // Relaxed: arrays may change under load; at least one search should still return hits.
+    const bool any_hits =
+      results[0].total_results > 0 || results[1].total_results > 0 || results[2].total_results > 0;  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
+    REQUIRE(any_hits);
+  }
+}
+
 }  // anonymous namespace
 
 TEST_SUITE("FileIndex Search Strategies") {
@@ -283,22 +303,8 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Hybrid strategy handles overlapping concurrent searches") {
-      const test_helpers::TestSettingsFixture settings("hybrid");
-
-      test_helpers::TestFileIndexFixture index_fixture(10000);
-
-      // Start multiple searches that will overlap in time
-      // This is the crash scenario: user presses Search while previous search
-      // is running
-      const std::vector<std::string> queries = {"file_", "file_", "file_"};
-      const auto results = test_helpers::search_strategy_test_helpers::RunConcurrentSearches(
-        index_fixture.GetIndex(), queries, 4, true);
-
-      // All searches should complete and return results
-      REQUIRE(results.size() == 3);
-      REQUIRE(results[0].total_results > 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
-      REQUIRE(results[1].total_results > 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
-      REQUIRE(results[2].total_results > 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
+      // Crash scenario: user presses Search while a previous search is still running.
+      RunOverlappingConcurrentSearchesScenario("hybrid", true);
     }
 
   }  // TEST_SUITE("Hybrid Strategy")
@@ -564,27 +570,8 @@ TEST_SUITE("FileIndex Search Strategies") {
     }
 
     TEST_CASE("Dynamic strategy handles overlapping concurrent searches") {
-      const test_helpers::TestSettingsFixture settings("dynamic");
-
-      test_helpers::TestFileIndexFixture index_fixture(10000);
-
-      // Start multiple searches that will overlap in time
-      // This is the crash scenario: user presses Search while previous search
-      // is running
-      const std::vector<std::string> queries = {"file_", "file_", "file_"};
-      const auto results = test_helpers::search_strategy_test_helpers::RunConcurrentSearches(
-        index_fixture.GetIndex(), queries, 4, false);  // Allow 0 results
-
-      // All searches should complete without crashing
-      // Note: Results may be 0 if arrays changed, but no exceptions should occur
-      REQUIRE(results.size() == 3);
-      REQUIRE(results[0].total_results >= 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
-      REQUIRE(results[1].total_results >= 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
-      REQUIRE(results[2].total_results >= 0);  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
-
-      // At least one search should return results (most likely all will)
-      REQUIRE((results[0].total_results > 0 || results[1].total_results > 0 ||  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
-               results[2].total_results > 0));  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by REQUIRE(results.size() == 3)
+      // Same crash scenario as hybrid; relaxed assertions when index may change under load.
+      RunOverlappingConcurrentSearchesScenario("dynamic", false);
     }
 
     TEST_CASE("Dynamic strategy handles max iterations limit") {

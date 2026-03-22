@@ -48,7 +48,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -56,7 +56,7 @@ jobs:
       # Two-layer cache: extracted dir (fast path) and zip (fallback so we only re-extract, not re-download).
       - name: Cache Boost source (Windows)
         id: cache-boost-win
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: boost_1_90_0
           key: boost-src-1.90.0-win
@@ -64,7 +64,7 @@ jobs:
 
       - name: Cache Boost zip (Windows)
         id: cache-boost-zip-win
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: boost_zip_win
           key: boost-zip-1.90.0-win
@@ -89,7 +89,7 @@ jobs:
       # Boost (Linux): use vcpkg (previous working approach). Entire vcpkg dir (incl. downloaded Boost) is cached.
       - name: Cache vcpkg (Linux, Boost)
         id: vcpkg-cache-linux
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: vcpkg
           key: vcpkg-linux-boost-minimal-2
@@ -176,7 +176,7 @@ jobs:
         run: tar -czf ${{ matrix.package_name }} -C build FindHelper
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.package_name }}
@@ -192,10 +192,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           merge-multiple: true
           path: release-assets/

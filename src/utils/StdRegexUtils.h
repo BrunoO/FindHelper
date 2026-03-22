@@ -304,10 +304,7 @@ inline bool RegexMatchOptimized(std::string_view pattern, std::string_view text,
 
   // Fastest path: Literal patterns (pre-analyzed)
   if (analysis.is_literal) {
-    if (case_sensitive) {
-      return string_search::ContainsSubstring(text, pattern);
-    }
-    return string_search::ContainsSubstringI(text, pattern);
+    return string_search::ContainsSubstring(text, pattern, case_sensitive);
   }
 
   // Fast path: Simple patterns (pre-analyzed)
@@ -361,10 +358,7 @@ inline bool RegexMatch(std::string_view pattern, std::string_view text, bool cas
   // Fastest path: Literal patterns (no regex special characters)
   // Use simple string search - 10-50x faster than regex, uses string_view directly (no allocation)
   if (detail::IsLiteralPattern(pattern)) {
-    if (case_sensitive) {
-      return string_search::ContainsSubstring(text, pattern);
-    }
-    return string_search::ContainsSubstringI(text, pattern);
+    return string_search::ContainsSubstring(text, pattern, case_sensitive);
   }
 
   // Fast path: Route simple patterns to SimpleRegex (much faster than std::regex)

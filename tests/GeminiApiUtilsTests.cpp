@@ -1,7 +1,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
 #include <cstdlib>
+#include <initializer_list>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -15,6 +17,33 @@ using gemini_api_utils::BuildSearchConfigPrompt;
 // GetGeminiApiKeyFromEnv removed - unused in tests
 using gemini_api_utils::ParseSearchConfigJson;
 using gemini_api_utils::ValidatePathPatternFormat;
+
+namespace {
+
+void RunParseSearchConfigJsonCases(
+    std::initializer_list<test_helpers::ParseSearchConfigJsonTestCase> cases) {
+  test_helpers::RunParameterizedParseSearchConfigJsonTests(
+      std::vector<test_helpers::ParseSearchConfigJsonTestCase>(cases.begin(), cases.end()));
+}
+
+void RunValidatePathPatternCases(
+    std::initializer_list<test_helpers::ValidatePathPatternTestCase> cases) {
+  test_helpers::RunParameterizedValidatePathPatternTests(
+      std::vector<test_helpers::ValidatePathPatternTestCase>(cases.begin(), cases.end()));
+}
+
+void RunGetGeminiApiKeyCases(std::initializer_list<test_helpers::GetGeminiApiKeyTestCase> cases) {
+  test_helpers::RunParameterizedGetGeminiApiKeyTests(
+      std::vector<test_helpers::GetGeminiApiKeyTestCase>(cases.begin(), cases.end()));
+}
+
+void RunBuildSearchConfigPromptCases(
+    std::initializer_list<test_helpers::BuildSearchConfigPromptTestCase> cases) {
+  test_helpers::RunParameterizedBuildSearchConfigPromptTests(
+      std::vector<test_helpers::BuildSearchConfigPromptTestCase>(cases.begin(), cases.end()));
+}
+
+}  // namespace
 
 // IMPORTANT: These unit tests skip API calls by default for safety.
 //
@@ -34,7 +63,7 @@ using gemini_api_utils::ValidatePathPatternFormat;
 
 TEST_CASE("ParseSearchConfigJson - Valid Responses") {
   SUBCASE("Valid responses with various path patterns") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {
         test_helpers::CreateGeminiJsonResponse(R"({"version": "1.0", "search_config": {"path": "pp:**/*.txt"}})"),
         true,
@@ -67,44 +96,39 @@ TEST_CASE("ParseSearchConfigJson - Valid Responses") {
         {},
         "Response missing pp: prefix"
       }
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Empty response") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {"", false, "", "Empty", {}, "Empty response"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Invalid JSON") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {"{ invalid json }", false, "", "", {}, "Invalid JSON"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("API error response") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {test_helpers::CreateGeminiErrorResponse(400, "Invalid API key", "INVALID_ARGUMENT"),
        false, "", "Invalid API key", {}, "API error response"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Missing candidates array") {
     const std::string json = R"({
       "candidates": []
     })";
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {json, false, "", "Invalid JSON structure", {}, "Missing candidates array"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Complex patterns") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {
         test_helpers::CreateGeminiResponseWithPath("pp:^C:/Windows/**/*.exe$"),
         true,
@@ -121,88 +145,78 @@ TEST_CASE("ParseSearchConfigJson - Valid Responses") {
         {},
         "Pattern with character classes"
       }
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 }
 
 TEST_CASE("ValidatePathPatternFormat - Basic Patterns") {
   SUBCASE("Valid patterns") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:**/*.txt", true},
         {"pp:src/**/*.cpp", true},
         {"pp:*.py", true},
         {"pp:^C:/Windows/**/*.exe$", true}
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 
   SUBCASE("Invalid patterns") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:", false},
         {"**/*.txt", false},
         {"", false},
         {"pp", false}
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 }
 
 TEST_CASE("GetGeminiApiKeyFromEnv") {
   SUBCASE("Environment variable not set") {
-    const std::vector<test_helpers::GetGeminiApiKeyTestCase> test_cases = {
+    RunGetGeminiApiKeyCases({
       {"", "", true}
-    };
-    test_helpers::RunParameterizedGetGeminiApiKeyTests(test_cases);
+    });
   }
 
   SUBCASE("Environment variable set") {
-    const std::vector<test_helpers::GetGeminiApiKeyTestCase> test_cases = {
+    RunGetGeminiApiKeyCases({
       {"test-api-key-12345", "test-api-key-12345"}
-    };
-    test_helpers::RunParameterizedGetGeminiApiKeyTests(test_cases);
+    });
   }
 }
 
 TEST_CASE("BuildSearchConfigPrompt - Basic Descriptions") {
   SUBCASE("Very long description") {
     const std::string long_desc(5000, 'a');
-    const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
+    RunBuildSearchConfigPromptCases({
       {long_desc, long_desc}
-    };
-    test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
+    });
   }
 
   SUBCASE("Description with special characters") {
-    const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
+    RunBuildSearchConfigPromptCases({
       {R"(files with 'quotes' and "double quotes" and \backslashes)",
        R"(files with 'quotes' and "double quotes" and \backslashes)"}
-    };
-    test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
+    });
   }
 
   SUBCASE("Description with newlines") {
-    const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
+    RunBuildSearchConfigPromptCases({
       {"all files\nin directory\nwith extension .txt",
        "all files\nin directory\nwith extension .txt"}
-    };
-    test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
+    });
   }
 
   SUBCASE("Description with Unicode characters") {
-    const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
+    RunBuildSearchConfigPromptCases({
       {u8"files in 目录 with 中文 names",
        u8"files in 目录 with 中文 names"}
-    };
-    test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
+    });
   }
 
   SUBCASE("Description with Windows path separators") {
-    const std::vector<test_helpers::BuildSearchConfigPromptTestCase> test_cases = {
+    RunBuildSearchConfigPromptCases({
       {R"(files in C:\Users\Documents\)",
        R"(files in C:\Users\Documents\)"}
-    };
-    test_helpers::RunParameterizedBuildSearchConfigPromptTests(test_cases);
+    });
   }
 }
 
@@ -232,7 +246,6 @@ TEST_CASE("BuildSearchConfigPrompt - Base Prompt Size") {
   // Test base prompt size (without user description)
   // The base prompt template should be under 8000 chars to leave room for user descriptions
   const std::string base_prompt = BuildSearchConfigPrompt("");
-  CHECK(base_prompt.size() < k_max_prompt_size);
   // Base prompt includes Search Engine Logic, schema, examples; must stay under k_max_prompt_size
   CHECK(base_prompt.size() < k_max_prompt_size);
 }
@@ -250,19 +263,17 @@ TEST_CASE("BuildSearchConfigPrompt - Prompt with Description Size") {
 
 TEST_CASE("ParseSearchConfigJson - Multiple Candidates and Parts") {
   SUBCASE("Multiple candidates (should use first)") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {test_helpers::CreateGeminiResponseWithMultipleCandidates({"pp:**/*.txt", "pp:**/*.log"}),
        true, "pp:**/*.txt", "", {}, "Multiple candidates - use first"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Multiple parts (should use first)") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {test_helpers::CreateGeminiResponseWithMultipleParts({"pp:**/*.txt", "pp:**/*.log"}),
        true, "pp:**/*.txt", "", {}, "Multiple parts - use first"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Response with metadata fields") {
@@ -282,14 +293,13 @@ TEST_CASE("ParseSearchConfigJson - Multiple Candidates and Parts") {
         "candidatesTokenCount": 10
       }
     })";
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {json, true, "pp:src/**/*.cpp", "", {}, "Response with metadata fields"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Patterns with whitespace") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {
         test_helpers::CreateGeminiJsonResponse(R"({"version": "1.0", "search_config": {"path": "pp:**/*.txt   "}})"),
         true,
@@ -314,8 +324,7 @@ TEST_CASE("ParseSearchConfigJson - Multiple Candidates and Parts") {
         {},
         "Pattern with carriage return"
       }
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Pattern in middle of explanation text") {
@@ -337,10 +346,9 @@ TEST_CASE("ParseSearchConfigJson - Malformed JSON") {
           "parts": [{
             "text": "{\"version\": \"1.0\", \"search_config\": {\"path\": \"pp:**/*.txt\"}"
     })";
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {json, false, "", "parse", {}, "Malformed JSON - missing closing brace"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Malformed JSON - invalid escape") {
@@ -353,10 +361,9 @@ TEST_CASE("ParseSearchConfigJson - Malformed JSON") {
         }
       }]
     })";
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {json, false, "", "", {}, "Malformed JSON - invalid escape"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 }
 
@@ -369,10 +376,9 @@ TEST_CASE("ParseSearchConfigJson - Invalid Fields") {
         }
       }]
     })";
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {json, false, "", "structure", {}, "Missing text field"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Text field is not a string") {
@@ -385,10 +391,9 @@ TEST_CASE("ParseSearchConfigJson - Invalid Fields") {
         }
       }]
     })";
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {json, false, "", "", {}, "Text field is not a string"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Empty text field") {
@@ -419,10 +424,9 @@ TEST_CASE("ParseSearchConfigJson - Invalid Fields") {
         }
       }]
     })";
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {json, false, "", "", {}, "Text field with only whitespace"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 }
 
@@ -448,19 +452,17 @@ TEST_CASE("ParseSearchConfigJson - Error Response without Message") {
 
 TEST_CASE("ParseSearchConfigJson - Edge Cases") {
   SUBCASE("Very long response text") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {test_helpers::CreateGeminiResponseWithPath("pp:**/*.txt"),
        true, "pp:**/*.txt", "", {}, "Very long response text"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Unicode characters in response") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {test_helpers::CreateGeminiResponseWithPath("pp:**/*.txt"),
        true, "pp:**/*.txt", "", {}, "Unicode characters in response"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 
   SUBCASE("Empty search_config object should mean all files (pp:)") {
@@ -470,82 +472,73 @@ TEST_CASE("ParseSearchConfigJson - Edge Cases") {
       "search_config": {}
     })";
 
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> direct_cases = {
+    RunParseSearchConfigJsonCases({
       {direct_json, true, "pp:", "", {}, "Direct JSON format"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(direct_cases);
+    });
 
     // Gemini API-style response where the inner text is the same JSON
     Json response_json;
     response_json["candidates"][0]["content"]["parts"][0]["text"] = direct_json;
 
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> api_cases = {
+    RunParseSearchConfigJsonCases({
       {response_json.dump(), true, "pp:", "", {}, "Gemini API-style response"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(api_cases);
+    });
   }
 }
 
 TEST_CASE("ValidatePathPatternFormat - Complex Patterns") {
   SUBCASE("Patterns with quantifiers") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:**/\\d{3}*.log", true},
         {"pp:**/\\w{2,5}.txt", true},
         {"pp:**/[a-z]{1,}*.cpp", true}
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 
   SUBCASE("Patterns with character classes") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:**/[0-9]*.log", true},
         {"pp:**/[A-Za-z]*.txt", true},
         {"pp:**/[^a-z]*.cpp", true}
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 
   SUBCASE("Patterns with shorthands") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:**/\\d*.log", true},
         {"pp:**/\\w+.txt", true}
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 
   SUBCASE("Patterns with anchors") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:^src/**/*.cpp$", true},
         {"pp:^C:/Windows/**/*.exe$", true}
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 
   SUBCASE("Patterns with Windows paths") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:C:/Users/**/*.txt", true},
         {"pp:**/Documents/**/*.doc", true}
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 
   SUBCASE("Patterns with special characters") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:**/*.txt", true},
         {"pp:**/file?.txt", true},
         {"pp:**/test*.log", true}
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 
   SUBCASE("Edge cases for validation") {
-    const std::vector<test_helpers::ValidatePathPatternTestCase> test_cases = {
+    RunValidatePathPatternCases({
         {"pp:", false},
         {"pp: ", true},   // Space after pp: is valid
         {"pp:\t", true},  // Tab after pp: is valid
         {"pp:\n", true}   // Newline after pp: is valid
-    };
-    test_helpers::RunParameterizedValidatePathPatternTests(test_cases);
+    });
   }
 
   SUBCASE("Very long pattern") {
@@ -560,7 +553,7 @@ TEST_CASE("ValidatePathPatternFormat - Complex Patterns") {
 
 TEST_CASE("ParseSearchConfigJson - Patterns with Special Characters") {
   SUBCASE("Patterns with various special characters") {
-    const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+    RunParseSearchConfigJsonCases({
       {test_helpers::CreateGeminiResponseWithPath("pp:**/file/name.txt"),
        true, "pp:**/file/name.txt", "", {}, "Pattern with escaped characters"},
       {test_helpers::CreateGeminiResponseWithPath("pp:**/文档/*.txt"),
@@ -571,31 +564,27 @@ TEST_CASE("ParseSearchConfigJson - Patterns with Special Characters") {
        true, "pp:**/\\d{2,4}*.log", "", {}, "Pattern with complex quantifiers"},
       {test_helpers::CreateGeminiResponseWithPath("pp:**/[A-Za-z0-9_]*.cpp"),
        true, "pp:**/[A-Za-z0-9_]*.cpp", "", {}, "Pattern with nested character classes"}
-    };
-    test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+    });
   }
 }
 
 TEST_CASE("GetGeminiApiKeyFromEnv - Edge Cases") {
   SUBCASE("Environment variable with special characters") {
-    const std::vector<test_helpers::GetGeminiApiKeyTestCase> test_cases = {
+    RunGetGeminiApiKeyCases({
       {"key-with-special-chars-!@#$%", "key-with-special-chars-!@#$%"}
-    };
-    test_helpers::RunParameterizedGetGeminiApiKeyTests(test_cases);
+    });
   }
 
   SUBCASE("Environment variable with spaces") {
-    const std::vector<test_helpers::GetGeminiApiKeyTestCase> test_cases = {
+    RunGetGeminiApiKeyCases({
       {"key with spaces", "key with spaces"}
-    };
-    test_helpers::RunParameterizedGetGeminiApiKeyTests(test_cases);
+    });
   }
 
   SUBCASE("Environment variable with newlines") {
-    const std::vector<test_helpers::GetGeminiApiKeyTestCase> test_cases = {
+    RunGetGeminiApiKeyCases({
       {"key\nwith\nnewlines", "key\nwith\nnewlines"}
-    };
-    test_helpers::RunParameterizedGetGeminiApiKeyTests(test_cases);
+    });
   }
 }
 
@@ -606,51 +595,27 @@ TEST_CASE("GetGeminiApiKeyFromEnv - Edge Cases") {
 TEST_CASE("ParseSearchConfigJson - Old Format Fix Path Pattern with Extension") {
   // Simulate old Gemini response format: path includes extension AND extensions field is set
   // This is the old format - new prompt will only use path field
-  const std::string json = R"({
-    "candidates": [{
-      "content": {
-        "parts": [{
-          "text": "{\"version\": \"1.0\", \"search_config\": {\"extensions\": [\"cpp\"], \"path\": \"pp:USN_windows/**/*.cpp\"}}"
-        }]
-      }
-    }]
-  })";
-  const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+  const std::string json = test_helpers::CreateGeminiJsonResponse(
+      R"({"version": "1.0", "search_config": {"extensions": ["cpp"], "path": "pp:USN_windows/**/*.cpp"}})");
+  RunParseSearchConfigJsonCases({
     {json, true, "pp:**/USN_windows**", "", {"cpp"}, "Fix path pattern ending with extension"}
-  };
-  test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+  });
 }
 
 TEST_CASE("ParseSearchConfigJson - Old Format Fix Path Pattern for Folder") {
-  const std::string json = R"({
-    "candidates": [{
-      "content": {
-        "parts": [{
-          "text": "{\"version\": \"1.0\", \"search_config\": {\"extensions\": [\"cpp\"], \"path\": \"pp:USN_windows/**\"}}"
-        }]
-      }
-    }]
-  })";
-  const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+  const std::string json = test_helpers::CreateGeminiJsonResponse(
+      R"({"version": "1.0", "search_config": {"extensions": ["cpp"], "path": "pp:USN_windows/**"}})");
+  RunParseSearchConfigJsonCases({
     {json, true, "pp:**/USN_windows**", "", {"cpp"}, "Fix path pattern for folder search"}
-  };
-  test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+  });
 }
 
 TEST_CASE("ParseSearchConfigJson - Old Format Remove Extension from Path") {
-  const std::string json = R"({
-    "candidates": [{
-      "content": {
-        "parts": [{
-          "text": "{\"version\": \"1.0\", \"search_config\": {\"extensions\": [\"txt\"], \"path\": \"pp:documents/**/*.txt\"}}"
-        }]
-      }
-    }]
-  })";
-  const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+  const std::string json = test_helpers::CreateGeminiJsonResponse(
+      R"({"version": "1.0", "search_config": {"extensions": ["txt"], "path": "pp:documents/**/*.txt"}})");
+  RunParseSearchConfigJsonCases({
     {json, true, "pp:**/documents**", "", {"txt"}, "Fix path pattern - remove extension from end"}
-  };
-  test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+  });
 }
 
 TEST_CASE("ParseSearchConfigJson - Old Format Multiple Extensions") {
@@ -673,21 +638,19 @@ TEST_CASE("ParseSearchConfigJson - Old Format Multiple Extensions") {
 }
 
 TEST_CASE("ParseSearchConfigJson - Old Format Path Without Extension") {
-  const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+  RunParseSearchConfigJsonCases({
     {test_helpers::CreateGeminiJsonResponse(
       R"({"version": "1.0", "search_config": {"extensions": ["cpp"], "path": "pp:**/USN_windows/**"}})"),
      true, "pp:**/USN_windows**", "", {"cpp"}, "Path pattern without extension"}
-  };
-  test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+  });
 }
 
 TEST_CASE("ParseSearchConfigJson - Old Format Path Without Extensions Field") {
-  const std::vector<test_helpers::ParseSearchConfigJsonTestCase> test_cases = {
+  RunParseSearchConfigJsonCases({
     {test_helpers::CreateGeminiJsonResponse(
       R"({"version": "1.0", "search_config": {"path": "pp:**/folder/**/*.txt"}})"),
      true, "pp:**/folder/**/*.txt", "", {}, "Path pattern without extensions field"}
-  };
-  test_helpers::RunParameterizedParseSearchConfigJsonTests(test_cases);
+  });
 }
 
 TEST_CASE("ParseSearchConfigJson - Old Format Real World Case") {
@@ -742,15 +705,8 @@ TEST_CASE("ParseSearchConfigJson - New Format Regex Multiple Extensions") {
   // New format: multiple extensions use regex with alternation
   // Note: In JSON, \\. represents a literal backslash followed by a dot
   // After JSON parsing, this becomes \. (single backslash before the extension pattern)
-  const std::string json = R"({
-    "candidates": [{
-      "content": {
-        "parts": [{
-          "text": "{\"version\": \"1.0\", \"search_config\": {\"path\": \"rs:.*\\\\.(cpp|hpp|cxx|cc)$\"}}"
-        }]
-      }
-    }]
-  })";
+  const std::string json = test_helpers::CreateGeminiJsonResponse(
+      R"({"version": "1.0", "search_config": {"path": "rs:.*\\.(cpp|hpp|cxx|cc)$"}})");
 
   auto result = ParseSearchConfigJson(json);
 

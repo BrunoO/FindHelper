@@ -8,6 +8,7 @@
 #include "filters/SizeFilterUtils.h"
 #include "filters/TimeFilterUtils.h"
 #include "gui/GuiState.h"
+#include "gui/ImGuiUtils.h"
 #include "index/FileIndex.h"
 #include "search/SearchResultUtils.h"
 #include "search/SearchWorker.h"
@@ -219,16 +220,10 @@ static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const Fi
   if (const char pgo_mode = GetAboutPgoMode(); pgo_mode != '\0') {
     ImGui::SameLine();
     ImGui::TextDisabled("[%c]", pgo_mode);
-    if (ImGui::IsItemHovered() && GetAboutPgoTooltip(pgo_mode) != nullptr) {
-      ImGui::BeginTooltip();
-      ImGui::TextUnformatted(GetAboutPgoTooltip(pgo_mode));
-      ImGui::EndTooltip();
-    }
+    RenderPgoTooltipIfHovered(pgo_mode);
   }
 
-  ImGui::SameLine();
-  ImGui::Text("|");
-  ImGui::SameLine();
+  InlineSeparator();
 
   // Monitoring status with colored dot icon (Phase 2)
   if (monitor != nullptr) {
@@ -341,16 +336,12 @@ static void RenderQueueAndSearchTime(const UsnMonitor* monitor, const SearchWork
   if (!has_queue_info && !has_search_time) {
     return;
   }
-  ImGui::SameLine();
-  ImGui::Text("|");
-  ImGui::SameLine();
+  InlineSeparator();
   if (has_queue_info) {
     const size_t queue_size = monitor->GetQueueSize();
     ImGui::Text("Queue: %zu", queue_size);
     if (has_search_time) {
-      ImGui::SameLine();
-      ImGui::Text("|");
-      ImGui::SameLine();
+      InlineSeparator();
     }
   }
   if (has_search_time) {
@@ -402,18 +393,14 @@ static void RenderCenterGroup(GuiState& state,
                               const SearchWorker& search_worker) {
   const size_t total_items = (monitor != nullptr) ? monitor->GetIndexedFileCount() : file_index.Size();
   ImGui::Text("Total: %zu", total_items);
-  ImGui::SameLine();
-  ImGui::Text("|");
-  ImGui::SameLine();
+  InlineSeparator();
 
   RenderDisplayedCountAndSize(state, file_index);
 
   // Index build timing (initial index, manual crawl, auto-crawl, or periodic recrawl)
   if (state.index_build_has_timing &&
       (state.index_build_in_progress || state.index_build_last_duration_ms > 0U)) {
-    ImGui::SameLine();
-    ImGui::Text("|");
-    ImGui::SameLine();
+    InlineSeparator();
     RenderIndexBuildTiming(state);
   }
 
@@ -446,9 +433,7 @@ static void RenderRightGroup(const GuiState &state, const SearchWorker &search_w
   } else {
     ImGui::Text("%s", status_text.c_str());
   }
-  ImGui::SameLine();
-  ImGui::Text("|");
-  ImGui::SameLine();
+  InlineSeparator();
 
   // Use pre-built memory text (passed from Render to avoid duplicate formatting)
   if (state.memory_bytes_ > 0) {

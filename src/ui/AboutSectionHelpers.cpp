@@ -10,6 +10,8 @@
 #include "utils/StringUtils.h"
 #include "utils/ThreadUtils.h"
 
+#include "imgui.h"
+
 #ifdef _WIN32
 #include <windows.h>  // NOSONAR(cpp:S3806) - Windows-only for PGO detection
 #endif  // _WIN32
@@ -88,6 +90,17 @@ const char* GetAboutPgoTooltip(char pgo_mode) {
     return "PGO: USEPROFILE (Optimized build)";
   }
   return nullptr;
+}
+
+void RenderPgoTooltipIfHovered(char pgo_mode) {
+  if (!ImGui::IsItemHovered()) {
+    return;
+  }
+  if (const char* tooltip = GetAboutPgoTooltip(pgo_mode); tooltip != nullptr) {
+    ImGui::BeginTooltip();
+    ImGui::TextUnformatted(tooltip);
+    ImGui::EndTooltip();
+  }
 }
 
 const char* GetAboutPlatformMonitoringLabel() {

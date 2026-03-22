@@ -29,17 +29,12 @@
 class PathOperations {
 public:
   /**
-   * @brief Path components view (canonical type; FileIndex uses alias to this)
+   * @brief Path components view (alias to PathStorage::PathComponentsView).
    *
-   * Provides zero-copy access to path components for efficient search operations.
+   * Defined in PathStorage once; re-exported here so callers that only include
+   * PathOperations.h get the type without depending on PathStorage.h directly.
    */
-  struct PathComponentsView {
-    std::string_view full_path{};  // NOLINT(readability-redundant-member-init) - Explicit initialization for member init check
-    std::string_view filename{};  // NOLINT(readability-redundant-member-init) - Explicit initialization for member init check
-    std::string_view extension{};  // NOLINT(readability-redundant-member-init) - Explicit initialization for member init check
-    std::string_view directory_path{};  // NOLINT(readability-redundant-member-init) - Explicit initialization for member init check
-    bool has_extension = false;
-  };
+  using PathComponentsView = PathStorage::PathComponentsView;
 
   /**
    * @brief Construct PathOperations
@@ -142,15 +137,6 @@ public:
   }
 
 private:
-  /**
-   * @brief Convert PathStorage::PathComponentsView to PathOperations::PathComponentsView
-   *
-   * @param storage_view Source view from PathStorage
-   * @return Converted view
-   */
-  static PathComponentsView ConvertPathComponentsView(
-      const PathStorage::PathComponentsView& storage_view);
-
   static constexpr size_t kPathStorageIndexInvalid = static_cast<size_t>(-1);
 
   FileIndexStorage& storage_;    // NOLINT(readability-identifier-naming) - project convention: snake_case_

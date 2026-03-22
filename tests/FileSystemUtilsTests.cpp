@@ -12,9 +12,10 @@
 #include <propsys.h>
 #endif  // _WIN32
 
-#include "utils/FileSystemUtils.h"
-#include "utils/FileAttributeConstants.h"
 #include <cstdint>
+
+#include "utils/FileAttributeConstants.h"
+#include "utils/FileSystemUtils.h"
 
 TEST_SUITE("FileSystemUtils") {
 
@@ -149,7 +150,7 @@ TEST_SUITE("FileSystemUtils") {
 
         TEST_CASE("boundary values") {
             // Test exact boundaries
-            REQUIRE(FormatFileSize(1023).find("B") != std::string::npos);
+            REQUIRE(FormatFileSize(1023).find('B') != std::string::npos);
             REQUIRE(FormatFileSize(1024).find("KB") != std::string::npos);
 
             REQUIRE(FormatFileSize(1024 * 1024 - 1).find("KB") != std::string::npos);
@@ -218,4 +219,83 @@ TEST_SUITE("FileSystemUtils") {
             REQUIRE(result.find("1.00") != std::string::npos);
         }
     }
+
+    TEST_SUITE("FormatFileTime") {
+        TEST_CASE("not-loaded sentinel returns loading indicator '...'") {
+            CHECK(FormatFileTime(kFileTimeNotLoaded) == "...");
+        }
+
+        TEST_CASE("failed sentinel returns N/A") {
+            CHECK(FormatFileTime(kFileTimeFailed) == "N/A");
+        }
+
+        TEST_CASE("valid FILETIME returns non-empty, non-sentinel string") {
+            // A known valid FILETIME: 2024-01-01 in UTC = 133483584000000000 (100-ns since 1601)
+            // dwLowDateTime  = 133483584000000000 & 0xFFFFFFFF = 0xB8B4DC00 = 3099959296
+            // dwHighDateTime = 133483584000000000 >> 32       = 0x01DA8CE1 = 31100129
+            constexpr uint32_t kLow  = 0xB8B4DC00U;
+            constexpr uint32_t kHigh = 0x01DA8CE1U;
+            const FILETIME ft{kLow, kHigh};
+            const std::string result = FormatFileTime(ft);
+            CHECK(!result.empty());
+            CHECK(result != "...");
+            CHECK(result != "N/A");
+            // Format is "YYYY-MM-DD HH:MM" at the start of the buffer
+            CHECK(result[4] == '-');
+            CHECK(result[7] == '-');
+            CHECK(result[10] == ' ');
+            CHECK(result[13] == ':');
+        }
+    }
+
+#ifndef _WIN32
+    TEST_SUITE("TimespecToFileTime and FileTimeToTimespec") {
+        TEST_CASE("Unix epoch {0, 0} maps to Windows epoch offset") {
+            // Unix epoch (1970-01-01) is kEpochDiffSeconds * 10^7 100-ns intervals
+            // after the Windows epoch (1601-01-01).
+            constexpr int64_t kExpected100ns =
+                file_time_constants::kEpochDiffSeconds *
+                file_system_utils_constants::kFiletimeIntervalsPerSecond;
+            const struct timespec ts{0, 0};
+            const FILETIME ft = TimespecToFileTime(ts);
+            const uint64_t actual =
+                (static_cast<uint64_t>(ft.dwHighDateTime) << 32U) |
+                static_cast<uint64_t>(ft.dwLowDateTime);
+            CHECK(actual == static_cast<uint64_t>(kExpected100ns));
+        }
+
+        TEST_CASE("round-trip: timespec -> FILETIME -> timespec is lossless at second precision") {
+            // 2024-06-15 12:00:00 UTC = 1718445600 seconds since Unix epoch
+            constexpr time_t kTestSec = 1718445600;
+            const struct timespec ts_in{kTestSec, 0};
+            const FILETIME ft = TimespecToFileTime(ts_in);
+            const struct timespec ts_out = FileTimeToTimespec(ft);
+            CHECK(ts_out.tv_sec == ts_in.tv_sec);
+            CHECK(ts_out.tv_nsec == ts_in.tv_nsec);
+        }
+
+        TEST_CASE("sub-second nanoseconds survive round-trip (truncated to 100-ns precision)") {
+            constexpr time_t kTestSec = 1000000000;  // arbitrary second
+            constexpr int64_t kNs = 123456700LL;          // 1234567 × 100 ns (exact 100-ns multiple)
+            const struct timespec ts_in{kTestSec, kNs};
+            const FILETIME ft = TimespecToFileTime(ts_in);
+            const struct timespec ts_out = FileTimeToTimespec(ft);
+            CHECK(ts_out.tv_sec == ts_in.tv_sec);
+            CHECK(ts_out.tv_nsec == kNs);
+        }
+
+        TEST_CASE("FileTimeToTimespec of Unix-epoch FILETIME returns {0, 0}") {
+            // Construct FILETIME = kEpochDiffSeconds * 10^7
+            constexpr uint64_t kEpoch100ns =
+                static_cast<uint64_t>(file_time_constants::kEpochDiffSeconds) *
+                static_cast<uint64_t>(file_system_utils_constants::kFiletimeIntervalsPerSecond);
+            const FILETIME ft{
+                static_cast<uint32_t>(kEpoch100ns & 0xFFFFFFFFU),
+                static_cast<uint32_t>(kEpoch100ns >> 32U)};
+            const struct timespec ts = FileTimeToTimespec(ft);
+            CHECK(ts.tv_sec == 0);
+            CHECK(ts.tv_nsec == 0);
+        }
+    }
+#endif  // _WIN32
 }

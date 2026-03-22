@@ -6,6 +6,7 @@
  * - TimeFilter enum to/from string conversion (serialization round-trip)
  * - CalculateCutoffTime() for all filter types
  * - Cross-platform time calculations (Unix-to-Windows epoch conversion)
+ * - RecordRecentSearch(): deduplication, ordering, size cap
  */
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
@@ -16,10 +17,13 @@
 #include <ctime>
 
 #include "TestHelpers.h"
+#include "core/Settings.h"             // AppSettings, settings_defaults::kMaxRecentSearches
 #include "filters/SizeFilter.h"        // SizeFilter enum
 #include "filters/SizeFilterUtils.h"   // SizeFilterToString, SizeFilterFromString, SizeFilterDisplayLabel, MatchesSizeFilter
 #include "filters/TimeFilter.h"        // TimeFilter enum
-#include "filters/TimeFilterUtils.h"   // TimeFilterToString, TimeFilterFromString, CalculateCutoffTime
+#include "filters/TimeFilterUtils.h"   // TimeFilterToString, TimeFilterFromString, CalculateCutoffTime, RecordRecentSearch
+#include "gui/GuiState.h"              // GuiState (for RecordRecentSearch)
+#include "search/SearchTypes.h"        // SearchParams
 #include "utils/FileTimeTypes.h"       // FILETIME
 
 // Helper to convert FILETIME to Unix timestamp (seconds since 1970)
@@ -435,4 +439,170 @@ TEST_SUITE("SizeFilterUtils - MatchesSizeFilter") {
         CHECK( MatchesSizeFilter(kOneGB, SizeFilter::Massive));
     }
 }
+
+// ============================================================================
+// IsEpochTime tests
+// ============================================================================
+
+TEST_SUITE("IsEpochTime") {
+
+    TEST_CASE("exact Windows epoch {0,0} is epoch time") {
+        const FILETIME ft{0, 0};
+        CHECK(IsEpochTime(ft));
+    }
+
+    TEST_CASE("small dwLowDateTime within year-1601 range is epoch time") {
+        // Any value where dwHighDateTime==0 and dwLowDateTime < kYear1601Max
+        const FILETIME ft{0x1000, 0};  // small non-zero value, still year 1601
+        CHECK(IsEpochTime(ft));
+    }
+
+    TEST_CASE("modern date is not epoch time") {
+        // 2024-01-01 00:00:00 UTC in FILETIME: (1704067200 + 11644473600) * 10^7
+        constexpr int64_t kWindowsTime100ns = (1704067200LL + 11644473600LL) * 10000000LL;
+        FILETIME ft;
+        ft.dwLowDateTime  = static_cast<uint32_t>(kWindowsTime100ns & 0xFFFFFFFFLL);
+        ft.dwHighDateTime = static_cast<uint32_t>((kWindowsTime100ns >> 32) & 0xFFFFFFFFLL);
+        CHECK(!IsEpochTime(ft));
+    }
+
+    TEST_CASE("sentinel (not-loaded) value is not epoch time") {
+        CHECK(!IsEpochTime(kFileTimeNotLoaded));
+    }
+
+    TEST_CASE("failed-load sentinel {1,0} is treated as epoch time (within year-1601 range)") {
+        // kFileTimeFailed = {dwLowDateTime=1, dwHighDateTime=0}: 100ns after epoch.
+        // IsEpochTime uses a broad year-1601 range to handle timezone offsets,
+        // so any value this close to the epoch is considered epoch time.
+        CHECK(IsEpochTime(kFileTimeFailed));
+    }
+}
+
+// ============================================================================
+// RecordRecentSearch tests
+// ============================================================================
+
+namespace {
+
+// Build a minimal SearchParams for use in RecordRecentSearch tests.
+SearchParams MakeSearchParams(std::string_view filename,
+                              std::string_view extensions = "",
+                              std::string_view path = "") {
+    SearchParams params;
+    params.filenameInput  = std::string(filename);
+    params.extensionInput = std::string(extensions);
+    params.pathInput      = std::string(path);
+    params.foldersOnly    = false;
+    params.caseSensitive  = false;
+    return params;
+}
+
+}  // namespace
+
+TEST_SUITE("RecordRecentSearch") {
+
+    TEST_CASE("Single search is added to an empty list") {
+        AppSettings settings;
+        GuiState state;
+        const SearchParams params = MakeSearchParams("hello");
+
+        RecordRecentSearch(params, state, settings);
+
+        REQUIRE(settings.recentSearches.size() == 1U);
+        CHECK(settings.recentSearches[0].filename == "hello");
+    }
+
+    TEST_CASE("name field of recent search is always empty") {
+        AppSettings settings;
+        GuiState state;
+        const SearchParams params = MakeSearchParams("myfile");
+
+        RecordRecentSearch(params, state, settings);
+
+        CHECK(settings.recentSearches[0].name.empty());
+    }
+
+    TEST_CASE("Newer search is inserted at the front") {
+        AppSettings settings;
+        GuiState state;
+
+        RecordRecentSearch(MakeSearchParams("first"),  state, settings);
+        RecordRecentSearch(MakeSearchParams("second"), state, settings);
+
+        REQUIRE(settings.recentSearches.size() == 2U);
+        CHECK(settings.recentSearches[0].filename == "second");
+        CHECK(settings.recentSearches[1].filename == "first");
+    }
+
+    TEST_CASE("Identical search is moved to front (no duplicates)") {
+        AppSettings settings;
+        GuiState state;
+
+        RecordRecentSearch(MakeSearchParams("alpha"), state, settings);
+        RecordRecentSearch(MakeSearchParams("beta"),  state, settings);
+        RecordRecentSearch(MakeSearchParams("alpha"), state, settings);  // duplicate
+
+        REQUIRE(settings.recentSearches.size() == 2U);
+        CHECK(settings.recentSearches[0].filename == "alpha");
+        CHECK(settings.recentSearches[1].filename == "beta");
+    }
+
+    TEST_CASE("List is capped at kMaxRecentSearches") {
+        AppSettings settings;
+        GuiState state;
+
+        const auto limit = static_cast<int>(settings_defaults::kMaxRecentSearches);
+        for (int i = 0; i < limit + 5; ++i) {
+            RecordRecentSearch(MakeSearchParams(std::to_string(i)), state, settings);
+        }
+
+        CHECK(settings.recentSearches.size() == settings_defaults::kMaxRecentSearches);
+    }
+
+    TEST_CASE("Time filter is serialised into the recent search") {
+        AppSettings settings;
+        GuiState state;
+        state.timeFilter = TimeFilter::Today;
+        const SearchParams params = MakeSearchParams("report");
+
+        RecordRecentSearch(params, state, settings);
+
+        REQUIRE(!settings.recentSearches.empty());
+        CHECK(settings.recentSearches[0].timeFilter == std::string(TimeFilterToString(TimeFilter::Today)));
+    }
+
+    TEST_CASE("Size filter is serialised into the recent search") {
+        AppSettings settings;
+        GuiState state;
+        state.sizeFilter = SizeFilter::Large;
+        const SearchParams params = MakeSearchParams("video");
+
+        RecordRecentSearch(params, state, settings);
+
+        REQUIRE(!settings.recentSearches.empty());
+        CHECK(settings.recentSearches[0].sizeFilter == std::string(SizeFilterToString(SizeFilter::Large)));
+    }
+
+    TEST_CASE("Searches differing only in extension are not treated as duplicates") {
+        AppSettings settings;
+        GuiState state;
+
+        RecordRecentSearch(MakeSearchParams("file", "txt"), state, settings);
+        RecordRecentSearch(MakeSearchParams("file", "pdf"), state, settings);
+
+        CHECK(settings.recentSearches.size() == 2U);
+    }
+
+    TEST_CASE("AI search description is always empty for recent searches") {
+        AppSettings settings;
+        GuiState state;
+        const SearchParams params = MakeSearchParams("report");
+
+        RecordRecentSearch(params, state, settings);
+
+        REQUIRE(!settings.recentSearches.empty());
+        CHECK(settings.recentSearches[0].aiSearchDescription.empty());
+    }
+
+}  // TEST_SUITE("RecordRecentSearch")
 

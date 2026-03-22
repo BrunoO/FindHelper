@@ -1,11 +1,8 @@
-#include "core/IndexBuilder.h"
+#include "core/IndexBuilderBase.h"
 
 #include "crawler/FolderCrawler.h"
 #include "index/FileIndex.h"
 #include "utils/Logger.h"
-
-#include <atomic>
-#include <thread>
 
 namespace {
 
@@ -18,55 +15,40 @@ void MarkFailedWithMessage(IndexBuildState* state, const char* message) {
   state->SetLastErrorMessage(message);
 }
 
-class FolderCrawlerIndexBuilder final : public IIndexBuilder {
+class FolderCrawlerIndexBuilder final : public IndexBuilderBase {
 public:
   FolderCrawlerIndexBuilder(FileIndex& file_index, IndexBuilderConfig config)
-      : file_index_(file_index)
-      , config_(std::move(config)) {}
+      : IndexBuilderBase(file_index, std::move(config)) {}
 
-  ~FolderCrawlerIndexBuilder() override {  // NOLINT(bugprone-exception-escape) - Stop() wraps thread::join in a catch-all; no exception can escape
-    Stop();
-  }
-
-  // Non-copyable, non-movable (manages indexing state)
-  FolderCrawlerIndexBuilder(const FolderCrawlerIndexBuilder&) = delete;
-  FolderCrawlerIndexBuilder& operator=(const FolderCrawlerIndexBuilder&) = delete;
-  FolderCrawlerIndexBuilder(FolderCrawlerIndexBuilder&&) = delete;
-  FolderCrawlerIndexBuilder& operator=(FolderCrawlerIndexBuilder&&) = delete;
+  ~FolderCrawlerIndexBuilder() override = default;
 
   void Start(IndexBuildState& state) override {  // NOLINT(readability-function-cognitive-complexity) - Lambda body contributes complexity; splitting would require complex state sharing (see NOSONAR cpp:S1188)
     // If no crawl folder is configured, there is nothing to do.
-    if (!HasCrawlFolder(config_)) {
+    if (!HasCrawlFolder(GetConfig())) {
       LOG_INFO_BUILD("FolderCrawlerIndexBuilder: no crawl folder specified, skipping background build");
       return;
     }
 
-    // Ensure we don't start twice.
-    if (bool expected = false; !running_.compare_exchange_strong(expected, true)) {  // NOLINT(misc-const-correctness) - expected must be non-const because compare_exchange_strong modifies it if exchange fails
+    if (!BeginStart(state)) {
       LOG_WARNING("FolderCrawlerIndexBuilder::Start called while already running");
       return;
     }
 
-    state.MarkStarting();
-
-    // Remember the shared state so Stop() can signal cancellation.
-    shared_state_ = &state;
-
     // Launch background thread to perform the crawl.
-    worker_thread_ = std::thread([this]() {  // NOLINT(readability-function-cognitive-complexity) NOSONAR(cpp:S1188) - Lambda encapsulates crawl + finalize; splitting would complicate state sharing
-      if (IndexBuildState* state = shared_state_; state != nullptr) {
+    GetWorkerThread() = std::thread([this]() {  // NOLINT(readability-function-cognitive-complexity) NOSONAR(cpp:S1188) - Lambda encapsulates crawl + finalize; splitting would complicate state sharing
+      if (IndexBuildState* state = GetSharedState(); state != nullptr) {
         try {
-          LOG_INFO_BUILD("FolderCrawlerIndexBuilder: starting crawl for folder: " << config_.crawl_folder);
+          LOG_INFO_BUILD("FolderCrawlerIndexBuilder: starting crawl for folder: " << GetConfig().crawl_folder);
 
           const FolderCrawlerConfig crawler_config{};
           // Use default thread count (0 = auto) and default batch/progress settings.
-          FolderCrawler crawler(file_index_, crawler_config);
+          FolderCrawler crawler(GetFileIndex(), crawler_config);
 
           // Use the shared entries_processed as the progress counter for total entries.
           std::atomic<size_t>* progress_counter = &state->entries_processed;
           const std::atomic<bool>* cancel_flag = &state->cancel_requested;
 
-          const bool success = crawler.Crawl(config_.crawl_folder, progress_counter, cancel_flag);
+          const bool success = crawler.Crawl(GetConfig().crawl_folder, progress_counter, cancel_flag);
 
           // After crawl completes (or fails), finalize index if successful.
           if (success) {
@@ -82,7 +64,7 @@ public:
             // The finalizing flag blocks concurrent searches while PathStorage
             // is cleared and rebuilt.
             state->finalizing_population.store(true);
-            file_index_.RecomputeAllPaths();
+            GetFileIndex().RecomputeAllPaths();
             state->finalizing_population.store(false);
 
             // Update final metrics
@@ -109,32 +91,10 @@ public:
         }
         state->MarkInactive();
       }
-      running_.store(false);
+      GetRunning().store(false);
     });
   }
 
-  void Stop() override {
-    // If the worker thread was ever started, make sure we always join it.
-    if (worker_thread_.joinable()) {
-      // Request cooperative cancellation if the crawl is still running.
-      if (running_.load() && shared_state_ != nullptr) {
-        shared_state_->cancel_requested.store(true);
-      }
-      try {
-        worker_thread_.join();
-      } catch (...) {  // NOSONAR(cpp:S2738) - Destructors must not throw exceptions - silently ignore join errors
-        // Best-effort: do not throw from destructor/Stop
-        LOG_ERROR("FolderCrawlerIndexBuilder: exception while joining worker thread");
-      }
-    }
-  }
-
-private:
-  FileIndex& file_index_;           // NOLINT(readability-identifier-naming) - Project convention: snake_case_ (CXX17_NAMING_CONVENTIONS)
-  IndexBuilderConfig config_;       // NOLINT(readability-identifier-naming) - Project convention: snake_case_
-  std::atomic<bool> running_{false};  // NOLINT(readability-identifier-naming) - Project convention: snake_case_
-  std::thread worker_thread_;       // NOLINT(readability-identifier-naming) - Project convention: snake_case_
-  IndexBuildState* shared_state_ = nullptr;  // NOLINT(readability-identifier-naming) - Project convention: snake_case_
 };
 
 } // namespace

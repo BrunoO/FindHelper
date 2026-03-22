@@ -5,18 +5,41 @@
 #include <random>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "path/PathPatternMatcher.h"
+
+namespace {
+
+using path_pattern::CompiledPathPattern;
+using path_pattern::PathPatternMatches;
+
+// Shared match loop for all pattern benchmarks (Sonar duplication reduction).
+void RunMatchAllPathsBenchmarkLoop(const std::vector<std::string>& paths,
+                                   const CompiledPathPattern& pattern) {
+  int matches = 0;
+  for (const auto& path : paths) {
+    if (PathPatternMatches(pattern, path)) {
+      matches++;
+    }
+  }
+  volatile int keep = matches;  // NOSONAR(cpp:S3687) - volatile prevents compiler from optimizing away matches computation in benchmark
+  (void)keep;
+}
+
+}  // namespace
 
 // Simple benchmark utility
 class Benchmark {
  public:
   template<typename Func>
   static void Run(std::string_view name, int iterations, Func&& func) {
+    std::decay_t<Func> callable = std::forward<Func>(func);
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < iterations; ++i) {
-      func();
+      std::invoke(callable);
     }
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -28,7 +51,7 @@ class Benchmark {
               << duration << " us total"
               << ", " << std::setw(10) << std::fixed << std::setprecision(3) << avg_us << " us/op"
               << ", " << std::fixed << std::setprecision(2) << ops_sec << " ops/sec"
-              << std::defaultfloat << std::endl;
+              << std::defaultfloat << '\n';
   }
 };
 
@@ -42,6 +65,7 @@ std::vector<std::string> GeneratePaths(size_t count) {
   std::vector<std::string> files = {"main", "helper", "view", "controller", "model", "config"};
   std::vector<std::string> exts = {".cpp", ".h", ".txt", ".md", ".json", ".xml"};
 
+  // NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) - Fixed seed for reproducible benchmark paths (not security)
   std::mt19937 gen(42);  // NOSONAR(cpp:S2245) - Fixed seed for benchmark reproducibility (not used for security)
   std::uniform_int_distribution<size_t> dis_prefix(0, prefixes.size() - 1);
   std::uniform_int_distribution<size_t> dis_dir(0, dirs.size() - 1);
@@ -71,55 +95,33 @@ std::vector<std::string> GeneratePaths(size_t count) {
 
 int main() {
   constexpr size_t kPathCount = 100000;
-  std::cout << "Generating " << kPathCount << " paths..." << std::endl;
+  std::cout << "Generating " << kPathCount << " paths...\n";
   auto paths = GeneratePaths(kPathCount);
 
-  std::cout << "Running benchmarks..." << std::endl;
-  std::cout << "--------------------------------------------------------------------------------"
-            << std::endl;
+  std::cout << "Running benchmarks...\n";
+  std::cout << "--------------------------------------------------------------------------------\n";
 
   using namespace path_pattern;
 
   // 1. Literal match (should ideally be fast if exact match optimized, currently likely DFA/NFA)
   {
     auto pattern = CompilePathPattern("src/core/main0.cpp", MatchOptions::kNone);
-    Benchmark::Run("Literal Match (Exact)", 100, [&paths, &pattern]() {
-      int matches = 0;
-      for (const auto& path : paths) {
-        if (PathPatternMatches(pattern, path))
-          matches++;
-      }
-      volatile int keep = matches;  // NOSONAR(cpp:S3687) - volatile prevents compiler from optimizing away matches computation in benchmark
-      (void)keep;
-    });
+    Benchmark::Run("Literal Match (Exact)", 100,
+                   [&paths, &pattern]() { RunMatchAllPathsBenchmarkLoop(paths, pattern); });
   }
 
   // 2. Simple Wildcard (DFA optimized)
   {
     auto pattern = CompilePathPattern("src/**/*.cpp", MatchOptions::kNone);
-    Benchmark::Run("Simple Wildcard (src/**/*.cpp)", 100, [&paths, &pattern]() {
-      int matches = 0;
-      for (const auto& path : paths) {
-        if (PathPatternMatches(pattern, path))
-          matches++;
-      }
-      volatile int keep = matches;  // NOSONAR(cpp:S3687) - volatile prevents compiler from optimizing away matches computation in benchmark
-      (void)keep;
-    });
+    Benchmark::Run("Simple Wildcard (src/**/*.cpp)", 100,
+                   [&paths, &pattern]() { RunMatchAllPathsBenchmarkLoop(paths, pattern); });
   }
 
   // 3. Simple Wildcard Suffix (DFA optimized)
   {
     auto pattern = CompilePathPattern("**/*.txt", MatchOptions::kNone);
-    Benchmark::Run("Extension Suffix (**/*.txt)", 100, [&paths, &pattern]() {
-      int matches = 0;
-      for (const auto& path : paths) {
-        if (PathPatternMatches(pattern, path))
-          matches++;
-      }
-      volatile int keep = matches;  // NOSONAR(cpp:S3687) - volatile prevents compiler from optimizing away matches computation in benchmark
-      (void)keep;
-    });
+    Benchmark::Run("Extension Suffix (**/*.txt)", 100,
+                   [&paths, &pattern]() { RunMatchAllPathsBenchmarkLoop(paths, pattern); });
   }
 
   // 4. Advanced Pattern (NFA/Backtracking - no DFA)
@@ -127,30 +129,15 @@ int main() {
   {
     auto pattern = CompilePathPattern("src/**/*[0-9].cpp", MatchOptions::kNone);
     Benchmark::Run("Advanced Pattern (src/**/*[0-9].cpp)", 20,
-                   [&paths, &pattern]() {  // Less iterations as it might be slow
-                     int matches = 0;
-                     for (const auto& path : paths) {
-                       if (PathPatternMatches(pattern, path))
-                         matches++;
-                     }
-                     volatile int keep = matches;  // NOSONAR(cpp:S3687) - volatile prevents compiler from optimizing away matches computation in benchmark
-                     (void)keep;
-                   });
+                     [&paths, &pattern]() { RunMatchAllPathsBenchmarkLoop(paths, pattern); });
   }
 
   // 5. Literal within wildcards (Target for optimization)
   // "controller" is a literal that could be extracted
   {
     auto pattern = CompilePathPattern("**/*controller*.*", MatchOptions::kNone);
-    Benchmark::Run("Literal embedded (**/*controller*.*)", 50, [&paths, &pattern]() {
-      int matches = 0;
-      for (const auto& path : paths) {
-        if (PathPatternMatches(pattern, path))
-          matches++;
-      }
-      volatile int keep = matches;  // NOSONAR(cpp:S3687) - volatile prevents compiler from optimizing away matches computation in benchmark
-      (void)keep;
-    });
+    Benchmark::Run("Literal embedded (**/*controller*.*)", 50,
+                   [&paths, &pattern]() { RunMatchAllPathsBenchmarkLoop(paths, pattern); });
   }
 
   return 0;

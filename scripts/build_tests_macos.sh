@@ -165,8 +165,9 @@ if [[ "$USE_NINJA" == "ON" ]]; then
     fi
 fi
 
-# Define test targets in an array (must match CMakeLists.txt TEST_DEPENDENCIES / add_test)
-# Optional: gemini_api_utils_tests is only built when CURL is found; run loop skips if missing
+# Define test targets in an array — same names and order as CMakeLists.txt set(TEST_TARGETS ...)
+# near the run_tests custom target (ctest registers add_test for each; this list drives build + run order).
+# Optional: gemini_api_utils_tests is only built when CURL is found (Linux); run loop skips if missing.
 TEST_TARGETS=(
     "string_search_tests"
     "fuzzy_search_tests"
@@ -185,10 +186,11 @@ TEST_TARGETS=(
     "lazy_attribute_loader_tests"
     "parallel_search_engine_tests"
     "time_filter_utils_tests"
+    "command_line_args_tests"
     "gui_state_tests"
     "file_index_search_strategy_tests"
-    "streaming_results_collector_tests"
     "gemini_api_utils_tests"
+    "streaming_results_collector_tests"
     "settings_tests"
     "search_context_tests"
     "index_operations_tests"
@@ -198,7 +200,10 @@ TEST_TARGETS=(
     "std_regex_utils_tests"
     "search_result_sort_tests"
     "total_size_computation_tests"
+    "exception_handling_tests"
     "incremental_search_state_tests"
+    "folder_size_aggregator_tests"
+    "folder_crawler_tests"
     "path_pattern_benchmark"
     "search_benchmark"
 )
@@ -319,8 +324,10 @@ if [[ "$RUN_IMGUI_TEST_ENGINE" == "ON" && -x "$FINDHELPER_EXE" && -n "$IMGUI_TES
     if [[ ! -f "$INDEX_FILE" ]]; then
         echo "  Note: $INDEX_FILE not found; regression tests may fail (other tests still run)."
     fi
-    # Absolute path for index_configuration test (select_folder_and_start_indexing) so it passes regardless of CWD
-    export IMGUI_TEST_INDEX_FOLDER="$PROJECT_ROOT/tests/data"
+    # Absolute path for index_configuration test (select_folder_and_start_indexing).
+    # Points at the fixture subdirectory so exact extension-count assertions hold.
+    # Recreate the fixture if missing: scripts/create_test_fixture.sh
+    export IMGUI_TEST_INDEX_FOLDER="$PROJECT_ROOT/tests/data/fixture"
     if [[ "$ENABLE_COVERAGE" == "ON" ]]; then
         if (cd "$PROJECT_ROOT" && LLVM_PROFILE_FILE="$BUILD_DIR/FindHelper_%p.profraw" "$FINDHELPER_EXE" \
             --run-imgui-tests-and-exit \

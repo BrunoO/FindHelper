@@ -14,7 +14,6 @@
 #include <cstring>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include <GLFW/glfw3.h>
@@ -693,7 +692,7 @@ void TryStartFileDragDropIfAllowed(const SearchResult& drag_result, const GuiSta
 std::vector<std::string_view> CollectEligibleDragPaths(
   const std::vector<SearchResult>& display_results,
   const GuiState& state) {
-  const int item_count = static_cast<int>(display_results.size());
+  const auto item_count = static_cast<int>(display_results.size());
   std::vector<std::string_view> paths;
   for (const int row : state.GetSelectedRows()) {
     if (row < 0 || row >= item_count) {
@@ -705,6 +704,27 @@ std::vector<std::string_view> CollectEligibleDragPaths(
     }
   }
   return paths;
+}
+
+/**
+ * @brief After movement threshold: snap selection for unselected row or multi-file drag for selection.
+ * Extracted to keep HandleDragAndDrop nesting within Sonar S134 limits.
+ */
+void StartDragAfterThresholdExceeded(const SearchResult& drag_result, int drag_candidate_row,
+                                     const std::vector<SearchResult>& display_results,
+                                     GuiState& state) {
+  if (!state.IsRowSelected(drag_candidate_row)) {
+    state.SetSelectedRow(drag_candidate_row);
+    TryStartFileDragDropIfAllowed(drag_result, state);
+    return;
+  }
+  const auto eligible_paths = CollectEligibleDragPaths(display_results, state);
+  if (eligible_paths.empty()) {
+    return;
+  }
+#if defined(_WIN32) || defined(__APPLE__)
+  drag_drop::StartFileDragDrop(eligible_paths);
+#endif  // defined(_WIN32) || defined(__APPLE__)
 }
 
 /**
@@ -746,22 +766,10 @@ void HandleDragAndDrop(bool& drag_candidate_active, int& drag_candidate_row,
       const bool row_valid =
         drag_candidate_row >= 0 &&
         drag_candidate_row < static_cast<int>(display_results.size());  // NOSONAR(cpp:S1905) - Required cast for signed/unsigned comparison
-      if (over_threshold && row_valid) {  // NOSONAR(cpp:S134) - Nesting required for drag gesture; extracted helper keeps table at 3 levels
+      if (over_threshold && row_valid) {
         const auto& drag_result =
           display_results[static_cast<std::size_t>(drag_candidate_row)];  // NOSONAR(cpp:S1905) - Required cast for array indexing
-        if (!state.IsRowSelected(drag_candidate_row)) {
-          // Drag from unselected row: snap selection to that row, then single-file drag.
-          state.SetSelectedRow(drag_candidate_row);
-          TryStartFileDragDropIfAllowed(drag_result, state);
-        } else {
-          const auto eligible_paths = CollectEligibleDragPaths(display_results, state);
-          if (!eligible_paths.empty()) {
-#if defined(_WIN32) || defined(__APPLE__)
-            drag_drop::StartFileDragDrop(eligible_paths);
-#endif  // defined(_WIN32) || defined(__APPLE__)
-          }
-          // If eligible_paths is empty (all dirs or pending-delete): no-op.
-        }
+        StartDragAfterThresholdExceeded(drag_result, drag_candidate_row, display_results, state);
         drag_started = true;
       }
     }
@@ -814,11 +822,9 @@ void ExecuteMultiDelete(GuiState& state) {
  * Delete key handling is in HandleResultsTableKeyboardShortcuts; this only opens and draws the popup.
  *
  * @param state GUI state (modified by delete operations)
- * @param display_results Unused; kept for API compatibility with call site
  */
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Cohesive delete confirmation modal: single/multi-item display, per-item loop, aggregate feedback; splitting would fragment closely related logic
-void HandleDeleteKeyAndPopup(GuiState& state,  // NOSONAR(cpp:S3776) - Same rationale as above
-                             [[maybe_unused]] const std::vector<SearchResult>& display_results) {
+void HandleDeleteKeyAndPopup(GuiState& state) {  // NOSONAR(cpp:S3776) - Same rationale as above
   if (state.showDeletePopup) {
     ImGui::OpenPopup("Confirm Delete");
     state.showDeletePopup = false;
@@ -872,15 +878,24 @@ std::vector<uint64_t> GetMarkedIdsInOrder(const GuiState& state) {
   return ids;
 }
 
-void ExecuteBulkDelete(GuiState& state, const FileIndex& file_index) {
+// Iterates marked file paths in deterministic order; eliminates GetPathAccessor +
+// GetMarkedIdsInOrder boilerplate from bulk-copy and bulk-delete callers.
+template <typename Callback>
+void ForEachMarkedPath(const GuiState& state, const FileIndex& file_index,
+                       Callback callback) {
   const auto& path_accessor = file_index.GetPathAccessor();
   for (const uint64_t file_id : GetMarkedIdsInOrder(state)) {
-    const std::string_view path = path_accessor.GetPathView(file_id);
+    callback(path_accessor.GetPathView(file_id));
+  }
+}
+
+void ExecuteBulkDelete(GuiState& state, const FileIndex& file_index) {
+  ForEachMarkedPath(state, file_index, [&state](std::string_view path) {
     if (!path.empty() &&
         file_operations::DeleteFileToRecycleBin(std::string(path))) {
       state.pendingDeletions.emplace(path);
     }
-  }
+  });
   state.markedFileIds.clear();
   state.ClearSelection();
   ImGui::CloseCurrentPopup();
@@ -1444,9 +1459,8 @@ void ResultsTable::Render(
                                           table_scroll_y_for_search,
                                           base_results);
 
-      // Handle Delete Key and confirmation popup (use display_results so delete target matches
-      // table)
-      HandleDeleteKeyAndPopup(state, display_results);
+      // Delete confirmation modal (paths come from state set by keyboard shortcuts)
+      HandleDeleteKeyAndPopup(state);
       HandleBulkDeletePopup(state, file_index);
     }
   }
@@ -1460,14 +1474,12 @@ void CopyMarkedPathsToClipboard(const GuiState& state,
   }
 
   std::string all_paths;  // NOLINT(misc-const-correctness) - modified by append/push_back in loop
-  const auto& path_accessor = file_index.GetPathAccessor();
-  for (const uint64_t file_id : GetMarkedIdsInOrder(state)) {
-    const std::string_view path = path_accessor.GetPathView(file_id);
+  ForEachMarkedPath(state, file_index, [&all_paths](std::string_view path) {
     if (!path.empty()) {
       all_paths.append(path.data(), path.size());
       all_paths.push_back('\n');
     }
-  }
+  });
 
   if (!all_paths.empty()) {
     clipboard_utils::SetClipboardText(glfw_window, all_paths);
@@ -1482,11 +1494,9 @@ void CopyMarkedFilenamesToClipboard(const GuiState& state,
   }
 
   std::string all_filenames;  // NOLINT(misc-const-correctness) - modified by append/push_back in loop
-  const auto& path_accessor = file_index.GetPathAccessor();
-  for (const uint64_t file_id : GetMarkedIdsInOrder(state)) {
-    const std::string_view path = path_accessor.GetPathView(file_id);
+  ForEachMarkedPath(state, file_index, [&all_filenames](std::string_view path) {
     if (path.empty()) {
-      continue;
+      return;
     }
     const size_t last_separator = path.find_last_of("\\/");
     std::string_view filename =
@@ -1498,10 +1508,10 @@ void CopyMarkedFilenamesToClipboard(const GuiState& state,
       filename = filename.substr(guard_last_sep + 1U);
     }
     if (!filename.empty()) {
-      all_filenames.append(filename.data(), filename.size());
+      all_filenames.append(filename.data(), filename.size());  // NOLINT(bugprone-suspicious-stringview-data-usage) - append(ptr,len) does not require null termination
       all_filenames.push_back('\n');
     }
-  }
+  });
 
   if (!all_filenames.empty()) {
     clipboard_utils::SetClipboardText(glfw_window, all_filenames);

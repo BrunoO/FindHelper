@@ -101,7 +101,8 @@ try {
     
     # Run Duplo with JSON output
     Write-Host "Running Duplo analysis (JSON output)..." -ForegroundColor Yellow
-    & $DuploBin -ml $MinLines -ip -json $JsonOutput $TempFile
+    # Duplo: -json <input_filelist> <output_json> (same as text mode, output is JSON)
+    & $DuploBin -ml $MinLines -ip -json $TempFile $JsonOutput
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "WARNING: Duplo JSON output generation failed (text report still available)" -ForegroundColor Yellow

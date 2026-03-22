@@ -1,28 +1,22 @@
 #ifdef _WIN32
 
-#include "core/IndexBuilder.h"
+#include "core/IndexBuilderBase.h"
 
 #include "index/FileIndex.h"
 #include "usn/UsnMonitor.h"
 #include "utils/Logger.h"
 
-#include <atomic>
-#include <thread>
-
 namespace {
 
-class WindowsIndexBuilder final : public IIndexBuilder {
+class WindowsIndexBuilder final : public IndexBuilderBase {
 public:
   WindowsIndexBuilder(FileIndex& file_index,
                       UsnMonitor* monitor,
                       IndexBuilderConfig config)
-      : file_index_(file_index)
-      , monitor_(monitor)
-      , config_(std::move(config)) {}
+      : IndexBuilderBase(file_index, std::move(config))
+      , monitor_(monitor) {}
 
-  ~WindowsIndexBuilder() override {
-    Stop();
-  }
+  ~WindowsIndexBuilder() override = default;
 
   void Start(IndexBuildState& state) override {
     if (!monitor_) {
@@ -30,21 +24,17 @@ public:
       return;
     }
 
-    if (bool expected = false; !running_.compare_exchange_strong(expected, true)) {
+    if (!BeginStart(state)) {
       LOG_WARNING("WindowsIndexBuilder::Start called while already running");
       return;
     }
 
-    state.MarkStarting();
-
-    shared_state_ = &state;
-
     // USN monitor already runs its own background threads. This builder
     // simply polls its metrics periodically and updates IndexBuildState.
-    worker_thread_ = std::thread([this]() {
-      IndexBuildState* state = shared_state_;
+    GetWorkerThread() = std::thread([this]() {
+      IndexBuildState* state = GetSharedState();
       if (state == nullptr || monitor_ == nullptr) {
-        running_.store(false);
+        GetRunning().store(false);
         return;
       }
 
@@ -106,35 +96,12 @@ public:
       }
 
       state->MarkInactive();
-      running_.store(false);
+      GetRunning().store(false);
     });
   }
 
-  void Stop() override {
-    if (shared_state_ != nullptr) {
-      shared_state_->cancel_requested.store(true);
-    }
-
-    if (worker_thread_.joinable()) {
-      try {
-        worker_thread_.join();
-      } catch (const std::exception& e) {
-        LOG_ERROR_BUILD("WindowsIndexBuilder: exception while joining worker thread: " << e.what());
-      } catch (...) {
-        LOG_ERROR_BUILD("WindowsIndexBuilder: unknown exception while joining worker thread");
-      }
-    }
-
-    running_.store(false);
-  }
-
 private:
-  FileIndex& file_index_;
   UsnMonitor* monitor_;
-  IndexBuilderConfig config_;
-  std::atomic<bool> running_{false};
-  std::thread worker_thread_;
-  IndexBuildState* shared_state_ = nullptr;
 };
 
 } // namespace

@@ -48,14 +48,14 @@ public:
    * - Search Performance (cross-platform): Search metrics, timing, throughput
    *
    * @param p_open Pointer to window visibility flag (modified when window is closed)
-   * @param monitor UsnMonitor pointer (nullptr on macOS, used for Windows metrics)
+   * @param monitor UsnMonitor pointer (nullptr on macOS; const for read/metrics reset)
    * @param search_worker Search worker for search performance metrics
    * @param file_index File index for maintenance statistics
    */
   static void Render(bool *p_open,
-                           [[maybe_unused]] UsnMonitor *monitor,
-                           SearchWorker *search_worker,
-                           FileIndex &file_index);
+                     [[maybe_unused]] const UsnMonitor *monitor,
+                     SearchWorker *search_worker,
+                     FileIndex &file_index);
 
   /**
    * @brief Helper to render metric text with tooltip
@@ -94,6 +94,12 @@ private:
    */
   static void RenderTimeDistributionMetrics(uint64_t total_search_time_ms,
                                            uint64_t total_postprocess_time_ms);
+
+  /** Body passed to RenderToolWindow (extracted from lambda for Sonar S1188). */
+  static void RenderMetricsToolWindowBody(const UsnMonitor *monitor,
+                                          SearchWorker *search_worker,
+                                          FileIndex &file_index,
+                                          bool *p_open);
 
   /** Renders Windows-only USN monitor metrics section (if monitor non-null). */
   static void RenderMonitorMetricsSection(const UsnMonitor *monitor,

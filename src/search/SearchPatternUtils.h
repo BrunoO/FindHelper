@@ -135,13 +135,9 @@ inline bool MatchPattern(std::string_view pattern, std::string_view text,
     return case_sensitive ? simple_regex::GlobMatch(pattern, text)
                           : simple_regex::GlobMatchI(pattern, text);
 
-  case PatternType::Substring: {
-    if (case_sensitive) {
-      return string_search::ContainsSubstring(text, pattern);
-    }
-    // Case-insensitive: use ContainsSubstringI (no full ToLower copies; uses AVX2/prefix/reverse paths)
-    return string_search::ContainsSubstringI(text, pattern);
-  }
+  case PatternType::Substring:
+    // ContainsSubstringI: no full ToLower copies; uses AVX2/prefix/reverse paths
+    return string_search::ContainsSubstring(text, pattern, case_sensitive);
   }
 
   return false; // Should never reach here

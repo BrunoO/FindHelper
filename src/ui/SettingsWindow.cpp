@@ -18,6 +18,7 @@
 
 #include "core/IndexBuilder.h"
 #include "core/Settings.h"
+#include "gui/ImGuiUtils.h"
 #include "gui/UIActions.h"
 #include "imgui.h"
 #include "index/FileIndex.h"
@@ -408,9 +409,7 @@ void RenderPerformanceSettings(AppSettings& settings) {
     }
   }
 
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
+  SeparatorWithSpacing();
 }
 
 // Forward declaration for ValidateFolderPath (used in anonymous namespace helpers)
@@ -604,9 +603,7 @@ void RenderRecrawlSettings(AppSettings& settings) {
     return;
   }
 
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
+  SeparatorWithSpacing();
   ImGui::Text("Periodic Recrawl:");
   ImGui::Spacing();
 
@@ -703,9 +700,7 @@ void RenderIndexConfiguration(AppSettings& settings, [[maybe_unused]] FileIndex&
     RenderRecrawlSummary(settings);
   }
 
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
+  SeparatorWithSpacing();
 }
 
 // Helper function to render log file information section
@@ -747,9 +742,7 @@ void RenderLogFileSection(
 }
 
 void RenderTipsSection() {
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
+  SeparatorWithSpacing();
 
   if (ImGui::CollapsingHeader("Tips")) {
     ImGui::TextWrapped("Settings are saved to a small JSON file next to the executable.\n"

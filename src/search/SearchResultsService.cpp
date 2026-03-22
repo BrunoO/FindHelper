@@ -28,14 +28,7 @@ void UpdateDisplayedTotalSizeAfterSort(GuiState& state) {
       state.lastSortColumn != ResultColumn::LastModified) {
     return;
   }
-  uint64_t total_bytes = 0;
-  for (const auto& r : state.searchResults) {
-    if (!r.isDirectory && r.fileSize != kFileSizeNotLoaded &&
-        r.fileSize != kFileSizeFailed) {
-      total_bytes += r.fileSize;
-    }
-  }
-  state.displayedTotalSizeBytes = total_bytes;
+  state.displayedTotalSizeBytes = ComputeTotalFileBytes(state.searchResults);
   if (state.timeFilter == TimeFilter::None) {
     state.displayedTotalSizeValid = true;
   }

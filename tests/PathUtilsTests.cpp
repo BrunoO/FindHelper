@@ -1,14 +1,15 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "TestHelpers.h"
 #include "doctest/doctest.h"
 #include "path/PathUtils.h"
 
-#ifdef _WIN32
 namespace {
 
+#ifdef _WIN32
 // Asserts the three standard postconditions for a truncated path:
 // correct prefix preserved, ellipsis present, and result fits within max_width.
 void RequireTruncated(const std::string& result,
@@ -20,8 +21,42 @@ void RequireTruncated(const std::string& result,
   REQUIRE(test_helpers::CheckPathWidthWithinLimit(result, max_width, calc));
 }
 
-}  // namespace
+// Long Windows path truncation: drive preserved, ellipsis, suffix, width (shared by SUBCASEs).
+void RequireWindowsLongPathTruncated(const std::string& result,
+                                      float max_width,
+                                      const std::string& expected_suffix,
+                                      const path_utils::TextWidthCalculator& calc) {
+  REQUIRE(test_helpers::CheckPathPrefix(result, "C:\\"));
+  REQUIRE(test_helpers::CheckPathContainsEllipsis(result));
+  REQUIRE(result.length() > 6);
+  REQUIRE(test_helpers::CheckPathContainsSuffix(result, expected_suffix));
+  REQUIRE(test_helpers::CheckPathWidthWithinLimit(result, max_width, calc));
+}
 #endif  // _WIN32
+
+#ifndef _WIN32
+// Relative long path (no drive): leading ellipsis + suffix + width.
+void RequireRelativeLongPathTruncated(const std::string& result,
+                                      float max_width,
+                                      const std::string& expected_suffix,
+                                      const path_utils::TextWidthCalculator& calc) {
+  REQUIRE(test_helpers::CheckPathPrefix(result, "..."));
+  REQUIRE(result.length() > 3);
+  REQUIRE(test_helpers::CheckPathContainsSuffix(result, expected_suffix));
+  REQUIRE(test_helpers::CheckPathWidthWithinLimit(result, max_width, calc));
+}
+
+// Unix absolute truncation: fixed prefix, ellipsis, length bound (Sonar duplication reduction).
+void RequireUnixTruncatedPrefixEllipsis(const std::string& result,
+                                        std::string_view prefix,
+                                        float max_width) {
+  REQUIRE(test_helpers::CheckPathPrefix(result, prefix));
+  REQUIRE(test_helpers::CheckPathContainsEllipsis(result));
+  REQUIRE(result.length() <= static_cast<size_t>(max_width));
+}
+#endif  // !_WIN32
+
+}  // namespace
 
 TEST_SUITE("PathUtils") {
 
@@ -65,18 +100,7 @@ TEST_SUITE("PathUtils") {
             const float max_width = 30.0f; // Should fit "C:\\...\\VeryLongFileName.txt" or similar
 
             const std::string result = path_utils::TruncatePathAtBeginning(path, max_width, monospace_calc);
-
-            // Result should preserve root prefix "C:\\" and contain "..."
-            REQUIRE(test_helpers::CheckPathPrefix(result, "C:\\"));
-            REQUIRE(test_helpers::CheckPathContainsEllipsis(result));
-
-            // Result should contain a suffix of the original path
-            REQUIRE(result.length() > 6); // At least "C:\\..."
-            // Should end with filename or last components
-            REQUIRE(test_helpers::CheckPathContainsSuffix(result, "VeryLongFileName.txt"));
-
-            // Result width should fit within max_width (with some tolerance)
-            REQUIRE(test_helpers::CheckPathWidthWithinLimit(result, max_width, monospace_calc));
+            RequireWindowsLongPathTruncated(result, max_width, "VeryLongFileName.txt", monospace_calc);
         }
 
         TEST_CASE("prefers breaking at path separators") {
@@ -107,17 +131,7 @@ TEST_SUITE("PathUtils") {
             const float max_width = 25.0f; // Should fit "...VeryLongFileName.txt" (3 + 20 = 23 chars)
 
             const std::string result = path_utils::TruncatePathAtBeginning(path, max_width, monospace_calc);
-
-            // Result should start with "..."
-            REQUIRE(test_helpers::CheckPathPrefix(result, "..."));
-
-            // Result should contain a suffix of the original path
-            REQUIRE(result.length() > 3);
-            // Should end with filename or last components
-            REQUIRE(test_helpers::CheckPathContainsSuffix(result, "VeryLongFileName.txt"));
-
-            // Result width should fit within max_width (with some tolerance)
-            REQUIRE(test_helpers::CheckPathWidthWithinLimit(result, max_width, monospace_calc));
+            RequireRelativeLongPathTruncated(result, max_width, "VeryLongFileName.txt", monospace_calc);
         }
 
         TEST_CASE("prefers breaking at path separators") {
@@ -283,25 +297,16 @@ TEST_SUITE("PathUtils") {
             REQUIRE(test_helpers::CheckPathWidthWithinLimit(result, max_width, proportional_calc));
         }
 
-        TEST_CASE("edge case: max_width exactly equals ellipsis width") {
+        TEST_CASE("edge case: max_width at or barely above ellipsis width") {
             const std::string path = "C:\\Users\\Test\\Documents\\file.txt";
             const float ellipsis_width = monospace_calc("...");
-
-            const std::string result = path_utils::TruncatePathAtBeginning(path, ellipsis_width, monospace_calc);
-
-            // Should return ellipsis only
-            REQUIRE(result == "...");
-        }
-
-        TEST_CASE("edge case: max_width slightly larger than ellipsis width") {
-            const std::string path = "C:\\Users\\Test\\Documents\\file.txt";
-            const float ellipsis_width = monospace_calc("...");
-            const float max_width = ellipsis_width + 0.1f;
-
-            const std::string result = path_utils::TruncatePathAtBeginning(path, max_width, monospace_calc);
-
-            // Should return ellipsis only (not enough space for any path content)
-            REQUIRE(result == "...");
+            SUBCASE("exactly equals ellipsis width") {
+                REQUIRE(path_utils::TruncatePathAtBeginning(path, ellipsis_width, monospace_calc) == "...");
+            }
+            SUBCASE("slightly larger than ellipsis width") {
+                REQUIRE(path_utils::TruncatePathAtBeginning(path, ellipsis_width + 0.1f, monospace_calc) ==
+                        "...");
+            }
         }
 
         TEST_CASE("edge case: path exactly fits after ellipsis") {
@@ -345,12 +350,7 @@ TEST_SUITE("PathUtils") {
             const float max_width = 25.0f; // Not enough for full path, but enough for "/Users/.../VeryLongFileName.txt"
 
             const std::string result = path_utils::TruncatePathAtBeginning(path, max_width, monospace_calc);
-
-            // Should preserve "/Users/" prefix (first component after root)
-            REQUIRE(test_helpers::CheckPathPrefix(result, "/Users/"));
-            REQUIRE(test_helpers::CheckPathContainsEllipsis(result));
-            // Should end with filename or last components
-            REQUIRE(result.length() <= static_cast<size_t>(max_width));
+            RequireUnixTruncatedPrefixEllipsis(result, "/Users/", max_width);
         }
 
         TEST_CASE("preserves Unix root slash for paths without first component") {
@@ -358,11 +358,7 @@ TEST_SUITE("PathUtils") {
             const float max_width = 20.0f; // Very narrow, just enough for "/.../file.txt"
 
             const std::string result = path_utils::TruncatePathAtBeginning(path, max_width, monospace_calc);
-
-            // Should preserve "/" prefix at minimum
-            REQUIRE(test_helpers::CheckPathPrefix(result, "/"));
-            REQUIRE(test_helpers::CheckPathContainsEllipsis(result));
-            REQUIRE(result.length() <= static_cast<size_t>(max_width));
+            RequireUnixTruncatedPrefixEllipsis(result, "/", max_width);
         }
 #endif  // _WIN32
 
@@ -498,4 +494,39 @@ TEST_SUITE("GetDefaultVolumeRootPathView") {
         CHECK(path_utils::GetDefaultVolumeRootPathView() == "/");
     }
 #endif  // _WIN32
+}
+
+TEST_SUITE("JoinPath vector overload") {
+
+    TEST_CASE("empty vector returns empty string") {
+        const std::vector<std::string> components;
+        CHECK(path_utils::JoinPath(components) == "");
+    }
+
+    TEST_CASE("single component returns that component") {
+        const std::vector<std::string> components = {"/usr"};
+        CHECK(path_utils::JoinPath(components) == "/usr");
+    }
+
+    TEST_CASE("two components joined correctly") {
+        const std::vector<std::string> components = {"/usr", "local"};
+        CHECK(path_utils::JoinPath(components) == "/usr/local");
+    }
+
+    TEST_CASE("three components joined correctly") {
+        const std::vector<std::string> components = {"/usr", "local", "bin"};
+        CHECK(path_utils::JoinPath(components) == "/usr/local/bin");
+    }
+
+    TEST_CASE("components with trailing separator deduplicated") {
+        const std::vector<std::string> components = {"/usr/", "local/", "bin"};
+        CHECK(path_utils::JoinPath(components) == "/usr/local/bin");
+    }
+
+    TEST_CASE("result equals repeated two-argument JoinPath") {
+        const std::vector<std::string> components = {"a", "b", "c", "d"};
+        const std::string expected =
+            path_utils::JoinPath(path_utils::JoinPath(path_utils::JoinPath("a", "b"), "c"), "d");
+        CHECK(path_utils::JoinPath(components) == expected);
+    }
 }

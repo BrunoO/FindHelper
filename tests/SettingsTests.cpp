@@ -29,6 +29,19 @@
 #include <unistd.h>  // getpid()
 #endif
 
+namespace {
+// Fixture that clears in-memory settings before and after each test,
+// ensuring isolation between tests without repeating the clear in every body.
+struct SettingsFixture {
+  SettingsFixture() { test_settings::ClearInMemorySettings(); }
+  ~SettingsFixture() { test_settings::ClearInMemorySettings(); }
+  SettingsFixture(const SettingsFixture&) = delete;
+  SettingsFixture& operator=(const SettingsFixture&) = delete;
+  SettingsFixture(SettingsFixture&&) = delete;
+  SettingsFixture& operator=(SettingsFixture&&) = delete;
+};
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Aggregated doctest suite with many checks
 TEST_SUITE("Settings") {
 
@@ -50,9 +63,7 @@ TEST_SUITE("Settings") {
 
   TEST_SUITE("In-memory settings mode") {
 
-    TEST_CASE("Set and get in-memory settings") {
-      // Clear any existing in-memory settings
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "Set and get in-memory settings") {
       CHECK_FALSE(test_settings::IsInMemoryMode());
 
       // Set custom settings
@@ -87,8 +98,7 @@ TEST_SUITE("Settings") {
       CHECK_FALSE(test_settings::IsInMemoryMode());
     }
 
-    TEST_CASE("LoadSettings uses in-memory settings when active") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings uses in-memory settings when active") {
 
       AppSettings custom;
       custom.fontFamily = "Arial";
@@ -100,12 +110,9 @@ TEST_SUITE("Settings") {
       CHECK(result == true);
       CHECK(loaded.fontFamily == "Arial");
       CHECK(loaded.fontSize == 18.0F);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("SaveSettings updates in-memory settings when active") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "SaveSettings updates in-memory settings when active") {
 
       AppSettings initial;
       initial.fontFamily = "Initial";
@@ -122,12 +129,9 @@ TEST_SUITE("Settings") {
       LoadSettings(loaded);
       CHECK(loaded.fontFamily == "Updated");
       CHECK(loaded.fontSize == 20.0F);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("GetInMemorySettings returns defaults when not set") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "GetInMemorySettings returns defaults when not set") {
 
       AppSettings settings = test_settings::GetInMemorySettings();
       CHECK(settings.fontFamily == "");
@@ -136,8 +140,7 @@ TEST_SUITE("Settings") {
   }
 
   TEST_SUITE("UI Mode and Backward Compatibility") {
-    TEST_CASE("LoadSettings with uiMode") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings with uiMode") {
 
       AppSettings custom;
       custom.uiMode = AppSettings::UIMode::Simplified;
@@ -146,12 +149,9 @@ TEST_SUITE("Settings") {
       AppSettings loaded;
       LoadSettings(loaded);
       CHECK(loaded.uiMode == AppSettings::UIMode::Simplified);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("SaveSettings with uiMode") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "SaveSettings with uiMode") {
 
       AppSettings to_save;
       to_save.uiMode = AppSettings::UIMode::Minimalistic;
@@ -160,15 +160,12 @@ TEST_SUITE("Settings") {
       AppSettings loaded;
       LoadSettings(loaded);
       CHECK(loaded.uiMode == AppSettings::UIMode::Minimalistic);
-
-      test_settings::ClearInMemorySettings();
     }
   }
 
   TEST_SUITE("LoadSettings validation") {
 
-    TEST_CASE("LoadSettings with valid JSON") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings with valid JSON") {
 
       AppSettings custom;
       custom.fontFamily = "TestFont";
@@ -195,12 +192,9 @@ TEST_SUITE("Settings") {
       CHECK(loaded.searchThreadPoolSize == 4);
       CHECK(loaded.dynamicChunkSize == 500);
       CHECK(loaded.hybridInitialWorkPercent == 60);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings validates font size range") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings validates font size range") {
 
       // Test valid range
       AppSettings valid;
@@ -221,12 +215,9 @@ TEST_SUITE("Settings") {
       // Should keep default (14.0F) since 2.0F is invalid
       // Note: In in-memory mode, validation is bypassed, so this test
       // would need file-based testing for full validation coverage
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings validates font scale range") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings validates font scale range") {
 
       AppSettings valid;
       valid.fontScale = 1.2F;  // Valid: > 0.2 and < 4.0
@@ -235,12 +226,9 @@ TEST_SUITE("Settings") {
       AppSettings loaded;
       LoadSettings(loaded);
       CHECK(loaded.fontScale == 1.2F);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings validates window dimensions") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings validates window dimensions") {
 
       // Valid width
       AppSettings valid;
@@ -252,12 +240,9 @@ TEST_SUITE("Settings") {
       LoadSettings(loaded);
       CHECK(loaded.windowWidth == 1920);
       CHECK(loaded.windowHeight == 1080);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings validates load balancing strategy") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings validates load balancing strategy") {
 
       // Test all valid strategies
       auto valid_strategies = std::vector<std::string>{"static", "hybrid", "dynamic", "interleaved"};
@@ -272,11 +257,9 @@ TEST_SUITE("Settings") {
         CHECK(loaded.loadBalancingStrategy == strategy);
       }
 
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings validates thread pool size") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings validates thread pool size") {
 
       // Test valid values: 0 (auto), 1-64
       AppSettings valid1;
@@ -302,12 +285,9 @@ TEST_SUITE("Settings") {
       AppSettings loaded3;
       LoadSettings(loaded3);
       CHECK(loaded3.searchThreadPoolSize == 64);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings validates dynamic chunk size") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings validates dynamic chunk size") {
 
       // Test valid range: 100-100000
       AppSettings valid1;
@@ -325,12 +305,9 @@ TEST_SUITE("Settings") {
       AppSettings loaded2;
       LoadSettings(loaded2);
       CHECK(loaded2.dynamicChunkSize == 100000);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings validates hybrid initial work percent") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings validates hybrid initial work percent") {
 
       // Test valid range: 50-95
       AppSettings valid1;
@@ -348,15 +325,12 @@ TEST_SUITE("Settings") {
       AppSettings loaded2;
       LoadSettings(loaded2);
       CHECK(loaded2.hybridInitialWorkPercent == 95);
-
-      test_settings::ClearInMemorySettings();
     }
   }
 
   TEST_SUITE("Saved searches") {
 
-    TEST_CASE("LoadSettings with saved searches") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings with saved searches") {
 
       AppSettings custom;
       SavedSearch search1;
@@ -395,12 +369,9 @@ TEST_SUITE("Settings") {
       CHECK(loaded.savedSearches[1].name == "Test Search 2");
       CHECK(loaded.savedSearches[1].path == "C:\\Another");
       CHECK(loaded.savedSearches[1].foldersOnly == true);
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings ignores saved searches without name") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings ignores saved searches without name") {
 
       AppSettings custom;
       SavedSearch search_no_name;
@@ -423,12 +394,9 @@ TEST_SUITE("Settings") {
       // For this test, we verify the in-memory behavior.
       CHECK(loaded.savedSearches.size() == 1);
       CHECK(loaded.savedSearches[0].path == "C:\\Test");
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("SaveSettings with saved searches") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "SaveSettings with saved searches") {
 
       AppSettings to_save;
       SavedSearch search;
@@ -447,15 +415,12 @@ TEST_SUITE("Settings") {
       CHECK(loaded.savedSearches[0].name == "Round Trip Test");
       CHECK(loaded.savedSearches[0].path == "C:\\RoundTrip");
       CHECK(loaded.savedSearches[0].extensions == ".txt");
-
-      test_settings::ClearInMemorySettings();
     }
   }
 
   TEST_SUITE("Round-trip tests") {
 
-    TEST_CASE("Save and load round-trip") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "Save and load round-trip") {
 
       AppSettings original;
       original.fontFamily = "RoundTrip Font";
@@ -497,12 +462,9 @@ TEST_SUITE("Settings") {
         CHECK(loaded.savedSearches[0].name == original.savedSearches[0].name);
         CHECK(loaded.savedSearches[0].path == original.savedSearches[0].path);
       }
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("Multiple round-trips preserve data") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "Multiple round-trips preserve data") {
 
       AppSettings settings;
       settings.fontFamily = "Multi Round Trip";
@@ -524,15 +486,12 @@ TEST_SUITE("Settings") {
       LoadSettings(loaded2);
       CHECK(loaded2.fontFamily == "Modified");
       CHECK(loaded2.searchThreadPoolSize == 64);
-
-      test_settings::ClearInMemorySettings();
     }
   }
 
   TEST_SUITE("Edge cases") {
 
-    TEST_CASE("LoadSettings with empty saved searches array") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings with empty saved searches array") {
 
       AppSettings custom;
       custom.savedSearches.clear();  // Explicitly empty
@@ -541,12 +500,9 @@ TEST_SUITE("Settings") {
       AppSettings loaded;
       LoadSettings(loaded);
       CHECK(loaded.savedSearches.empty());
-
-      test_settings::ClearInMemorySettings();
     }
 
-    TEST_CASE("LoadSettings with partial saved search data") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "LoadSettings with partial saved search data") {
 
       AppSettings custom;
       SavedSearch partial;
@@ -561,14 +517,11 @@ TEST_SUITE("Settings") {
       CHECK(loaded.savedSearches[0].name == "Partial Search");
       CHECK(loaded.savedSearches[0].foldersOnly == false);  // Default
       CHECK(loaded.savedSearches[0].caseSensitive == false);  // Default
-
-      test_settings::ClearInMemorySettings();
     }
   }
 
   TEST_SUITE("Settings path (primary vs legacy)") {
-    TEST_CASE("Save creates file at primary path when HOME is set and writable") {
-      test_settings::ClearInMemorySettings();
+    TEST_CASE_FIXTURE(SettingsFixture, "Save creates file at primary path when HOME is set and writable") {
 
       namespace fs = std::filesystem;
       const fs::path tmp_base = fs::temp_directory_path();
@@ -619,8 +572,6 @@ TEST_SUITE("Settings") {
       const auto removed = fs::remove_all(tmp_dir, ec);
       (void)removed;
       (void)ec;
-
-      test_settings::ClearInMemorySettings();
 
       CHECK(save_ok == true);
       CHECK(primary_exists == true);

@@ -11,7 +11,8 @@
 #   DUPLO_BIN=/path/to/duplo ./scripts/run_duplo.sh  # Custom Duplo location
 #
 # Requirements:
-#   - Duplo executable must be in PATH or specified via DUPLO_BIN
+#   - Duplo: if DUPLO_BIN is unset, uses ./duplo at project root when present and
+#     executable; otherwise looks for `duplo` on PATH
 #   - Download from: https://github.com/dlidstrom/Duplo/releases
 
 set -e  # Exit on error
@@ -19,17 +20,24 @@ set -e  # Exit on error
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Duplo executable path (adjust based on installation)
-DUPLO_BIN="${DUPLO_BIN:-duplo}"
+# Duplo executable: prefer project-root binary (often gitignored) over PATH
+if [[ -z "${DUPLO_BIN:-}" ]]; then
+    if [[ -x "$PROJECT_ROOT/duplo" ]]; then
+        DUPLO_BIN="$PROJECT_ROOT/duplo"
+    else
+        DUPLO_BIN="duplo"
+    fi
+fi
 
-# Check if Duplo is available
-if ! command -v "$DUPLO_BIN" &> /dev/null; then
+# Check if Duplo is available (explicit path or name on PATH)
+if [[ ! -x "$DUPLO_BIN" ]] && ! command -v "$DUPLO_BIN" &> /dev/null; then
     echo "ERROR: Duplo not found. Install from: https://github.com/dlidstrom/Duplo/releases" >&2
     echo "" >&2
     echo "Installation options:" >&2
-    echo "  1. Download binary and add to PATH" >&2
-    echo "  2. Place binary in project root and set: DUPLO_BIN=\$PWD/duplo" >&2
-    echo "  3. macOS: Check if available via Homebrew" >&2
+    echo "  1. Place the duplo binary in the project root (./duplo)" >&2
+    echo "  2. Download binary and add to PATH" >&2
+    echo "  3. Set DUPLO_BIN=/path/to/duplo" >&2
+    echo "  4. macOS: Check if available via Homebrew" >&2
     echo "" >&2
     exit 1
 fi
@@ -87,7 +95,8 @@ fi
 # Run Duplo with JSON output
 echo "Running Duplo analysis (JSON output)..."
 # Duplo returns non-zero exit code when no duplicates are found, which is OK
-echo "$SOURCE_FILES" | "$DUPLO_BIN" -ml "$MIN_LINES" -ip -json "$JSON_OUTPUT" - || true
+# Duplo expects: -json <stdin for list OR file> <output> — use '-' for stdin then JSON path
+echo "$SOURCE_FILES" | "$DUPLO_BIN" -ml "$MIN_LINES" -ip -json - "$JSON_OUTPUT" || true
 
 # Check if JSON output file was created
 if [[ ! -f "$JSON_OUTPUT" ]]; then

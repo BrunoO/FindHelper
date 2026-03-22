@@ -19,9 +19,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "core/Version.h"
 #include "imgui.h"
@@ -55,38 +57,56 @@ static constexpr const char* kSettingsButtonPreconditionMsg =  // NOLINT(readabi
 static constexpr const char* kSettingsWindowOpenErrorMsg =  // NOLINT(readability-identifier-naming)
   "Settings window did not open after clicking Settings button. Check toolbar_settings ref and window title.";
 
-// Forward declaration for RunSelectFolderAndIndexTest (defined below).
+// Forward declarations for RunSelectFolderAndIndexTest (defined below).
 static void AssertIndexReplacedAndClose(ImGuiTestContext* ctx,
                                         ImGuiWindow* win,
                                         size_t index_size_before,
                                         size_t index_size_after,
                                         const std::string& folder_path,
                                         const char* case_id);
+static void RunFixtureCrawlSearchAssertions(ImGuiTestContext* ctx,
+                                            IRegressionTestHook* hook,
+                                            const char* case_id);
+static void RunFixtureLoadBalancingCase(ImGuiTestContext* ctx,
+                                        IRegressionTestHook* hook,
+                                        const char* case_id,
+                                        std::string_view strategy);
+static void RunFixtureStreamingCase(ImGuiTestContext* ctx,
+                                    IRegressionTestHook* hook,
+                                    const char* case_id,
+                                    bool stream_on);
+static void RunFixtureFoldersOnlyCase(ImGuiTestContext* ctx,
+                                      IRegressionTestHook* hook,
+                                      const char* case_id);
+static void RunFixtureExtFoldersAndCase(ImGuiTestContext* ctx,
+                                        IRegressionTestHook* hook,
+                                        const char* case_id);
 
-static bool WaitForIndexReady(ImGuiTestContext* ctx, const IRegressionTestHook* hook, const char* case_id) {
+template <typename Predicate>
+static bool WaitUntilFramesOrFail(ImGuiTestContext* ctx,
+                                  const char* case_id,
+                                  Predicate predicate,
+                                  const char* error_message_template) {
   int waited = 0;
-  while (!hook->IsIndexReady() && waited < kMaxWaitFrames) {
+  while (!predicate() && waited < kMaxWaitFrames) {
     ctx->Yield();
     ++waited;
   }
-  if (!hook->IsIndexReady()) {
-    IM_ERRORF("Regression test %s: index not ready after %d frames", case_id, kMaxWaitFrames);
+  if (!predicate()) {
+    IM_ERRORF(error_message_template, case_id, kMaxWaitFrames);
     return false;
   }
   return true;
 }
 
+static bool WaitForIndexReady(ImGuiTestContext* ctx, const IRegressionTestHook* hook, const char* case_id) {
+  return WaitUntilFramesOrFail(ctx, case_id, [hook] { return hook->IsIndexReady(); },
+                               "Regression test %s: index not ready after %d frames");
+}
+
 static bool WaitForSearchComplete(ImGuiTestContext* ctx, const IRegressionTestHook* hook, const char* case_id) {
-  int waited = 0;
-  while (!hook->IsSearchComplete() && waited < kMaxWaitFrames) {
-    ctx->Yield();
-    ++waited;
-  }
-  if (!hook->IsSearchComplete()) {
-    IM_ERRORF("Regression test %s: search did not complete after %d frames", case_id, kMaxWaitFrames);
-    return false;
-  }
-  return true;
+  return WaitUntilFramesOrFail(ctx, case_id, [hook] { return hook->IsSearchComplete(); },
+                               "Regression test %s: search did not complete after %d frames");
 }
 
 // --- UI window test helpers (reduce duplication; see docs/analysis/2026-02-23_IMGUI_TEST_ENGINE_HELPER_EXTRACTION_STUDY.md) ---
@@ -137,7 +157,36 @@ static void CloseFloatingWindowAndYield(ImGuiTestContext* ctx, ImGuiWindow* win)
   ctx->Yield();
 }
 
-/** Resolves folder path for index_configuration test: IMGUI_TEST_INDEX_FOLDER if set, else walk up from executable to find tests/data. */
+/** Restores clipboard after shortcut tests (same pattern in all copy-shortcut tests). */
+static void RestoreClipboardToOriginalOrClear(const std::string& original_clipboard) {
+  if (!original_clipboard.empty()) {
+    ImGui::SetClipboardText(original_clipboard.c_str());
+  } else {
+    ImGui::SetClipboardText("");
+  }
+}
+
+/**
+ * Opens a floating window from a main-window toolbar button (Help, Settings, Search Syntax).
+ * Reduces duplication across ui_windows smoke tests.
+ */
+static void RunToolbarOpensFloatingWindowTest(ImGuiTestContext* ctx,
+                                              const char* button_ref,
+                                              const char* precondition_msg,
+                                              const char* window_title,
+                                              const char* error_msg) {
+  ctx->SetRef(kMainWindowTitle);
+  ctx->Yield();
+  RequireItemExists(ctx, button_ref, precondition_msg);
+  ImGuiWindow* win = WaitForFloatingWindowAfterClick(ctx, button_ref, window_title, error_msg);
+  // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  IM_CHECK(win != nullptr);
+  if (win != nullptr) {
+    CloseFloatingWindowAndYield(ctx, win);
+  }
+}
+
+/** Resolves folder path for index_configuration test: IMGUI_TEST_INDEX_FOLDER if set, else walk up from executable to find tests/data/fixture. */
 static std::string ResolveIndexConfigFolderPath() {
   static std::string folder_path;
   if (!folder_path.empty()) {
@@ -157,7 +206,7 @@ static std::string ResolveIndexConfigFolderPath() {
     if (base.empty()) {
       break;
     }
-    const std::filesystem::path candidate(path_utils::JoinPath(base, "tests/data"));
+    const std::filesystem::path candidate(path_utils::JoinPath(base, "tests/data/fixture"));
     try {
       if (std::filesystem::exists(candidate) && std::filesystem::is_directory(candidate)) {
         folder_path = candidate.string();
@@ -167,7 +216,7 @@ static std::string ResolveIndexConfigFolderPath() {
     }
     base = path_utils::GetParentDirectory(base);
   }
-  folder_path = "tests/data";
+  folder_path = "tests/data/fixture";
   return folder_path;
 }
 
@@ -176,7 +225,7 @@ static void RunSelectFolderAndIndexTest(ImGuiTestContext* ctx) {
   constexpr const char* kCaseId = "select_folder_and_start_indexing";
   ctx->SetRef(kMainWindowTitle);
   ctx->Yield();
-  const IRegressionTestHook* hook = g_regression_hook;
+  IRegressionTestHook* hook = g_regression_hook;
   if (hook == nullptr) {
     IM_ERRORF("Index config test %s: IRegressionTestHook is null.", kCaseId);
     return;
@@ -208,6 +257,11 @@ static void RunSelectFolderAndIndexTest(ImGuiTestContext* ctx) {
   }
   const size_t index_size_after = hook->GetIndexSize();
   AssertIndexReplacedAndClose(ctx, win, index_size_before, index_size_after, folder_path, kCaseId);
+  // After the Settings window is closed, run exact search assertions against
+  // the known fixture structure. Extension-based counts are portable: ancestor
+  // dirs added by DirectoryResolver carry no extension.
+  ctx->SetRef(kMainWindowTitle);
+  RunFixtureCrawlSearchAssertions(ctx, hook, kCaseId);
 }
 
 /** Asserts index was replaced (size changed) and closes Settings window; call from select_folder_and_start_indexing. */
@@ -229,12 +283,186 @@ static void AssertIndexReplacedAndClose(ImGuiTestContext* ctx,
   if (not_replaced) {
     IM_ERRORF(
       "Index config test %s: index was not replaced (size still %zu). UI may show 'Error: Folder does not exist' "
-      "if path is wrong. Use absolute path: IMGUI_TEST_INDEX_FOLDER=/path/to/tests/data",
+      "if path is wrong. Use absolute path: IMGUI_TEST_INDEX_FOLDER=/path/to/tests/data/fixture",
       case_id, index_size_after);
     // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
     IM_CHECK(index_size_after != index_size_before);
   }
   CloseFloatingWindowAndYield(ctx, win);
+}
+
+/**
+ * Runs extension-filter search assertions against the crawled fixture index.
+ * Called after select_folder_and_start_indexing has replaced the index with
+ * tests/data/fixture contents.
+ *
+ * Extension counts are exact: ancestor dirs created by DirectoryResolver carry
+ * no extension, so they never appear in extension-filtered results. This makes
+ * these assertions portable across machines regardless of the fixture path depth.
+ */
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Test orchestration; IM_CHECK/IM_ERRORF macros add nesting
+static void RunFixtureCrawlSearchAssertions(ImGuiTestContext* ctx,
+                                            IRegressionTestHook* hook,
+                                            const char* case_id) {
+  // Disable streaming so we assert on the final result count, not an intermediate one.
+  hook->SetStreamPartialResults(false);
+
+  struct FixtureCase {
+    const char* ext;
+    size_t expected;
+  };
+  static constexpr int kFixtureCaseCount = 4;
+  static const std::array<FixtureCase, kFixtureCaseCount> kFixtureCases = {{
+    {"txt",  fixture_expected::kExtTxt},
+    {"cpp",  fixture_expected::kExtCpp},
+    {"h",    fixture_expected::kExtH},
+    {"json", fixture_expected::kExtJson},
+  }};
+
+  for (const auto& fc : kFixtureCases) {
+    hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{fc.ext}, false);
+    hook->TriggerManualSearch();
+    if (!WaitForSearchComplete(ctx, hook, case_id)) {
+      return;
+    }
+    ctx->Yield();
+    ctx->Yield();
+    const size_t count = hook->GetSearchResultCount();
+    if (count != fc.expected) {
+      IM_ERRORF("Fixture crawl test %s: ext=%s expected %zu results, got %zu. "
+                "Recreate fixture: scripts/create_test_fixture.sh",
+                case_id, fc.ext, fc.expected, count);
+    }
+    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+    IM_CHECK_EQ(count, fc.expected);
+  }
+
+  // Show-all: at least kMinTotal entries (exact count depends on fixture path depth).
+  hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{}, false);
+  hook->TriggerManualSearch();
+  if (!WaitForSearchComplete(ctx, hook, case_id)) {
+    return;
+  }
+  ctx->Yield();
+  ctx->Yield();
+  const size_t total = hook->GetSearchResultCount();
+  if (total < fixture_expected::kMinTotal) {
+    IM_ERRORF("Fixture crawl test %s: show_all expected >= %zu results, got %zu. "
+              "Recreate fixture: scripts/create_test_fixture.sh",
+              case_id, fixture_expected::kMinTotal, total);
+  }
+  // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  IM_CHECK(total >= fixture_expected::kMinTotal);
+}
+
+/**
+ * Verifies that the given load-balancing strategy returns the same ext=txt count (kExtTxt)
+ * as the other strategies on the fixture index. All three strategies must be parity-correct
+ * on small indices (fewer entries than thread count).
+ */
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Test orchestration; IM_CHECK/IM_ERRORF macros add nesting
+static void RunFixtureLoadBalancingCase(ImGuiTestContext* ctx,
+                                        IRegressionTestHook* hook,
+                                        const char* case_id,
+                                        std::string_view strategy) {
+  hook->SetLoadBalancingStrategy(strategy);
+  if (const std::string applied = hook->GetLoadBalancingStrategy(); applied != strategy) {
+    IM_ERRORF("Fixture load_balancing %s: set \"%.*s\" but getter returned \"%s\".",
+              case_id, static_cast<int>(strategy.size()), strategy.data(), applied.c_str());
+    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+    IM_CHECK(applied == strategy);
+    return;
+  }
+  hook->SetStreamPartialResults(false);
+  hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{"txt"}, false);
+  hook->TriggerManualSearch();
+  if (!WaitForSearchComplete(ctx, hook, case_id)) {
+    return;
+  }
+  ctx->Yield();
+  ctx->Yield();
+  const size_t count = hook->GetSearchResultCount();
+  if (count != fixture_expected::kExtTxt) {
+    IM_ERRORF("Fixture load_balancing %s strategy=%.*s: expected %zu results (ext=txt), got %zu.",
+              case_id, static_cast<int>(strategy.size()), strategy.data(),
+              fixture_expected::kExtTxt, count);
+  }
+  // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+  IM_CHECK_EQ(count, fixture_expected::kExtTxt);
+}
+
+/**
+ * Verifies that streaming on/off both return the same ext=cpp count (kExtCpp) on the fixture
+ * index. Tests streaming finalisation on a tiny result set.
+ */
+static void RunFixtureStreamingCase(ImGuiTestContext* ctx,
+                                    IRegressionTestHook* hook,
+                                    const char* case_id,
+                                    bool stream_on) {
+  hook->SetStreamPartialResults(stream_on);
+  hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{"cpp"}, false);
+  hook->TriggerManualSearch();
+  if (!WaitForSearchComplete(ctx, hook, case_id)) {
+    return;
+  }
+  ctx->Yield();
+  ctx->Yield();
+  const size_t count = hook->GetSearchResultCount();
+  if (count != fixture_expected::kExtCpp) {
+    IM_ERRORF("Fixture streaming %s stream=%s: expected %zu results (ext=cpp), got %zu.",
+              case_id, stream_on ? "on" : "off", fixture_expected::kExtCpp, count);
+  }
+  // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+  IM_CHECK_EQ(count, fixture_expected::kExtCpp);
+}
+
+/**
+ * Verifies that the folders_only filter returns at least kMinDirs results on the fixture index.
+ * The lower bound (not exact) is used because DirectoryResolver adds ancestor dirs whose count
+ * depends on the runtime path depth.
+ */
+static void RunFixtureFoldersOnlyCase(ImGuiTestContext* ctx,
+                                      IRegressionTestHook* hook,
+                                      const char* case_id) {
+  hook->SetStreamPartialResults(false);
+  hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{}, true);
+  hook->TriggerManualSearch();
+  if (!WaitForSearchComplete(ctx, hook, case_id)) {
+    return;
+  }
+  ctx->Yield();
+  ctx->Yield();
+  const size_t count = hook->GetSearchResultCount();
+  if (count < fixture_expected::kMinDirs) {
+    IM_ERRORF("Fixture folders_only %s: expected >= %zu results, got %zu.",
+              case_id, fixture_expected::kMinDirs, count);
+  }
+  // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  IM_CHECK(count >= fixture_expected::kMinDirs);
+}
+
+/**
+ * Verifies that ext=cpp AND folders_only=true returns exactly 0 results: no directory in the
+ * fixture has a .cpp extension. Tests that extension and folders_only filters are correctly AND'd.
+ */
+static void RunFixtureExtFoldersAndCase(ImGuiTestContext* ctx,
+                                        IRegressionTestHook* hook,
+                                        const char* case_id) {
+  hook->SetStreamPartialResults(false);
+  hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{"cpp"}, true);
+  hook->TriggerManualSearch();
+  if (!WaitForSearchComplete(ctx, hook, case_id)) {
+    return;
+  }
+  ctx->Yield();
+  ctx->Yield();
+  const size_t count = hook->GetSearchResultCount();
+  if (count != fixture_expected::kExtCppFoldersOnly) {
+    IM_ERRORF("Fixture ext+folders_only AND %s: expected %zu results (ext=cpp, folders_only=true), got %zu.",
+              case_id, fixture_expected::kExtCppFoldersOnly, count);
+  }
+  // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+  IM_CHECK_EQ(count, fixture_expected::kExtCppFoldersOnly);
 }
 
 /** Runs the copy-marked-paths shortcut test body (W / Copy Paths path). Call after index ready. */
@@ -275,11 +503,7 @@ static void RunCopyMarkedPathsShortcutTest(ImGuiTestContext* ctx,
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
   IM_CHECK(!clipboard_after.empty());
 
-  if (!original_clipboard.empty()) {
-    ImGui::SetClipboardText(original_clipboard.c_str());
-  } else {
-    ImGui::SetClipboardText("");
-  }
+  RestoreClipboardToOriginalOrClear(original_clipboard);
 }
 
 /** Runs the copy-marked-filenames shortcut test body (Shift+W). Call after index ready. */
@@ -346,11 +570,7 @@ static void RunCopyMarkedFilenamesShortcutTest(ImGuiTestContext* ctx,
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
   IM_CHECK(all_lines_without_separators);
 
-  if (!original_clipboard.empty()) {
-    ImGui::SetClipboardText(original_clipboard.c_str());
-  } else {
-    ImGui::SetClipboardText("");
-  }
+  RestoreClipboardToOriginalOrClear(original_clipboard);
 }
 
 /** Runs the copy-selected-path shortcut test body (Ctrl/Cmd+Shift+C). Call after index ready. */
@@ -399,11 +619,24 @@ static void RunCopySelectedPathShortcutTest(ImGuiTestContext* ctx,
   // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
   IM_CHECK(looks_like_path);
 
-  if (!original_clipboard.empty()) {
-    ImGui::SetClipboardText(original_clipboard.c_str());
-  } else {
-    ImGui::SetClipboardText("");
+  RestoreClipboardToOriginalOrClear(original_clipboard);
+}
+
+/** Shared hook-null check, index wait, and body for shortcut tests. */
+template<typename RunBody>
+static void RunShortcutTestWithHook(ImGuiTestContext* ctx,
+                                    const char* case_id,
+                                    RunBody&& run_body) {
+  ctx->SetRef(kMainWindowTitle);
+  IRegressionTestHook* hook = g_regression_hook;
+  if (hook == nullptr) {
+    IM_ERRORF("Shortcut test %s: IRegressionTestHook is null (misconfiguration). Ensure Application passes a non-null hook to RegisterFindHelperTests.", case_id);
+    return;
   }
+  if (!WaitForIndexReady(ctx, hook, case_id)) {
+    return;
+  }
+  std::invoke(std::forward<RunBody>(run_body), ctx, hook, case_id);
 }
 
 // Runs one regression case: wait index ready, optionally set strategy/streaming, set params, trigger search,
@@ -538,25 +771,15 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     "Help window did not open after clicking Help button. Check toolbar_help ref and window title.";
   ImGuiTest* t_help = IM_REGISTER_TEST(engine, "ui_windows", "help_window_open");
   t_help->TestFunc = [](ImGuiTestContext* ctx) {
-    ctx->SetRef(kMainWindowTitle);
-    ctx->Yield();
-    RequireItemExists(ctx, kHelpButtonRef, kHelpButtonPreconditionMsg);
-    ImGuiWindow* win = WaitForFloatingWindowAfterClick(ctx, kHelpButtonRef, kHelpWindowTitle, kHelpWindowOpenErrorMsg);
-    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
-    IM_CHECK(win != nullptr);
-    CloseFloatingWindowAndYield(ctx, win);
+    RunToolbarOpensFloatingWindowTest(ctx, kHelpButtonRef, kHelpButtonPreconditionMsg, kHelpWindowTitle,
+                                      kHelpWindowOpenErrorMsg);
   };
 
   // Settings window: open via toolbar button (FilterPanel ##toolbar_settings). Uses file-scope kSettings* constants.
   ImGuiTest* t_settings = IM_REGISTER_TEST(engine, "ui_windows", "settings_window_open");
   t_settings->TestFunc = [](ImGuiTestContext* ctx) {
-    ctx->SetRef(kMainWindowTitle);
-    ctx->Yield();
-    RequireItemExists(ctx, kSettingsButtonRef, kSettingsButtonPreconditionMsg);
-    ImGuiWindow* win = WaitForFloatingWindowAfterClick(ctx, kSettingsButtonRef, kSettingsWindowTitle, kSettingsWindowOpenErrorMsg);
-    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
-    IM_CHECK(win != nullptr);
-    CloseFloatingWindowAndYield(ctx, win);
+    RunToolbarOpensFloatingWindowTest(ctx, kSettingsButtonRef, kSettingsButtonPreconditionMsg, kSettingsWindowTitle,
+                                      kSettingsWindowOpenErrorMsg);
   };
 
   // Search Syntax Guide: open via search-area button (SearchInputs ##SearchHelpToggle).
@@ -567,13 +790,8 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     "Search Syntax Guide did not open after clicking Search Help button. Check SearchHelpToggle ref and window title.";
   ImGuiTest* t_search_help = IM_REGISTER_TEST(engine, "ui_windows", "search_help_window_open");
   t_search_help->TestFunc = [](ImGuiTestContext* ctx) {
-    ctx->SetRef(kMainWindowTitle);
-    ctx->Yield();
-    RequireItemExists(ctx, kSearchHelpButtonRef, kSearchHelpButtonPreconditionMsg);
-    ImGuiWindow* win = WaitForFloatingWindowAfterClick(ctx, kSearchHelpButtonRef, kSearchSyntaxGuideTitle, kSearchHelpWindowOpenErrorMsg);
-    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
-    IM_CHECK(win != nullptr);
-    CloseFloatingWindowAndYield(ctx, win);
+    RunToolbarOpensFloatingWindowTest(ctx, kSearchHelpButtonRef, kSearchHelpButtonPreconditionMsg,
+                                      kSearchSyntaxGuideTitle, kSearchHelpWindowOpenErrorMsg);
   };
 
   // Metrics window: open via toolbar button (FilterPanel; button only visible when app run with --show-metrics).
@@ -598,47 +816,17 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   // Uses the regression hook to set selection+mark and request copy, then asserts clipboard content changed.
   ImGuiTest* t_copy_marked_paths_w = IM_REGISTER_TEST(engine, "shortcuts", "copy_marked_paths_W_single");
   t_copy_marked_paths_w->TestFunc = [](ImGuiTestContext* ctx) {
-    constexpr const char* kCaseId = "copy_marked_paths_W_single";
-    ctx->SetRef(kMainWindowTitle);
-    IRegressionTestHook* hook = g_regression_hook;
-    if (hook == nullptr) {
-      IM_ERRORF("Shortcut test %s: IRegressionTestHook is null (misconfiguration). Ensure Application passes a non-null hook to RegisterFindHelperTests.", kCaseId);
-      return;
-    }
-    if (!WaitForIndexReady(ctx, hook, kCaseId)) {
-      return;
-    }
-    RunCopyMarkedPathsShortcutTest(ctx, hook, kCaseId);
+    RunShortcutTestWithHook(ctx, "copy_marked_paths_W_single", RunCopyMarkedPathsShortcutTest);
   };
 
   ImGuiTest* t_copy_marked_filenames_shift_w = IM_REGISTER_TEST(engine, "shortcuts", "copy_marked_filenames_Shift_W_single");
   t_copy_marked_filenames_shift_w->TestFunc = [](ImGuiTestContext* ctx) {
-    constexpr const char* kCaseId = "copy_marked_filenames_Shift_W_single";
-    ctx->SetRef(kMainWindowTitle);
-    IRegressionTestHook* hook = g_regression_hook;
-    if (hook == nullptr) {
-      IM_ERRORF("Shortcut test %s: IRegressionTestHook is null (misconfiguration). Ensure Application passes a non-null hook to RegisterFindHelperTests.", kCaseId);
-      return;
-    }
-    if (!WaitForIndexReady(ctx, hook, kCaseId)) {
-      return;
-    }
-    RunCopyMarkedFilenamesShortcutTest(ctx, hook, kCaseId);
+    RunShortcutTestWithHook(ctx, "copy_marked_filenames_Shift_W_single", RunCopyMarkedFilenamesShortcutTest);
   };
 
   ImGuiTest* t_copy_selected_path_ctrl_shift_c = IM_REGISTER_TEST(engine, "shortcuts", "copy_selected_path_Ctrl_Shift_C");
   t_copy_selected_path_ctrl_shift_c->TestFunc = [](ImGuiTestContext* ctx) {
-    constexpr const char* kCaseId = "copy_selected_path_Ctrl_Shift_C";
-    ctx->SetRef(kMainWindowTitle);
-    IRegressionTestHook* hook = g_regression_hook;
-    if (hook == nullptr) {
-      IM_ERRORF("Shortcut test %s: IRegressionTestHook is null (misconfiguration). Ensure Application passes a non-null hook to RegisterFindHelperTests.", kCaseId);
-      return;
-    }
-    if (!WaitForIndexReady(ctx, hook, kCaseId)) {
-      return;
-    }
-    RunCopySelectedPathShortcutTest(ctx, hook, kCaseId);
+    RunShortcutTestWithHook(ctx, "copy_selected_path_Ctrl_Shift_C", RunCopySelectedPathShortcutTest);
   };
 
   if (g_regression_hook != nullptr && g_regression_hook != hook) {
@@ -867,13 +1055,77 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   };
   // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
-  // Index configuration: select a folder and start indexing. Must run LAST because it replaces the
-  // initial index (from --index-from-file); all regression/load_balancing/streaming/shortcut tests
-  // depend on that index. Folder path: IMGUI_TEST_INDEX_FOLDER env var if set, else resolved by
-  // walking up from the executable directory (so it works when .app CWD is bundle Resources). See
-  // internal-docs/analysis/2026-03-14_IMGUI_TEST_SELECT_FOLDER_TO_INDEX_ASSESSMENT.md.
+  // Index configuration: select a folder and start indexing. Must run before the fixture wildcard tests
+  // because it replaces the initial index (from --index-from-file); all regression/load_balancing/
+  // streaming/shortcut tests depend on that index. Folder path: IMGUI_TEST_INDEX_FOLDER env var if
+  // set, else resolved by walking up from the executable directory (so it works when .app CWD is
+  // bundle Resources). See internal-docs/analysis/2026-03-14_IMGUI_TEST_SELECT_FOLDER_TO_INDEX_ASSESSMENT.md.
   ImGuiTest* t_index_cfg = IM_REGISTER_TEST(engine, "index_configuration", "select_folder_and_start_indexing");
   t_index_cfg->TestFunc = [](ImGuiTestContext* ctx) { RunSelectFolderAndIndexTest(ctx); };
+
+  // Fixture tests: run after select_folder_and_start_indexing has crawled tests/data/fixture.
+  // These tests exercise the same search dimensions as the regression/load_balancing/streaming
+  // suites but on a real crawled index rather than a text-file-loaded snapshot, and on a corpus
+  // small enough for exact (or lower-bounded) assertions.
+  // Extension counts are exact (ancestor dirs carry no extension); dir/total counts use >= because
+  // DirectoryResolver inserts ancestor dirs whose count depends on the runtime path depth.
+
+  // Load-balancing parity: all three strategies must return kExtTxt=4 on the fixture.
+  ImGuiTest* fx_lb_s = IM_REGISTER_TEST(engine, "fixture", "load_balancing_static");
+  fx_lb_s->TestFunc = [](ImGuiTestContext* ctx) {
+    IRegressionTestHook* hook = g_regression_hook;
+    if (hook != nullptr) {
+      RunFixtureLoadBalancingCase(ctx, hook, "load_balancing_static", "static");
+    }
+  };
+  ImGuiTest* fx_lb_h = IM_REGISTER_TEST(engine, "fixture", "load_balancing_hybrid");
+  fx_lb_h->TestFunc = [](ImGuiTestContext* ctx) {
+    IRegressionTestHook* hook = g_regression_hook;
+    if (hook != nullptr) {
+      RunFixtureLoadBalancingCase(ctx, hook, "load_balancing_hybrid", "hybrid");
+    }
+  };
+  ImGuiTest* fx_lb_d = IM_REGISTER_TEST(engine, "fixture", "load_balancing_dynamic");
+  fx_lb_d->TestFunc = [](ImGuiTestContext* ctx) {
+    IRegressionTestHook* hook = g_regression_hook;
+    if (hook != nullptr) {
+      RunFixtureLoadBalancingCase(ctx, hook, "load_balancing_dynamic", "dynamic");
+    }
+  };
+
+  // Streaming parity: stream on and off must both return kExtCpp=2 on the fixture.
+  ImGuiTest* fx_str_on = IM_REGISTER_TEST(engine, "fixture", "streaming_on");
+  fx_str_on->TestFunc = [](ImGuiTestContext* ctx) {
+    IRegressionTestHook* hook = g_regression_hook;
+    if (hook != nullptr) {
+      RunFixtureStreamingCase(ctx, hook, "streaming_on", true);
+    }
+  };
+  ImGuiTest* fx_str_off = IM_REGISTER_TEST(engine, "fixture", "streaming_off");
+  fx_str_off->TestFunc = [](ImGuiTestContext* ctx) {
+    IRegressionTestHook* hook = g_regression_hook;
+    if (hook != nullptr) {
+      RunFixtureStreamingCase(ctx, hook, "streaming_off", false);
+    }
+  };
+
+  // Folders-only filter: must return at least kMinDirs=6 on the fixture.
+  ImGuiTest* fx_dirs = IM_REGISTER_TEST(engine, "fixture", "folders_only");
+  fx_dirs->TestFunc = [](ImGuiTestContext* ctx) {
+    IRegressionTestHook* hook = g_regression_hook;
+    if (hook != nullptr) {
+      RunFixtureFoldersOnlyCase(ctx, hook, "folders_only");
+    }
+  };
+
+  // Extension AND folders_only: ext=cpp + folders_only=true must return kExtCppFoldersOnly=0.
+  ImGuiTest* fx_ext_dirs = IM_REGISTER_TEST(engine, "fixture", "ext_cpp_folders_only_zero");
+  fx_ext_dirs->TestFunc = [](ImGuiTestContext* ctx) {
+    IRegressionTestHook* hook = g_regression_hook;
+    if (hook != nullptr) {
+      RunFixtureExtFoldersAndCase(ctx, hook, "ext_cpp_folders_only_zero");
+    }
+  };
 }
 
 #else

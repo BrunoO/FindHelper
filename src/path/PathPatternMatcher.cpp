@@ -1159,6 +1159,12 @@ void NormalizePattern(std::string& pattern) {
   }
 }
 
+// Returns elapsed time in microseconds since start; used for compile-path timing logs.
+auto ElapsedMicroseconds(std::chrono::high_resolution_clock::time_point start) {
+  return std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - start);
+}
+
 /**
  * @brief Compile simple pattern (no advanced features)
  *
@@ -1186,9 +1192,7 @@ CompiledPathPattern CompileSimplePattern(
   if (compiled.is_literal_only) {
     // Skip DFA/NFA construction for literal-only patterns
     compiled.valid = true;
-    auto compile_end = std::chrono::high_resolution_clock::now();
-    auto compile_duration =  // NOSONAR(cpp:S1481,cpp:S1854) - Used in LOG_INFO_BUILD below
-      std::chrono::duration_cast<std::chrono::microseconds>(compile_end - compile_start);
+    const auto compile_duration = ElapsedMicroseconds(compile_start);  // NOSONAR(cpp:S1481,cpp:S1854) - Used in LOG_INFO_BUILD below
     LOG_INFO_BUILD("PathPattern compilation [LITERAL]: pattern='"
                    << compiled.pattern_string
                    << "', case_insensitive=" << (compiled.case_insensitive ? "true" : "false")
@@ -1237,11 +1241,7 @@ CompiledPathPattern CompileSimplePattern(
 
   compiled.valid = true;
 
-  // Log compilation timing for simple patterns
-  auto compile_end = std::chrono::high_resolution_clock::now();
-  auto compile_duration =  // NOSONAR(cpp:S1481,cpp:S1854) - Used in LOG_INFO_BUILD below
-    std::chrono::duration_cast<std::chrono::microseconds>(compile_end - compile_start);
-
+  const auto compile_duration = ElapsedMicroseconds(compile_start);  // NOSONAR(cpp:S1481,cpp:S1854) - Used in LOG_INFO_BUILD below
   LOG_INFO_BUILD(
     "PathPattern compilation [SIMPLE]: pattern='"
     << compiled.pattern_string
@@ -1297,11 +1297,7 @@ CompiledPathPattern CompileAdvancedPattern(
     compiled.valid = true;
   }
 
-  // Log compilation timing for advanced patterns
-  auto compile_end = std::chrono::high_resolution_clock::now();
-  auto compile_duration =  // NOSONAR(cpp:S1481,cpp:S1854) - Used in LOG_INFO_BUILD below
-    std::chrono::duration_cast<std::chrono::microseconds>(compile_end - compile_start);
-
+  const auto compile_duration = ElapsedMicroseconds(compile_start);  // NOSONAR(cpp:S1481,cpp:S1854) - Used in LOG_INFO_BUILD below
   LOG_INFO_BUILD("PathPattern compilation [ADVANCED]: pattern='"
                  << compiled.pattern_string
                  << "', case_insensitive=" << (compiled.case_insensitive ? "true" : "false")

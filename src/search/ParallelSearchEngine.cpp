@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <chrono>
 #include <cstring>
 #include <string_view>
 #include <thread>
@@ -37,9 +36,6 @@ ParallelSearchEngine::SearchAsync(const ISearchableIndex& index,
                                   int thread_count,
                                   const SearchContext& context,
                                   SearchStats* stats) const {
-  // Record start time for duration calculation
-  [[maybe_unused]] auto start_time = std::chrono::steady_clock::now();  // NOSONAR(cpp:S1854) - Reserved for future duration calculation
-
   // CRITICAL: Acquire shared_lock to ensure:
   // 1. Vector sizes remain stable when calculating chunk ranges
   // 2. Proper memory visibility when creating futures

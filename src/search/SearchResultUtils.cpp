@@ -642,13 +642,7 @@ void UpdateSizeFilterCacheIfNeeded(GuiState& state, const FileIndex& file_index)
   state.sizeFilterCacheValid = true;
 
   // Piggyback: accumulate total size during size filter pass (sizes already loaded)
-  uint64_t total_bytes = 0;
-  for (const auto& r : state.sizeFilteredResults) {
-    if (!r.isDirectory && r.fileSize != kFileSizeNotLoaded && r.fileSize != kFileSizeFailed) {
-      total_bytes += r.fileSize;
-    }
-  }
-  state.displayedTotalSizeBytes = total_bytes;
+  state.displayedTotalSizeBytes = ComputeTotalFileBytes(state.sizeFilteredResults);
   state.displayedTotalSizeValid = true;
 }
 
@@ -1050,6 +1044,16 @@ static void CleanupSingleFuture(std::future<void>& f, bool blocking) {
     LOG_ERROR_BUILD("Unknown exception during future cleanup");
     // Explicitly ignore to prevent propagation (destructor safety)
   }
+}
+
+uint64_t ComputeTotalFileBytes(const std::vector<SearchResult>& results) {
+  uint64_t total = 0;
+  for (const auto& r : results) {
+    if (!r.isDirectory && r.fileSize != kFileSizeNotLoaded && r.fileSize != kFileSizeFailed) {
+      total += r.fileSize;
+    }
+  }
+  return total;
 }
 
 void CleanupAttributeLoadingFutures(GuiState& state, bool blocking) {

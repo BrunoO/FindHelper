@@ -8,13 +8,13 @@
 #endif  // USN_WINDOWS_TESTS
 #endif  // _WIN32
 
+#include "MockSearchableIndex.h"
+#include "TestHelpers.h"
+#include "index/FileIndex.h"
 #include "search/ParallelSearchEngine.h"
 #include "search/SearchContext.h"
 #include "search/SearchThreadPool.h"
-#include "MockSearchableIndex.h"
-#include "index/FileIndex.h"
 #include "utils/Logger.h"
-#include "TestHelpers.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -66,6 +66,13 @@ std::vector<uint64_t> CollectResults(
   return test_helpers::CollectFutures(futures);
 }
 
+// Fixture for tests that operate on a pre-populated simple index (5 files)
+struct PopulatedIndexFixture {
+  MockSearchableIndex index;
+  test_helpers::TestParallelSearchEngineFixture fixture;
+  PopulatedIndexFixture() { PopulateSimpleIndex(index); }
+};
+
 } // anonymous namespace
 
 TEST_SUITE("ParallelSearchEngine - SearchAsync") {
@@ -80,12 +87,7 @@ TEST_SUITE("ParallelSearchEngine - SearchAsync") {
     CHECK(futures.empty());
   }
 
-  TEST_CASE("SearchAsync - simple filename search") {
-    MockSearchableIndex index;
-    PopulateSimpleIndex(index);
-
-    test_helpers::TestParallelSearchEngineFixture fixture;
-
+  TEST_CASE_FIXTURE(PopulatedIndexFixture, "SearchAsync - simple filename search") {
     SearchContext ctx = CreateSimpleSearchContext("test");
     auto results = test_helpers::parallel_search_test_helpers::ExecuteSearchAndCollect(
         fixture.GetEngine(), index, "test", -1, ctx);
@@ -94,12 +96,7 @@ TEST_SUITE("ParallelSearchEngine - SearchAsync") {
     CHECK(std::find(results.begin(), results.end(), 2) != results.end());
   }
 
-  TEST_CASE("SearchAsync - case-insensitive search") {
-    MockSearchableIndex index;
-    PopulateSimpleIndex(index);
-
-    test_helpers::TestParallelSearchEngineFixture fixture;
-
+  TEST_CASE_FIXTURE(PopulatedIndexFixture, "SearchAsync - case-insensitive search") {
     SearchContext ctx = CreateSimpleSearchContext("TEST", false);
     auto results = test_helpers::parallel_search_test_helpers::ExecuteSearchAndCollect(
         fixture.GetEngine(), index, "TEST", -1, ctx);
@@ -108,12 +105,7 @@ TEST_SUITE("ParallelSearchEngine - SearchAsync") {
     CHECK(std::find(results.begin(), results.end(), 2) != results.end());
   }
 
-  TEST_CASE("SearchAsync - case-sensitive search") {
-    MockSearchableIndex index;
-    PopulateSimpleIndex(index);
-
-    test_helpers::TestParallelSearchEngineFixture fixture;
-
+  TEST_CASE_FIXTURE(PopulatedIndexFixture, "SearchAsync - case-sensitive search") {
     SearchContext ctx = CreateSimpleSearchContext("TEST", true);
     auto results = test_helpers::parallel_search_test_helpers::ExecuteSearchAndCollect(
         fixture.GetEngine(), index, "TEST", -1, ctx);
@@ -122,12 +114,7 @@ TEST_SUITE("ParallelSearchEngine - SearchAsync") {
     CHECK(results.empty());
   }
 
-  TEST_CASE("SearchAsync - extension filter") {
-    MockSearchableIndex index;
-    PopulateSimpleIndex(index);
-
-    test_helpers::TestParallelSearchEngineFixture fixture;
-
+  TEST_CASE_FIXTURE(PopulatedIndexFixture, "SearchAsync - extension filter") {
     SearchContext ctx = CreateExtensionSearchContext({".txt", ".md"});
     auto results = test_helpers::parallel_search_test_helpers::ExecuteSearchAndCollect(
         fixture.GetEngine(), index, "", -1, ctx);
@@ -172,12 +159,7 @@ TEST_SUITE("ParallelSearchEngine - SearchAsync") {
     CHECK(results.size() <= 1000);
   }
 
-  TEST_CASE("SearchAsync - search stats") {
-    MockSearchableIndex index;
-    PopulateSimpleIndex(index);
-
-    test_helpers::TestParallelSearchEngineFixture fixture;
-
+  TEST_CASE_FIXTURE(PopulatedIndexFixture, "SearchAsync - search stats") {
     SearchContext ctx = CreateSimpleSearchContext("test");
     SearchStats stats;
     auto results = test_helpers::parallel_search_test_helpers::ExecuteSearchWithStatsAndCollect(
@@ -202,12 +184,7 @@ TEST_SUITE("ParallelSearchEngine - SearchAsyncWithData") {
     CHECK(futures.empty());
   }
 
-  TEST_CASE("SearchAsyncWithData - returns full path data") {
-    MockSearchableIndex index;
-    PopulateSimpleIndex(index);
-
-    test_helpers::TestParallelSearchEngineFixture fixture;
-
+  TEST_CASE_FIXTURE(PopulatedIndexFixture, "SearchAsyncWithData - returns full path data") {
     SearchContext ctx = CreateSimpleSearchContext("test");
     auto results = test_helpers::parallel_search_test_helpers::ExecuteSearchWithDataAndCollect(
         fixture.GetEngine(), index, "test", -1, ctx);
@@ -248,7 +225,7 @@ TEST_SUITE("ParallelSearchEngine - DetermineThreadCount") {
     CHECK(count >= 1);
     // Allow up to hardware concurrency (test may run on systems with > 4 cores)
     unsigned int hw_concurrency = std::thread::hardware_concurrency();
-    if (hw_concurrency == 0) hw_concurrency = 4; // Fallback
+    if (hw_concurrency == 0) { hw_concurrency = 4; }  // Fallback
     CHECK(count <= static_cast<int>(hw_concurrency));
 
     // Large dataset should use more threads (limited by data size and hardware)

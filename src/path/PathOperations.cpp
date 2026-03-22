@@ -43,14 +43,11 @@ PathOperations::PathComponentsView PathOperations::GetPathComponentsView(uint64_
   if (entry == nullptr || entry->path_storage_index == kPathStorageIndexInvalid) {
     return {};
   }
-  const PathStorage::PathComponentsView storage_view =
-      path_storage_.GetPathComponentsByIndex(entry->path_storage_index);
-  return ConvertPathComponentsView(storage_view);
+  return path_storage_.GetPathComponentsByIndex(entry->path_storage_index);
 }
 
 PathOperations::PathComponentsView PathOperations::GetPathComponentsViewByIndex(size_t idx) const {
-  const PathStorage::PathComponentsView storage_view = path_storage_.GetPathComponentsByIndex(idx);
-  return ConvertPathComponentsView(storage_view);
+  return path_storage_.GetPathComponentsByIndex(idx);
 }
 
 void PathOperations::UpdatePrefix(std::string_view oldPrefix, std::string_view newPrefix) {  // NOLINT(readability-identifier-naming) - Public API parameter names
@@ -62,14 +59,4 @@ PathStorage::SoAView PathOperations::GetSearchableView() const {
   return path_storage_.GetReadOnlyView();
 }
 
-PathOperations::PathComponentsView PathOperations::ConvertPathComponentsView(
-    const PathStorage::PathComponentsView& storage_view) {
-  PathComponentsView result;
-  result.full_path = storage_view.full_path;
-  result.filename = storage_view.filename;
-  result.extension = storage_view.extension;
-  result.directory_path = storage_view.directory_path;
-  result.has_extension = storage_view.has_extension;
-  return result;
-}
 

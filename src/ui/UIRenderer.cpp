@@ -39,20 +39,11 @@
 namespace ui {
 
 void UIRenderer::RenderMainWindow(const RenderMainWindowContext& context) {
-  // Extract parameters from context for readability
-  GuiState& state = context.state;
-  ui::UIActions* actions = context.actions;
-  AppSettings& settings = context.settings;
-  FileIndex& file_index = context.file_index;
-  ThreadPool& thread_pool = context.thread_pool;
-  const UsnMonitor* monitor = context.monitor;
-  const SearchWorker& search_worker = context.search_worker;
-  NativeWindowHandle native_window = context.native_window;
-  GLFWwindow* glfw_window = context.glfw_window;
-  std::atomic<bool>& show_settings = context.show_settings;
-  std::atomic<bool>& show_metrics = context.show_metrics;
-  const bool is_index_building = context.is_index_building;
-  const bool metrics_available = context.metrics_available;
+  // NOLINTBEGIN(misc-misplaced-const) - NativeWindowHandle pointer typedef gives void*const in structured binding; correct
+  const auto& [state, actions, settings, file_index, thread_pool, monitor, search_worker,
+               aggregator, native_window, glfw_window, show_settings, show_metrics,
+               is_index_building, metrics_available, show_test_engine_window] = context;
+  // NOLINTEND(misc-misplaced-const)
   // Main window setup
   const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(main_viewport->WorkPos);
@@ -68,7 +59,7 @@ void UIRenderer::RenderMainWindow(const RenderMainWindowContext& context) {
 
   // SECTION 0: Application Controls (UI Mode, Settings, Metrics, Help)
   ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kToolbarVerticalPadding));
-  FilterPanel::RenderApplicationControls(state, show_settings, show_metrics, metrics_available, settings, context.show_test_engine_window);
+  FilterPanel::RenderApplicationControls(state, show_settings, show_metrics, metrics_available, settings, show_test_engine_window);
   ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kToolbarVerticalPadding));
 
   // Reserve space at the bottom for the non-scrollable footer area:
@@ -121,7 +112,7 @@ void UIRenderer::RenderMainWindow(const RenderMainWindowContext& context) {
   } else {
     // Always call ResultsTable::Render - it handles its own conditions internally
     ResultsTable::Render(state, native_window, glfw_window, thread_pool, file_index,
-                         context.aggregator,
+                         aggregator,
                          settings.showPathHierarchyIndentation);
   }
 
@@ -155,17 +146,8 @@ void UIRenderer::RenderMainWindow(const RenderMainWindowContext& context) {
 }
 
 void UIRenderer::RenderFloatingWindows(const RenderFloatingWindowsContext& context) {
-  // Extract parameters from context for readability
-  GuiState& state = context.state;
-  ui::UIActions* actions = context.actions;
-  AppSettings& settings = context.settings;
-  FileIndex& file_index = context.file_index;
-  UsnMonitor* const monitor = context.monitor;
-  SearchWorker& search_worker = context.search_worker;
-  GLFWwindow* glfw_window = context.glfw_window;
-  std::atomic<bool>& show_settings = context.show_settings;
-  std::atomic<bool>& show_metrics = context.show_metrics;
-  const bool metrics_available = context.metrics_available;
+  const auto& [state, actions, settings, file_index, monitor, search_worker, glfw_window,
+               show_settings, show_metrics, metrics_available] = context;
   // Render floating windows
   // Use local bools for compatibility with SettingsWindow/MetricsWindow which expect bool*
   bool show_settings_val = show_settings.load();
@@ -279,14 +261,6 @@ void UIRenderer::RenderManualSearchContent(GuiState& state, ui::UIActions* actio
 }
 
 void UIRenderer::RenderAISearchSection(const RenderMainWindowContext& context) {
-  GuiState& state = context.state;
-  AppSettings& settings = context.settings;
-  GLFWwindow* glfw_window = context.glfw_window;
-  std::atomic<bool>& show_settings = context.show_settings;
-  std::atomic<bool>& show_metrics = context.show_metrics;
-  const bool is_index_building = context.is_index_building;
-  const bool metrics_available = context.metrics_available;
-
   // Accent-tinted headers (similar to Search button) for visual consistency
   const ImVec4 header_color = Theme::AccentTint(Theme::HeaderAlphas::Base);
   const ImVec4 header_hovered_color = Theme::AccentTint(Theme::HeaderAlphas::Hover);
@@ -303,7 +277,7 @@ void UIRenderer::RenderAISearchSection(const RenderMainWindowContext& context) {
   }
   std::string ai_header_label = ai_header_text + "##ai_search";
 
-  ImGui::SetNextItemOpen(state.aiSearchExpanded, ImGuiCond_Always);
+  ImGui::SetNextItemOpen(context.state.aiSearchExpanded, ImGuiCond_Always);
 
   ImGui::PushStyleColor(ImGuiCol_Header, header_color);
   ImGui::PushStyleColor(ImGuiCol_HeaderHovered, header_hovered_color);
@@ -314,10 +288,10 @@ void UIRenderer::RenderAISearchSection(const RenderMainWindowContext& context) {
 
   ImGui::PopStyleColor(4);
   DrawSectionHeaderAccentBar();  // After header so bar draws on top
-  state.aiSearchExpanded = ai_is_expanded;
+  context.state.aiSearchExpanded = ai_is_expanded;
 
   if (ai_is_expanded) {
-    if (settings.showWorkflowHint && api_key_set) {
+    if (context.settings.showWorkflowHint && api_key_set) {
       ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
       ImGui::TextWrapped("[TIP] Start here: Describe what you're looking for in natural language. "
                          "For manual control, use Manual Search above.");
@@ -325,24 +299,25 @@ void UIRenderer::RenderAISearchSection(const RenderMainWindowContext& context) {
 
       ImGui::SameLine();
       if (ImGui::SmallButton("Got it")) {
-        settings.showWorkflowHint = false;
-        SaveSettings(settings);
+        context.settings.showWorkflowHint = false;
+        SaveSettings(context.settings);
       }
       ImGui::SameLine();
       if (ImGui::SmallButton("Don't show again")) {
-        settings.showWorkflowHint = false;
-        SaveSettings(settings);
+        context.settings.showWorkflowHint = false;
+        SaveSettings(context.settings);
       }
       ImGui::Dummy(ImVec2(0.0F, LayoutConstants::kBlockPadding));
     }
 
     // Use local bools for SearchInputs which expects bool* pointers
-    bool show_settings_val = show_settings.load();
-    bool show_metrics_val = show_metrics.load();
-    SearchInputs::RenderAISearch(state, glfw_window, context.actions, is_index_building,
-                                 &show_settings_val, &show_metrics_val, metrics_available);
-    show_settings.store(show_settings_val);
-    show_metrics.store(show_metrics_val);
+    bool show_settings_val = context.show_settings.load();
+    bool show_metrics_val = context.show_metrics.load();
+    SearchInputs::RenderAISearch(context.state, context.glfw_window, context.actions,
+                                 context.is_index_building, &show_settings_val,
+                                 &show_metrics_val, context.metrics_available);
+    context.show_settings.store(show_settings_val);
+    context.show_metrics.store(show_metrics_val);
   }
 }
 

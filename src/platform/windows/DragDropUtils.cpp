@@ -429,7 +429,7 @@ bool StartFileDragDrop(const std::vector<std::string_view>& full_paths_utf8) {
     if (!file_operations::internal::ValidatePath(sv, "StartFileDragDrop")) {
       continue;
     }
-    const std::wstring wide_path = Utf8ToWide(sv);
+    std::wstring wide_path = Utf8ToWide(sv);
     if (wide_path.empty() && !sv.empty()) {
       LOG_WARNING("StartFileDragDrop: Failed to convert path to wide string: " + std::string(sv));
       continue;

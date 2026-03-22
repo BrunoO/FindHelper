@@ -2,6 +2,8 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 #include "index/FileIndexStorage.h"
 #include "path/PathOperations.h"
@@ -15,10 +17,31 @@ struct PathOpsFixture {
   PathStorage path_storage_;
   PathOperations ops{storage_, path_storage_};
 
-  void AddEntry(uint64_t id, uint64_t parent_id, const std::string& name, bool is_dir) {
+  void AddEntry(uint64_t id, uint64_t parent_id, std::string_view name, bool is_dir) {
     storage_.InsertLocked(id, parent_id, name, is_dir, kFileTimeNotLoaded);
   }
 };
+
+namespace {
+
+// Shared by ParsePathOffsets / dotfile SUBCASEs (Sonar duplication reduction).
+void AssertComponentsAfterInsert(PathOpsFixture& fixture,
+                                 std::string_view filename,
+                                 std::string_view full_inserted_path,
+                                 bool expect_has_extension,
+                                 std::string_view expected_extension,
+                                 const char* expected_filename_if_nonnull = nullptr) {
+  fixture.AddEntry(1, 0, filename, false);
+  fixture.ops.InsertPath(1, full_inserted_path, false);
+  const PathOperations::PathComponentsView components = fixture.ops.GetPathComponentsViewByIndex(0);
+  CHECK(components.has_extension == expect_has_extension);
+  CHECK(components.extension == expected_extension);
+  if (expected_filename_if_nonnull != nullptr) {
+    CHECK(components.filename == expected_filename_if_nonnull);
+  }
+}
+
+}  // namespace
 
 TEST_CASE_FIXTURE(PathOpsFixture, "PathOperations::InsertPath inserts path entry") {
   AddEntry(1, 0, "file.txt", false);
@@ -124,46 +147,23 @@ TEST_CASE_FIXTURE(PathOpsFixture, "PathStorage::ParsePathOffsets - dotfile handl
   // fix in ComputePathOffsets (SearchWorker.cpp).
 
   SUBCASE("Pure dotfile (.gitignore) has no extension") {
-    AddEntry(1, 0, ".gitignore", false);
-    ops.InsertPath(1, R"(C:\repo\.gitignore)", false);
-    const PathOperations::PathComponentsView components = ops.GetPathComponentsViewByIndex(0);
-    CHECK(components.has_extension == false);
-    CHECK(components.extension == "");
-    CHECK(components.filename == ".gitignore");
+    AssertComponentsAfterInsert(*this, ".gitignore", R"(C:\repo\.gitignore)", false, "", ".gitignore");
   }
 
   SUBCASE("Pure dotfile (.env) has no extension") {
-    AddEntry(1, 0, ".env", false);
-    ops.InsertPath(1, R"(C:\project\.env)", false);
-    const PathOperations::PathComponentsView components = ops.GetPathComponentsViewByIndex(0);
-    CHECK(components.has_extension == false);
-    CHECK(components.extension == "");
-    CHECK(components.filename == ".env");
+    AssertComponentsAfterInsert(*this, ".env", R"(C:\project\.env)", false, "", ".env");
   }
 
   SUBCASE("Dotfile with real extension (.profile.bak) has extension bak") {
-    AddEntry(1, 0, ".profile.bak", false);
-    ops.InsertPath(1, R"(C:\home\.profile.bak)", false);
-    const PathOperations::PathComponentsView components = ops.GetPathComponentsViewByIndex(0);
-    CHECK(components.has_extension == true);
-    CHECK(components.extension == "bak");
+    AssertComponentsAfterInsert(*this, ".profile.bak", R"(C:\home\.profile.bak)", true, "bak");
   }
 
   SUBCASE("Normal file (normal.txt) has extension txt") {
-    AddEntry(1, 0, "normal.txt", false);
-    ops.InsertPath(1, R"(C:\test\normal.txt)", false);
-    const PathOperations::PathComponentsView components = ops.GetPathComponentsViewByIndex(0);
-    CHECK(components.has_extension == true);
-    CHECK(components.extension == "txt");
+    AssertComponentsAfterInsert(*this, "normal.txt", R"(C:\test\normal.txt)", true, "txt");
   }
 
   SUBCASE("File with no extension (Makefile) has no extension") {
-    AddEntry(1, 0, "Makefile", false);
-    ops.InsertPath(1, R"(C:\src\Makefile)", false);
-    const PathOperations::PathComponentsView components = ops.GetPathComponentsViewByIndex(0);
-    CHECK(components.has_extension == false);
-    CHECK(components.extension == "");
-    CHECK(components.filename == "Makefile");
+    AssertComponentsAfterInsert(*this, "Makefile", R"(C:\src\Makefile)", false, "", "Makefile");
   }
 }
 

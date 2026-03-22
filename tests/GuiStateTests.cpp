@@ -8,6 +8,7 @@
  * - GuiState::BuildCurrentSearchParams() conversion
  * - Path and filename fields independent (no path-to-filename move)
  * - String operations (assignment, copying, length checks)
+ * - ApplySearchConfig() and ApplyShowAllPreset()
  *
  * These tests ensure safe refactoring from char[256] arrays to SearchInputField class.
  */
@@ -15,10 +16,13 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
 
+#include <string>
+#include <vector>
+
+#include "api/GeminiApiUtils.h"
 #include "gui/GuiState.h"
 #include "search/SearchWorker.h"
 #include "utils/StringUtils.h"
-#include <string>
 
 // Helper function to set SearchInputField value (replaces SetInputField)
 void SetInputField(SearchInputField& field, const std::string& value) {
@@ -259,7 +263,7 @@ TEST_SUITE("GuiState Input Field Operations") {
     const auto now = std::chrono::steady_clock::now();
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         now - state.lastInputTime).count();
-    constexpr long long kMaxElapsedMs = 1000LL;
+    constexpr int64_t kMaxElapsedMs = 1000LL;
     REQUIRE(elapsed < kMaxElapsedMs); // Should be less than 1 second
   }
 
@@ -321,5 +325,177 @@ TEST_SUITE("GuiState Input Field Operations") {
     REQUIRE(state.folderStatsByPath.empty());
   }
 
+}
+
+TEST_SUITE("GuiState::ApplyShowAllPreset") {
+
+  TEST_CASE("clears filename, extension and sets path to pp:**") {
+    GuiState state;
+    state.filenameInput.SetValue("report");
+    state.extensionInput.SetValue("pdf");
+
+    state.ApplyShowAllPreset();
+
+    CHECK(state.filenameInput.IsEmpty());
+    CHECK(state.extensionInput.IsEmpty());
+    CHECK(state.pathInput.AsString() == "pp:**");
+  }
+
+  TEST_CASE("resets filters to None") {
+    GuiState state;
+    state.timeFilter = TimeFilter::Today;
+    state.sizeFilter = SizeFilter::Large;
+    state.foldersOnly = true;
+    state.caseSensitive = true;
+
+    state.ApplyShowAllPreset();
+
+    CHECK(state.timeFilter == TimeFilter::None);
+    CHECK(state.sizeFilter == SizeFilter::None);
+    CHECK(!state.foldersOnly);
+    CHECK(!state.caseSensitive);
+  }
+
+  TEST_CASE("marks inputChanged") {
+    GuiState state;
+    state.inputChanged = false;
+
+    state.ApplyShowAllPreset();
+
+    CHECK(state.inputChanged);
+  }
+}
+
+TEST_SUITE("GuiState::ApplySearchConfig") {
+
+  TEST_CASE("applies filename from config") {
+    GuiState state;
+    gemini_api_utils::SearchConfig config;
+    config.filename = "report*.pdf";
+
+    state.ApplySearchConfig(config);
+
+    CHECK(state.filenameInput.AsString() == "report*.pdf");
+  }
+
+  TEST_CASE("empty filename in config leaves existing field unchanged") {
+    GuiState state;
+    state.filenameInput.SetValue("existing");
+    gemini_api_utils::SearchConfig config;  // filename empty
+
+    state.ApplySearchConfig(config);
+
+    CHECK(state.filenameInput.AsString() == "existing");
+  }
+
+  TEST_CASE("applies multiple extensions as semicolon-separated string") {
+    GuiState state;
+    gemini_api_utils::SearchConfig config;
+    config.extensions = {"pdf", "doc", "docx"};
+
+    state.ApplySearchConfig(config);
+
+    CHECK(state.extensionInput.AsString() == "pdf;doc;docx");
+  }
+
+  TEST_CASE("applies single extension without trailing semicolon") {
+    GuiState state;
+    gemini_api_utils::SearchConfig config;
+    config.extensions = {"txt"};
+
+    state.ApplySearchConfig(config);
+
+    CHECK(state.extensionInput.AsString() == "txt");
+  }
+
+  TEST_CASE("applies path from config") {
+    GuiState state;
+    gemini_api_utils::SearchConfig config;
+    config.path = "/home/user/docs";
+
+    state.ApplySearchConfig(config);
+
+    CHECK(state.pathInput.AsString() == "/home/user/docs");
+  }
+
+  TEST_CASE("applies foldersOnly and caseSensitive flags") {
+    GuiState state;
+    gemini_api_utils::SearchConfig config;
+    config.folders_only = true;
+    config.case_sensitive = true;
+
+    state.ApplySearchConfig(config);
+
+    CHECK(state.foldersOnly);
+    CHECK(state.caseSensitive);
+  }
+
+  TEST_CASE("applies known time filter strings") {
+    GuiState state;
+    gemini_api_utils::SearchConfig config;
+
+    config.time_filter = "Today";
+    state.ApplySearchConfig(config);
+    CHECK(state.timeFilter == TimeFilter::Today);
+
+    config.time_filter = "ThisWeek";
+    state.ApplySearchConfig(config);
+    CHECK(state.timeFilter == TimeFilter::ThisWeek);
+
+    config.time_filter = "ThisMonth";
+    state.ApplySearchConfig(config);
+    CHECK(state.timeFilter == TimeFilter::ThisMonth);
+
+    config.time_filter = "ThisYear";
+    state.ApplySearchConfig(config);
+    CHECK(state.timeFilter == TimeFilter::ThisYear);
+
+    config.time_filter = "Older";
+    state.ApplySearchConfig(config);
+    CHECK(state.timeFilter == TimeFilter::Older);
+  }
+
+  TEST_CASE("unknown or empty time filter defaults to None") {
+    GuiState state;
+    state.timeFilter = TimeFilter::Today;
+
+    gemini_api_utils::SearchConfig config;
+    config.time_filter = "InvalidValue";
+    state.ApplySearchConfig(config);
+    CHECK(state.timeFilter == TimeFilter::None);
+
+    state.timeFilter = TimeFilter::Today;
+    config.time_filter = "";
+    state.ApplySearchConfig(config);
+    CHECK(state.timeFilter == TimeFilter::None);
+  }
+
+  TEST_CASE("applies known size filter strings") {
+    GuiState state;
+    gemini_api_utils::SearchConfig config;
+
+    config.size_filter = "Large";
+    state.ApplySearchConfig(config);
+    CHECK(state.sizeFilter == SizeFilter::Large);
+
+    config.size_filter = "Tiny";
+    state.ApplySearchConfig(config);
+    CHECK(state.sizeFilter == SizeFilter::Tiny);
+
+    config.size_filter = "Massive";
+    state.ApplySearchConfig(config);
+    CHECK(state.sizeFilter == SizeFilter::Massive);
+  }
+
+  TEST_CASE("marks inputChanged after applying config") {
+    GuiState state;
+    state.inputChanged = false;
+    gemini_api_utils::SearchConfig config;
+    config.filename = "test";
+
+    state.ApplySearchConfig(config);
+
+    CHECK(state.inputChanged);
+  }
 }
 

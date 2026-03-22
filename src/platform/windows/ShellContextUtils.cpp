@@ -182,7 +182,14 @@ static bool InvokeContextMenuCommand(
   return false;
 }
 
-bool ShowContextMenu(HWND hwnd, std::string_view path, POINT pt) {
+// COM setup/teardown shared by ShowContextMenu and PinToQuickAccess:
+// CoInitializeEx → SHParseDisplayName → SHBindToParent → GetUIObjectOf(IContextMenu)
+// → action(hwnd, p_context_menu, path_str) → cleanup.
+// Returns false on setup failure or if action returns false.
+// context_label is prepended to error log messages (e.g. "ShowContextMenu").
+template <typename ActionFn>
+static bool WithShellContextItem(HWND hwnd, std::string_view path,
+                                  std::string_view context_label, ActionFn action) {
   const std::string path_str(path);
   std::wstring w_path = Utf8ToWide(path_str);
   NormalizePathToBackslashes(w_path);
@@ -190,178 +197,112 @@ bool ShowContextMenu(HWND hwnd, std::string_view path, POINT pt) {
   // COM is required for IShellFolder/IContextMenu; initialize explicitly and uninitialize on success.
   // Uninitialize when we initialized (S_OK) or incremented ref (S_FALSE); never when RPC_E_CHANGED_MODE.
   const HRESULT hr_com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-  const bool need_uninit =
-      (SUCCEEDED(hr_com) && hr_com != RPC_E_CHANGED_MODE);
+  const bool need_uninit = (SUCCEEDED(hr_com) && hr_com != RPC_E_CHANGED_MODE);
   if (FAILED(hr_com) && hr_com != RPC_E_CHANGED_MODE) {
     logging_utils::LogHResultError("CoInitializeEx",
-                                    "ShowContextMenu: COM initialization",
+                                    std::string(context_label) + ": COM initialization",
                                     hr_com);
     return false;
   }
 
-  HRESULT hr;
-  IShellFolder* p_parent_folder = nullptr;
-  PIDLIST_ABSOLUTE raw_pidl = nullptr;
-  PCUITEMID_CHILD pidl_child = nullptr;
-  IContextMenu* p_context_menu = nullptr;
-  bool result = false;  // NOLINT(misc-const-correctness) - result is modified by InvokeContextMenuCommand
-
-  hr = SHParseDisplayName(w_path.c_str(), nullptr, &raw_pidl, 0, nullptr);
-  if (FAILED(hr)) {
-    logging_utils::LogHResultError("SHParseDisplayName",
-                                    "Path: " + path_str,
-                                    hr);
+  const auto maybe_uninit = [need_uninit]() {  // explicit capture for MSVC (lambda in template)
     if (need_uninit) {
       CoUninitialize();
     }
+  };
+
+  PIDLIST_ABSOLUTE raw_pidl = nullptr;
+  HRESULT hr = SHParseDisplayName(w_path.c_str(), nullptr, &raw_pidl, 0, nullptr);
+  if (FAILED(hr)) {
+    logging_utils::LogHResultError("SHParseDisplayName",
+                                    std::string(context_label) + ": Path: " + path_str,
+                                    hr);
+    maybe_uninit();
     return false;
   }
   PidlAbsolutePtr pidl_abs(raw_pidl);
 
+  IShellFolder* p_parent_folder = nullptr;
+  PCUITEMID_CHILD pidl_child = nullptr;
   hr = SHBindToParent(pidl_abs.get(), IID_IShellFolder,
                       reinterpret_cast<void**>(&p_parent_folder),  // NOSONAR(cpp:S3630) - SHBindToParent uses void** out param; reinterpret_cast required from typed interface pointer
                       &pidl_child);
   if (FAILED(hr)) {
     logging_utils::LogHResultError("SHBindToParent",
-                                    "Path: " + path_str,
+                                    std::string(context_label) + ": Path: " + path_str,
                                     hr);
-    if (need_uninit) {
-      CoUninitialize();
-    }
+    maybe_uninit();
     return false;
   }
 
+  IContextMenu* p_context_menu = nullptr;
   hr = p_parent_folder->GetUIObjectOf(hwnd, 1, &pidl_child,
                                       IID_IContextMenu, nullptr,
                                       reinterpret_cast<void**>(&p_context_menu));  // NOSONAR(cpp:S3630) - GetUIObjectOf uses void** out param; reinterpret_cast required from typed interface pointer
   if (FAILED(hr)) {
     logging_utils::LogHResultError("GetUIObjectOf",
-                                    "Path: " + path_str + ", Interface: IContextMenu",
+                                    std::string(context_label) + ": Path: " + path_str +
+                                    ", Interface: IContextMenu",
                                     hr);
     p_parent_folder->Release();
-    if (need_uninit) {
-      CoUninitialize();
-    }
+    maybe_uninit();
     return false;
   }
 
-  if (HMENU h_menu = CreatePopupMenu(); h_menu) {
-    result = InvokeContextMenuCommand(hwnd, p_context_menu, h_menu, pt, path_str);
-    DestroyMenu(h_menu);
-  } else {
-    DWORD err = GetLastError();
-    logging_utils::LogWindowsApiError("CreatePopupMenu",
-                                      "Path: " + path_str,
-                                      err);
-  }
+  const bool result = action(hwnd, p_context_menu, path_str);
 
   p_context_menu->Release();
   p_parent_folder->Release();
-  if (need_uninit) {
-    CoUninitialize();
-  }
+  maybe_uninit();
   return result;
 }
 
-bool PinToQuickAccess(HWND hwnd, std::string_view path) {
-  const std::string path_str(path);
-  std::wstring w_path = Utf8ToWide(path_str);
-  NormalizePathToBackslashes(w_path);
+// Pin-to-home: menu scan first, then direct verb invocation (kept out of WithShellContextItem lambda for Sonar S1188).
+static bool InvokePinToQuickAccessVerb(HWND h,
+                                       IContextMenu* p_context_menu,
+                                       const std::string& path_str) {
+  if (TryInvokePintohomeViaMenu(h, p_context_menu, path_str)) {
+    return true;
+  }
+  // Fallback: attempt direct verb-by-name invocation for environments where the
+  // menu-based path does not expose a canonical "pintohome" verb string.
+  CMINVOKECOMMANDINFOEX ici_ex = {};
+  ici_ex.cbSize = sizeof(CMINVOKECOMMANDINFOEX);
+  ici_ex.fMask = CMIC_MASK_UNICODE | CMIC_MASK_ASYNCOK;
+  ici_ex.hwnd = h;
+  ici_ex.lpVerbW = L"pintohome";
+  ici_ex.nShow = SW_SHOWNORMAL;
 
-  // COM is required for IShellFolder/IContextMenu; initialize explicitly and uninitialize on success.
-  // Uninitialize when we initialized (S_OK) or incremented ref (S_FALSE); never when RPC_E_CHANGED_MODE.
-  const HRESULT hr_com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-  const bool need_uninit =
-      (SUCCEEDED(hr_com) && hr_com != RPC_E_CHANGED_MODE);
-  if (FAILED(hr_com) && hr_com != RPC_E_CHANGED_MODE) {
-    logging_utils::LogHResultError("CoInitializeEx",
-                                    "PinToQuickAccess: COM initialization",
-                                    hr_com);
+  const HRESULT hr_invoke = p_context_menu->InvokeCommand(
+      reinterpret_cast<LPCMINVOKECOMMANDINFO>(&ici_ex));  // NOSONAR(cpp:S3630) - Win32 InvokeCommand expects CMINVOKECOMMANDINFO*; reinterpret_cast from CMINVOKECOMMANDINFOEX* follows MSDN pattern
+
+  if (FAILED(hr_invoke)) {
+    logging_utils::LogHResultError("InvokeCommand",
+                                    "PinToQuickAccess: pintohome, Path: " + path_str,
+                                    hr_invoke);
     return false;
   }
 
-  HRESULT hr;
-  IShellFolder* p_parent_folder = nullptr;
-  PIDLIST_ABSOLUTE raw_pidl = nullptr;
-  PCUITEMID_CHILD pidl_child = nullptr;
-  IContextMenu* p_context_menu = nullptr;
-
-  hr = SHParseDisplayName(w_path.c_str(), nullptr, &raw_pidl, 0, nullptr);
-  if (FAILED(hr)) {
-    logging_utils::LogHResultError("SHParseDisplayName",
-                                    "PinToQuickAccess: Path: " + path_str,
-                                    hr);
-    if (need_uninit) {
-      CoUninitialize();
-    }
-    return false;
-  }
-  PidlAbsolutePtr pidl_abs(raw_pidl);
-
-  hr = SHBindToParent(pidl_abs.get(), IID_IShellFolder,
-                      reinterpret_cast<void**>(&p_parent_folder),  // NOSONAR(cpp:S3630) - SHBindToParent uses void** out param; reinterpret_cast required from typed interface pointer
-                      &pidl_child);
-  if (FAILED(hr)) {
-    logging_utils::LogHResultError("SHBindToParent",
-                                    "PinToQuickAccess: Path: " + path_str,
-                                    hr);
-    if (need_uninit) {
-      CoUninitialize();
-    }
-    return false;
-  }
-
-  hr = p_parent_folder->GetUIObjectOf(hwnd, 1, &pidl_child,
-                                      IID_IContextMenu, nullptr,
-                                      reinterpret_cast<void**>(&p_context_menu));  // NOSONAR(cpp:S3630) - GetUIObjectOf uses void** out param; reinterpret_cast required from typed interface pointer
-  if (FAILED(hr)) {
-    logging_utils::LogHResultError("GetUIObjectOf",
-                                    "PinToQuickAccess: Path: " + path_str,
-                                    hr);
-    p_parent_folder->Release();
-    if (need_uninit) {
-      CoUninitialize();
-    }
-    return false;
-  }
-
-  if (const bool invoked =
-          TryInvokePintohomeViaMenu(hwnd, p_context_menu, path_str);
-      !invoked) {
-    // Fallback: attempt direct verb-by-name invocation for environments where the
-    // menu-based path does not expose a canonical "pintohome" verb string.
-    CMINVOKECOMMANDINFOEX ici_ex = {};
-    ici_ex.cbSize = sizeof(CMINVOKECOMMANDINFOEX);
-    ici_ex.fMask = CMIC_MASK_UNICODE | CMIC_MASK_ASYNCOK;
-    ici_ex.hwnd = hwnd;
-    ici_ex.lpVerbW = L"pintohome";
-    ici_ex.nShow = SW_SHOWNORMAL;
-
-    const HRESULT hr_invoke = p_context_menu->InvokeCommand(
-        reinterpret_cast<LPCMINVOKECOMMANDINFO>(&ici_ex));  // NOSONAR(cpp:S3630) - Win32 InvokeCommand expects CMINVOKECOMMANDINFO*; reinterpret_cast from CMINVOKECOMMANDINFOEX* follows MSDN pattern
-
-    if (FAILED(hr_invoke)) {
-      logging_utils::LogHResultError("InvokeCommand",
-                                      "PinToQuickAccess: pintohome, Path: " + path_str,
-                                      hr_invoke);
-      p_context_menu->Release();
-      p_parent_folder->Release();
-      if (need_uninit) {
-        CoUninitialize();
-      }
-      return false;
-    }
-
-    LOG_INFO_BUILD("PinToQuickAccess: pinned to Quick Access via verb: " << path_str);
-  }
-
-  p_context_menu->Release();
-  p_parent_folder->Release();
-  if (need_uninit) {
-    CoUninitialize();
-  }
-
+  LOG_INFO_BUILD("PinToQuickAccess: pinned to Quick Access via verb: " << path_str);
   return true;
+}
+
+bool ShowContextMenu(HWND hwnd, std::string_view path, POINT pt) {
+  return WithShellContextItem(hwnd, path, "ShowContextMenu",
+      [pt](HWND h, IContextMenu* p_context_menu, const std::string& path_str) {
+        if (HMENU h_menu = CreatePopupMenu(); h_menu) {
+          const bool result = InvokeContextMenuCommand(h, p_context_menu, h_menu, pt, path_str);
+          DestroyMenu(h_menu);
+          return result;
+        }
+        const DWORD err = GetLastError();
+        logging_utils::LogWindowsApiError("CreatePopupMenu", "Path: " + path_str, err);
+        return false;
+      });
+}
+
+bool PinToQuickAccess(HWND hwnd, std::string_view path) {
+  return WithShellContextItem(hwnd, path, "PinToQuickAccess", InvokePinToQuickAccessVerb);
 }
 
 bool IsProcessElevated() {

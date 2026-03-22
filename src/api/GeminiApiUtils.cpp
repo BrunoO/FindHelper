@@ -20,8 +20,6 @@ using json = nlohmann::json;  // NOLINT(readability-identifier-naming) - match n
 
 namespace gemini_api_utils {
 
-// Removed unused function ShouldSkipApiCall - was not used anywhere
-
 // Maximum sizes for input validation
 constexpr size_t kMaxPromptSize = static_cast<size_t>(100) * 1024;  // 100KB
 // Note: kMaxResponseSize is defined in platform-specific files (GeminiApiHttp_*.cpp)
@@ -88,37 +86,9 @@ std::pair<bool, std::string> CallGeminiApiRaw(std::string_view prompt,
   return CallGeminiApiHttpPlatform(prompt, api_key, timeout_seconds);
 }
 
-std::string GetGeminiApiKeyFromEnv() {
-#ifdef _WIN32
-  // Use RAII wrapper to safely manage memory from _dupenv_s (replaces manual free() calls)
-  struct EnvKeyDeleter {
-    void operator()(char* ptr) const noexcept {
-      if (ptr != nullptr) {
-        free(ptr);  // NOSONAR(cpp:S1231) - Required by _dupenv_s C API, custom deleter for unique_ptr is correct pattern
-      }
-    }
-  };
-  using EnvKeyPtr = std::unique_ptr<char, EnvKeyDeleter>;
 
-  char *env_key = nullptr;
-  size_t len = 0;
-  if (errno_t err = _dupenv_s(&env_key, &len, "GEMINI_API_KEY"); err != 0 || env_key == nullptr || len == 0) {
-    // Wrap in unique_ptr for automatic cleanup even in error path (RAII - eliminates manual free() calls)
-    if (env_key != nullptr) {
-      EnvKeyPtr env_key_guard(env_key);
-    }
-    return std::string();
-  }
-  // Wrap in unique_ptr for automatic cleanup (RAII - eliminates manual free() calls)
-  EnvKeyPtr env_key_guard(env_key);
-  std::string result(env_key);
-  return result;
-#else
-  if (const char *env_key = std::getenv("GEMINI_API_KEY"); env_key != nullptr) {  // NOLINT(concurrency-mt-unsafe) - C++17 init-statement; getenv result copied immediately, config-style read
-    return {env_key};
-  }
-  return {};
-#endif  // _WIN32
+std::string GetGeminiApiKeyFromEnv() {
+  return GetEnvironmentVariable("GEMINI_API_KEY");
 }
 
 bool ValidatePathPatternFormat(std::string_view pattern) {
@@ -134,8 +104,6 @@ bool ValidatePathPatternFormat(std::string_view pattern) {
 
   return true;
 }
-
-// Removed unused function ExtractTextFromGeminiResponse - was not used anywhere
 
 /**
  * @brief Parse extensions from JSON value (supports both array and comma-separated string formats)

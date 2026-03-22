@@ -5,6 +5,7 @@
 
 #include "ui/FolderBrowser.h"
 
+#include "gui/ImGuiUtils.h"
 #include "imgui.h"
 #include "ui/IconsFontAwesome.h"
 #include "utils/Logger.h"
@@ -120,9 +121,7 @@ void RenderHeader(const std::filesystem::path& current_path, FolderBrowser* brow
     NavigateToRootFallback(browser);
   }
 
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
+  SeparatorWithSpacing();
 }
 
 // Helper function to render filter input (reduces cognitive complexity)
@@ -181,9 +180,7 @@ void RenderDirectoryList(const std::vector<std::filesystem::path>& entries,
 
 // Helper function to render action buttons (reduces cognitive complexity)
 bool RenderActionButtons(std::string_view current_path, FolderBrowser* browser) {  // NOSONAR(cpp:S6009) - current_path is only checked for empty, string_view is appropriate
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
+  SeparatorWithSpacing();
 
   // Action buttons
   if (ImGui::Button("Cancel", ImVec2(kActionButtonWidth, 0.0F))) {

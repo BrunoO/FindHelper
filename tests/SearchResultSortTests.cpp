@@ -190,3 +190,65 @@ TEST_CASE("SearchResult::GetFilename and GetExtension - dotfile handling") {
         CHECK(r.GetExtension() == "");
     }
 }
+
+TEST_CASE("CompareByColumn - sentinel file sizes sort as zero") {
+    // kFileSizeNotLoaded (UINT64_MAX) and kFileSizeFailed (UINT64_MAX-1) are
+    // mapped to 0 in the Size column comparator so that unloaded entries don't
+    // float to the top of a descending sort.
+    constexpr size_t kOffset = 8;
+
+    SearchResult real;
+    real.fullPath = R"(C:\path\real.txt)";
+    real.filename_offset = kOffset;
+    real.extension_offset = std::string_view::npos;
+    constexpr uint64_t kRealSize = 500ULL;
+    real.fileSize = kRealSize;
+
+    SearchResult unloaded;
+    unloaded.fullPath = R"(C:\path\unloaded.txt)";
+    unloaded.filename_offset = kOffset;
+    unloaded.extension_offset = std::string_view::npos;
+    unloaded.fileSize = kFileSizeNotLoaded;
+
+    SearchResult failed;
+    failed.fullPath = R"(C:\path\failed.txt)";
+    failed.filename_offset = kOffset;
+    failed.extension_offset = std::string_view::npos;
+    failed.fileSize = kFileSizeFailed;
+
+    SUBCASE("descending sort: real file appears before sentinel entries") {
+        std::vector<SearchResult> results = {unloaded, real, failed};
+        const auto comp = CreateSearchResultComparator(ResultColumn::Size,
+                                                       ImGuiSortDirection_Descending);
+        std::sort(results.begin(), results.end(), comp);
+
+        // real (500) > sentinel (treated as 0), so real sorts first descending
+        CHECK(results[0].fileSize == kRealSize);
+    }
+
+    SUBCASE("ascending sort: sentinel entries (treated as 0) appear before real file") {
+        std::vector<SearchResult> results = {real, unloaded, failed};
+        const auto comp = CreateSearchResultComparator(ResultColumn::Size,
+                                                       ImGuiSortDirection_Ascending);
+        std::sort(results.begin(), results.end(), comp);
+
+        // sentinels treated as 0 < 500, so they sort first ascending
+        CHECK(results[2].fileSize == kRealSize);
+    }
+}
+
+TEST_CASE("CompareByColumn - unknown column index returns 0 (equal)") {
+    constexpr int kUnknownColumn = 999;
+    constexpr size_t kOffset = 8;
+
+    SearchResult r1;
+    r1.fullPath = R"(C:\path\a.txt)";
+    r1.filename_offset = kOffset;
+
+    SearchResult r2;
+    r2.fullPath = R"(C:\path\z.txt)";
+    r2.filename_offset = kOffset;
+
+    CHECK(CompareByColumn(r1, r2, kUnknownColumn) == 0);
+    CHECK(CompareByColumn(r2, r1, kUnknownColumn) == 0);
+}

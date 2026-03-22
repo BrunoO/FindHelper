@@ -1,4 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <array>
+#include <cstring>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -166,6 +168,55 @@ TEST_SUITE("StringUtils") {
     CHECK_EQ(Utf8ToWide(""), std::wstring());
     CHECK_EQ(Utf8ToWide("hello"), std::wstring());
     CHECK_EQ(Utf8ToWide("/path/to/file"), std::wstring());
+  }
+#endif  // _WIN32
+
+#ifndef _WIN32
+  // strcat_safe is an inline function on non-Windows; strcat_s macro on Windows.
+  TEST_SUITE("strcat_safe") {
+
+    TEST_CASE("appends to empty destination") {
+      std::array<char, 16> buf{};
+      buf[0] = '\0';
+      strcat_safe(buf.data(), buf.size(), "hello");
+      CHECK(std::string_view(buf.data()) == "hello");
+    }
+
+    TEST_CASE("appends to non-empty destination") {
+      std::array<char, 16> buf{};
+      strcpy_safe(buf.data(), buf.size(), "foo");
+      strcat_safe(buf.data(), buf.size(), "bar");
+      CHECK(std::string_view(buf.data()) == "foobar");
+    }
+
+    TEST_CASE("truncates when combined result would overflow") {
+      std::array<char, 8> buf{};
+      strcpy_safe(buf.data(), buf.size(), "abc");  // 3 chars + null
+      strcat_safe(buf.data(), buf.size(), "defghij");  // would overflow
+      // buf holds 8 bytes total; 3 already used, so 4 chars of src fit
+      CHECK(std::strlen(buf.data()) == 7U);
+      CHECK(buf[7] == '\0');  // always null-terminated
+    }
+
+    TEST_CASE("no-op when destination is already full") {
+      std::array<char, 4> buf{};
+      strcpy_safe(buf.data(), buf.size(), "abc");  // fills buffer (3 chars + null)
+      strcat_safe(buf.data(), buf.size(), "xyz");  // no room
+      CHECK(std::string_view(buf.data()) == "abc");
+    }
+
+    TEST_CASE("zero-size buffer is handled without crash") {
+      std::array<char, 2> buf = {'x', '\0'};
+      strcat_safe(buf.data(), 0, "y");  // must not touch buf
+      CHECK(buf[0] == 'x');
+    }
+
+    TEST_CASE("appending empty string leaves destination unchanged") {
+      std::array<char, 16> buf{};
+      strcpy_safe(buf.data(), buf.size(), "hello");
+      strcat_safe(buf.data(), buf.size(), "");
+      CHECK(std::string_view(buf.data()) == "hello");
+    }
   }
 #endif  // _WIN32
 }

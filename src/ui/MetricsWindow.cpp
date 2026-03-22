@@ -45,17 +45,9 @@ void MetricsWindow::RenderMetricText(const char *tooltip, const char *fmt, ...) 
 }
 
 void MetricsWindow::Render(bool *p_open,
-                           [[maybe_unused]] UsnMonitor *monitor,
+                           [[maybe_unused]] const UsnMonitor *monitor,
                            SearchWorker *search_worker,
                            FileIndex &file_index) {
-  if (p_open == nullptr || !*p_open) {
-    return;
-  }
-
-  const detail::StyleColorGuard window_bg_guard(ImGuiCol_WindowBg, Theme::Colors::WindowBg);
-
-  const char *metrics_title = METRICS_WINDOW_TITLE_STR;
-
   // Make window resizable and allow it to float outside main window
   // Set window position and size - use FirstUseEver so position is only set once, allowing user to move it
   const ImGuiViewport *main_viewport = ImGui::GetMainViewport();
@@ -65,31 +57,38 @@ void MetricsWindow::Render(bool *p_open,
   ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(kMetricsWindowPivot, kMetricsWindowPivot));
   ImGui::SetNextWindowSize(ImVec2(static_cast<float>(kMetricsWindowDefaultWidth), static_cast<float>(kMetricsWindowDefaultHeight)), ImGuiCond_FirstUseEver);
 
-  const detail::WindowGuard window_guard(metrics_title, p_open, ImGuiWindowFlags_None);
-  if (window_guard.ShowContent()) {
+  detail::RenderToolWindow(METRICS_WINDOW_TITLE_STR, p_open, Theme::Colors::WindowBg,
+                           [monitor, search_worker, &file_index, p_open]() {
+    MetricsWindow::RenderMetricsToolWindowBody(monitor, search_worker, file_index, p_open);
+  });
+}
+
+void MetricsWindow::RenderMetricsToolWindowBody(const UsnMonitor *monitor,
+                                                SearchWorker *search_worker,
+                                                FileIndex &file_index,
+                                                bool *p_open) {
 #ifdef _WIN32
-    if (monitor) {
-      if (ImGui::Button("Reset Metrics")) {
-        monitor->ResetMetrics();
-      }
-      ImGui::SameLine();
+  if (monitor != nullptr) {
+    if (ImGui::Button("Reset Metrics")) {
+      monitor->ResetMetrics();
     }
-#else
-    // macOS: No monitoring metrics available (monitor is always nullptr)
-#endif  // _WIN32
-    if (ImGui::Button(ICON_FA_XMARK " Close", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
-      *p_open = false;
-    }
-
-    ImGui::Separator();
-
-#ifdef _WIN32
-    RenderMonitorMetricsSection(monitor, file_index);
-#endif  // _WIN32
-
-    RenderSearchPerformanceSection(search_worker);
-    RenderSystemPerformanceSection(file_index);
+    ImGui::SameLine();
   }
+#else
+  (void)monitor;
+#endif  // _WIN32
+  if (ImGui::Button(ICON_FA_XMARK " Close", ImVec2(LayoutConstants::kSecondaryButtonWidth, 0))) {
+    *p_open = false;
+  }
+
+  ImGui::Separator();
+
+#ifdef _WIN32
+  RenderMonitorMetricsSection(monitor, file_index);
+#endif  // _WIN32
+
+  RenderSearchPerformanceSection(search_worker);
+  RenderSystemPerformanceSection(file_index);
 }
 
 #ifdef _WIN32

@@ -270,4 +270,12 @@ bool CheckSortAttributeLoadingAndSort(GuiState &state,
  */
 void CleanupAttributeLoadingFutures(GuiState &state, bool blocking = true);
 
+/**
+ * @brief Sum file sizes in a result collection, skipping directories and unloaded sizes.
+ *
+ * Shared by SearchResultUtils and SearchResultsService to avoid duplicating the
+ * accumulation loop.  Returns 0 for empty or all-directory collections.
+ */
+[[nodiscard]] uint64_t ComputeTotalFileBytes(const std::vector<SearchResult>& results);
+
 

@@ -16,26 +16,6 @@ namespace string_search::avx2 {
 
 namespace { // Anonymous namespace for internal linkage
 
-// Internal helper to compare pattern.
-// GCC/Clang: ensure AVX2 codegen when TU is not built with -mavx2 (Linux correctness).
-template <bool CaseSensitive>
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((target("avx2")))
-#endif  // defined(__GNUC__) || defined(__clang__)
-inline bool FullCompare(const char* a, const char* b, size_t len) {
-    if constexpr (CaseSensitive) {
-        return std::memcmp(a, b, len) == 0;
-    } else {
-        // This is only called after a first-char match, so the cost is acceptable.
-        for (size_t i = 0; i < len; ++i) {
-            if (ToLowerChar(static_cast<unsigned char>(a[i])) != ToLowerChar(static_cast<unsigned char>(b[i]))) {
-                return false;
-            }
-        }
-        return true;
-    }
-}
-
 // The core AVX2 search implementation, templated for case-sensitivity.
 // Assumes needle_len >= 4.
 // GCC/Clang: ensure AVX2 codegen when TU is not built with -mavx2 (Linux correctness).
@@ -79,7 +59,7 @@ const char* InternalStrStrAVX2(const char* haystack, size_t haystack_len, const 
                 break;
             }
 
-            if (FullCompare<CaseSensitive>(haystack + match_pos, needle, needle_len)) {
+            if (string_search::FullCompare<CaseSensitive>(haystack + match_pos, needle, needle_len)) {
                 return haystack + match_pos;
             }
 
@@ -89,7 +69,7 @@ const char* InternalStrStrAVX2(const char* haystack, size_t haystack_len, const 
 
     // Scalar loop for the remainder of the haystack (less than 32 bytes).
     for (size_t k = i; k <= max_start; ++k) {
-        if (FullCompare<CaseSensitive>(haystack + k, needle, needle_len)) {
+        if (string_search::FullCompare<CaseSensitive>(haystack + k, needle, needle_len)) {
             return haystack + k;
         }
     }

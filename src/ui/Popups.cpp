@@ -421,9 +421,7 @@ void Popups::RenderRegexGeneratorPopupContent(char* target_buffer, size_t buffer
 
   // Case sensitive checkbox
   ImGui::Checkbox("Case sensitive", &state.case_sensitive);
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
+  SeparatorWithSpacing();
 
   // Generate pattern button
   // NOLINTNEXTLINE(readability-magic-numbers) - Button width in pixels is self-explanatory
@@ -441,9 +439,7 @@ void Popups::RenderRegexGeneratorPopupContent(char* target_buffer, size_t buffer
   // Test preview and action buttons (only shown if pattern was generated)
   if (!state.generated_pattern.empty()) {
     RenderTestPreview(state, popup_id);
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
+    SeparatorWithSpacing();
     RenderActionButtons(state, target_buffer, buffer_size, popup_id, gui_state);
   } else {
     // Close button when no pattern generated

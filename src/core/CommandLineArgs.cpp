@@ -46,7 +46,7 @@
 namespace {
 
 // Command-line argument name lengths (including '=') for parsing
-constexpr int kThreadPoolSizeArgLen = 20;
+constexpr int kThreadPoolSizeArgLen = 19;
 constexpr int kLoadBalancingArgLen = 17;
 constexpr int kWindowWidthArgLen = 15;
 constexpr int kWindowHeightArgLen = 16;

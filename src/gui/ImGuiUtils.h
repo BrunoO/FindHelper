@@ -21,14 +21,16 @@ inline float ComputeButtonWidth(const char *label) {
   return ImGui::CalcTextSize(label).x + (style.FramePadding.x * 2.0F);  // NOLINT(readability-math-missing-parentheses) - Parentheses added for clarity
 }
 
-// Center the next window (e.g. a popup) in the main viewport.
-// Call this immediately before ImGui::SetNextWindowSize / BeginPopupModal.
-inline void CenterNextWindowInMainWindow() {
+// Center the next window in the main viewport.
+// cond controls when positioning applies:
+//   ImGuiCond_Appearing   — every time the window appears (default; for popups/modals)
+//   ImGuiCond_FirstUseEver — only on the first ever appearance (for persistent tool windows)
+inline void CenterNextWindowInMainWindow(ImGuiCond cond = ImGuiCond_Appearing) {
   const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
   constexpr float kCenterFactor = 0.5F;
   const ImVec2 center(main_viewport->WorkPos.x + (main_viewport->WorkSize.x * kCenterFactor),
                       main_viewport->WorkPos.y + (main_viewport->WorkSize.y * kCenterFactor));
-  ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(kCenterFactor, kCenterFactor));
+  ImGui::SetNextWindowPos(center, cond, ImVec2(kCenterFactor, kCenterFactor));
 }
 
 // Add multiple consecutive ImGui::Spacing() calls.
@@ -37,6 +39,21 @@ inline void AddVerticalSpacing(int count) {
   for (int i = 0; i < count; ++i) {
     ImGui::Spacing();
   }
+}
+
+// Horizontal separator with spacing above and below (section dividers in modals, settings, folder browser).
+inline void SeparatorWithSpacing() {
+  ImGui::Spacing();
+  ImGui::Separator();
+  ImGui::Spacing();
+}
+
+// Inline pipe separator for status-bar-style horizontal item lists.
+// Equivalent to: ImGui::SameLine(); ImGui::Text("|"); ImGui::SameLine();
+inline void InlineSeparator() {
+  ImGui::SameLine();
+  ImGui::Text("|");
+  ImGui::SameLine();
 }
 
 // Right-align a group of widgets whose total width is known.

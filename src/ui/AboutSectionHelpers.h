@@ -31,6 +31,9 @@ namespace ui {
 /** Tooltip text for PGO mode; returns nullptr if mode is '\0'. */
 [[nodiscard]] const char* GetAboutPgoTooltip(char pgo_mode);
 
+/** Renders the PGO tooltip when the previously rendered ImGui item is hovered. */
+void RenderPgoTooltipIfHovered(char pgo_mode);
+
 /** Platform/monitoring label: "Windows (No Monitoring)", "macOS (No Monitoring)", "Linux (No Monitoring)". */
 [[nodiscard]] const char* GetAboutPlatformMonitoringLabel();
 

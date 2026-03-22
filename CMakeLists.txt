@@ -80,7 +80,6 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/freetype/CMakeLists.txt")
     message(FATAL_ERROR "FreeType submodule not found. Please run: git submodule update --init --recursive")
 endif()
 add_subdirectory(external/freetype)
-set(FREETYPE_LIBRARIES freetype)
 
 # --- ImGui (set once; platform backend added per-platform below) ---
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
@@ -129,22 +128,19 @@ set(SHARED_UTIL_SOURCES_FOR_TESTS
 
 # --- GLFW detection macro (non-Windows; deduplicates macOS and Linux detection) ---
 macro(find_or_fetch_glfw)
-    set(GLFW_FOUND_SYSTEM FALSE)
     find_package(glfw3 3.3 QUIET)
     if(glfw3_FOUND)
-        set(GLFW_FOUND_SYSTEM TRUE)
         message(STATUS "Found system GLFW via find_package")
     else()
         find_package(PkgConfig QUIET)
         if(PkgConfig_FOUND)
             pkg_check_modules(GLFW3 QUIET glfw3>=3.3)
             if(GLFW3_FOUND)
-                set(GLFW_FOUND_SYSTEM TRUE)
                 message(STATUS "Found system GLFW via pkg-config: ${GLFW3_VERSION}")
             endif()
         endif()
     endif()
-    if(NOT GLFW_FOUND_SYSTEM)
+    if(NOT glfw3_FOUND AND NOT GLFW3_FOUND)
         message(STATUS "System GLFW 3.3+ not found - downloading and building GLFW 3.4 via FetchContent")
         message(STATUS "  (This may take a moment on first configure)")
         message(STATUS "  Alternatively, install via: brew install glfw")
@@ -171,13 +167,12 @@ endmacro()
 
 # Link GLFW to a target (call after find_or_fetch_glfw)
 function(link_glfw target_name)
-    if(glfw3_FOUND)
-        target_link_libraries(${target_name} PRIVATE glfw)
-    elseif(GLFW3_FOUND)
+    if(GLFW3_FOUND)
+        # system GLFW found via pkg-config
         target_link_libraries(${target_name} PRIVATE ${GLFW3_LIBRARIES})
         target_include_directories(${target_name} PRIVATE ${GLFW3_INCLUDE_DIRS})
     else()
-        # FetchContent GLFW - target 'glfw' created by FetchContent_MakeAvailable
+        # glfw3_FOUND (find_package) or FetchContent both create the 'glfw' imported target
         target_link_libraries(${target_name} PRIVATE glfw)
     endif()
 endfunction()
@@ -280,9 +275,6 @@ if(FAST_LIBS_BOOST)
         cmake_policy(SET CMP0144 NEW)
     endif()
     find_package(Boost 1.81.0 REQUIRED MODULE)
-    if(NOT Boost_FOUND)
-        message(FATAL_ERROR "FAST_LIBS_BOOST requires Boost 1.81+ but Boost was not found.")
-    endif()
     message(STATUS "FAST_LIBS_BOOST enabled: boost::unordered_map + boost::unordered_flat_map (${Boost_VERSION})")
     if(Boost_INCLUDE_DIRS)
         message(STATUS "  Boost include dirs: ${Boost_INCLUDE_DIRS}")
@@ -328,7 +320,7 @@ if(WIN32)
         src/usn/WindowsIndexBuilder.cpp
         src/utils/LoggingUtils.cpp
         src/index/InitialIndexPopulator.cpp
-        src/api/GeminiApiHttp_win.cpp
+        ${GEMINI_API_HTTP_SRC}
     )
     if(ENABLE_MFT_METADATA_READING)
         list(APPEND APP_SOURCES_PLATFORM src/index/mft/MftMetadataReader.cpp)
@@ -360,7 +352,7 @@ if(WIN32)
     )
     target_link_libraries(find_helper PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib/glfw3.lib
-        ${FREETYPE_LIBRARIES}
+        freetype
         d3d11
         d3dcompiler
         dxgi
@@ -407,7 +399,7 @@ elseif(APPLE)
         ${PLATFORM_THREAD_UTILS_SRC}
         ${PLATFORM_STRING_UTILS_SRC}
         src/platform/macos/MetalManager.mm
-        src/api/GeminiApiHttp_mac.mm
+        ${GEMINI_API_HTTP_SRC}
     )
     if(ENABLE_IMGUI_TEST_ENGINE)
         list(APPEND APP_SOURCES_PLATFORM ${IMGUI_TEST_ENGINE_SOURCES} src/ui/ImGuiTestEngineTests.cpp)
@@ -454,7 +446,7 @@ elseif(APPLE)
     link_glfw(find_helper)
 
     target_link_libraries(find_helper PRIVATE
-        ${FREETYPE_LIBRARIES}
+        freetype
         "-framework Metal"
         "-framework Foundation"
         "-framework QuartzCore"
@@ -591,7 +583,7 @@ elseif(UNIX AND NOT APPLE)
     link_glfw(find_helper)
 
     target_link_libraries(find_helper PRIVATE
-        ${FREETYPE_LIBRARIES}
+        freetype
         OpenGL::GL
         Threads::Threads
         Fontconfig::Fontconfig
@@ -777,7 +769,6 @@ endif() # BUILD_APPLICATION
 
 # --- Unit Tests ---
 option(BUILD_TESTS "Build unit tests" ON)
-option(CROSS_PLATFORM_TESTS "Enable cross-platform test support (macOS/Linux)" ON)
 # ASan is ON by default for tests - catches memory bugs like use-after-free
 option(ENABLE_ASAN "Enable Address Sanitizer for tests (GCC/Clang only)" ON)
 # TSAN (Thread Sanitizer) is OFF by default - catches data races; macOS/Linux only (not supported on Windows). Mutually exclusive with ASAN.
@@ -858,6 +849,9 @@ function(configure_test_target target_name)
             $<$<CONFIG:Debug>:/Zi /Od>
             $<$<CONFIG:Release>:/O2>
         )
+        if(ARG_WITH_AVX2 AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
+            target_compile_options(${target_name} PRIVATE /arch:AVX2)
+        endif()
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         if(ARG_WITH_AVX2 AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
             target_compile_options(${target_name} PRIVATE
@@ -872,7 +866,7 @@ function(configure_test_target target_name)
         endif()
     endif()
 
-    if(NOT WIN32 AND CROSS_PLATFORM_TESTS)
+    if(NOT WIN32)
         target_compile_definitions(${target_name} PRIVATE USN_WINDOWS_TESTS)
     endif()
 
@@ -887,6 +881,52 @@ function(configure_test_target target_name)
     apply_asan_to_target(${target_name})
     apply_tsan_to_target(${target_name})
     apply_coverage_to_target(${target_name})
+endfunction()
+
+# Configure a shared-source object library: compile features, compiler options,
+# USN_WINDOWS_TESTS define, base includes, and sanitizer/coverage/Boost instrumentation.
+# Optional keyword: WITH_AVX2 — enables -mavx2 on x86_64 GCC/Clang builds.
+function(configure_obj_library target_name)
+    cmake_parse_arguments(ARG "WITH_AVX2" "" "" ${ARGN})
+
+    target_compile_features(${target_name} PRIVATE cxx_std_17)
+
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE
+            $<$<CONFIG:Debug>:/Zi /Od>
+            $<$<CONFIG:Release>:/O2>
+        )
+        if(ARG_WITH_AVX2 AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
+            target_compile_options(${target_name} PRIVATE /arch:AVX2)
+        endif()
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        if(ARG_WITH_AVX2 AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
+            target_compile_options(${target_name} PRIVATE
+                $<$<CONFIG:Debug>:-g -O0 -mavx2>
+                $<$<CONFIG:Release>:-O2 -mavx2>
+            )
+        else()
+            target_compile_options(${target_name} PRIVATE
+                $<$<CONFIG:Debug>:-g -O0>
+                $<$<CONFIG:Release>:-O2>
+            )
+        endif()
+    endif()
+
+    if(NOT WIN32)
+        target_compile_definitions(${target_name} PRIVATE USN_WINDOWS_TESTS)
+    endif()
+
+    target_include_directories(${target_name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    # Sanitizer and coverage instrumentation (must be applied at compile time for accurate reports)
+    apply_asan_to_target(${target_name})
+    apply_tsan_to_target(${target_name})
+    apply_coverage_to_target(${target_name})
+    apply_fast_libs_boost(${target_name})
 endfunction()
 
 # Instrument macOS find_helper for coverage when requested (ImGui tests contribute to report).
@@ -908,113 +948,36 @@ if(BUILD_TESTS)
         # Object Libraries for Shared Test Sources
         # These object libraries compile shared source files once and reuse them
         # across multiple test executables, significantly reducing build times.
+        # configure_obj_library() handles compile features, options, defines, base
+        # includes, and sanitizer/coverage/Boost instrumentation for each library.
         # ============================================================================
 
-        # Common utility object library (CpuFeatures, StringSearchAVX2, StringSearchNEON)
         add_library(test_utils_obj OBJECT
             src/utils/CpuFeatures.cpp
             src/utils/StringSearchAVX2.cpp
             src/utils/StringSearchNEON.cpp
         )
-        target_include_directories(test_utils_obj PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-        target_compile_features(test_utils_obj PRIVATE cxx_std_17)
-        if(MSVC)
-            target_compile_options(test_utils_obj PRIVATE
-                $<$<CONFIG:Debug>:/Zi /Od>
-                $<$<CONFIG:Release>:/O2>
-            )
-        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
-            target_compile_options(test_utils_obj PRIVATE
-                $<$<CONFIG:Debug>:-g -O0 -mavx2>
-                $<$<CONFIG:Release>:-O2 -mavx2>
-            )
-        else()
-            target_compile_options(test_utils_obj PRIVATE
-                $<$<CONFIG:Debug>:-g -O0>
-                $<$<CONFIG:Release>:-O2>
-            )
-        endif()
-        if(NOT WIN32 AND CROSS_PLATFORM_TESTS)
-            target_compile_definitions(test_utils_obj PRIVATE USN_WINDOWS_TESTS)
-        endif()
+        configure_obj_library(test_utils_obj WITH_AVX2)
 
-        # Path utilities object library (PathUtils, PathPatternMatcher)
         add_library(test_path_obj OBJECT
             src/path/PathUtils.cpp
             src/path/PathPatternMatcher.cpp
         )
-        target_include_directories(test_path_obj PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-        target_compile_features(test_path_obj PRIVATE cxx_std_17)
-        if(MSVC)
-            target_compile_options(test_path_obj PRIVATE
-                $<$<CONFIG:Debug>:/Zi /Od>
-                $<$<CONFIG:Release>:/O2>
-            )
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(test_path_obj PRIVATE
-                $<$<CONFIG:Debug>:-g -O0>
-                $<$<CONFIG:Release>:-O2>
-            )
-        endif()
-        if(NOT WIN32 AND CROSS_PLATFORM_TESTS)
-            target_compile_definitions(test_path_obj PRIVATE USN_WINDOWS_TESTS)
-        endif()
+        configure_obj_library(test_path_obj)
 
         # Platform-specific StringUtils object library
         add_library(test_string_utils_obj OBJECT ${PLATFORM_STRING_UTILS_SRC})
-        target_include_directories(test_string_utils_obj PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-        target_compile_features(test_string_utils_obj PRIVATE cxx_std_17)
-        if(MSVC)
-            target_compile_options(test_string_utils_obj PRIVATE
-                $<$<CONFIG:Debug>:/Zi /Od>
-                $<$<CONFIG:Release>:/O2>
-            )
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(test_string_utils_obj PRIVATE
-                $<$<CONFIG:Debug>:-g -O0>
-                $<$<CONFIG:Release>:-O2>
-            )
-        endif()
-        if(NOT WIN32 AND CROSS_PLATFORM_TESTS)
-            target_compile_definitions(test_string_utils_obj PRIVATE USN_WINDOWS_TESTS)
-        endif()
+        configure_obj_library(test_string_utils_obj)
 
-        # Core utilities object library (Settings, LoadBalancingStrategy)
         add_library(test_core_obj OBJECT
             src/core/Settings.cpp
             src/utils/LoadBalancingStrategy.cpp
         )
+        configure_obj_library(test_core_obj)
         target_include_directories(test_core_obj PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include
         )
-        target_compile_features(test_core_obj PRIVATE cxx_std_17)
-        if(MSVC)
-            target_compile_options(test_core_obj PRIVATE
-                $<$<CONFIG:Debug>:/Zi /Od>
-                $<$<CONFIG:Release>:/O2>
-            )
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(test_core_obj PRIVATE
-                $<$<CONFIG:Debug>:-g -O0>
-                $<$<CONFIG:Release>:-O2>
-            )
-        endif()
-        if(NOT WIN32 AND CROSS_PLATFORM_TESTS)
-            target_compile_definitions(test_core_obj PRIVATE USN_WINDOWS_TESTS)
-        endif()
 
-        # Search utilities object library (ParallelSearchEngine, SearchThreadPool, etc.)
         add_library(test_search_obj OBJECT
             src/search/ParallelSearchEngine.cpp
             src/search/SearchContextBuilder.cpp
@@ -1023,27 +986,11 @@ if(BUILD_TESTS)
             src/search/SearchThreadPool.cpp
             src/search/SearchStatisticsCollector.cpp
         )
+        configure_obj_library(test_search_obj)
         target_include_directories(test_search_obj PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
             ${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include
         )
-        target_compile_features(test_search_obj PRIVATE cxx_std_17)
-        if(MSVC)
-            target_compile_options(test_search_obj PRIVATE
-                $<$<CONFIG:Debug>:/Zi /Od>
-                $<$<CONFIG:Release>:/O2>
-            )
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(test_search_obj PRIVATE
-                $<$<CONFIG:Debug>:-g -O0>
-                $<$<CONFIG:Release>:-O2>
-            )
-        endif()
-        if(NOT WIN32 AND CROSS_PLATFORM_TESTS)
-            target_compile_definitions(test_search_obj PRIVATE USN_WINDOWS_TESTS)
-        endif()
 
         # FileIndex object library (FileIndex, FileIndexMaintenance, FileIndexStorage, etc.)
         # Used by 10+ test targets - compiling once saves massive build time
@@ -1059,46 +1006,18 @@ if(BUILD_TESTS)
             src/path/PathBuilder.cpp
             src/path/PathStorage.cpp
         )
+        configure_obj_library(test_fileindex_obj)
         target_include_directories(test_fileindex_obj PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include
         )
-        target_compile_features(test_fileindex_obj PRIVATE cxx_std_17)
-        if(MSVC)
+        # CRITICAL: PGO flags for test_fileindex_obj — must match find_helper's /GL /Gy to avoid LNK1269
+        if(MSVC AND ENABLE_PGO)
             target_compile_options(test_fileindex_obj PRIVATE
-                $<$<CONFIG:Debug>:/Zi /Od>
-                $<$<CONFIG:Release>:/O2>
+                $<$<CONFIG:Release>:/GL /Gy>
             )
-            # CRITICAL: PGO flags for test_fileindex_obj
-            if(ENABLE_PGO)
-                target_compile_options(test_fileindex_obj PRIVATE
-                    $<$<CONFIG:Release>:/GL /Gy>
-                )
-            endif()
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(test_fileindex_obj PRIVATE
-                $<$<CONFIG:Debug>:-g -O0>
-                $<$<CONFIG:Release>:-O2>
-            )
-        endif()
-        if(NOT WIN32 AND CROSS_PLATFORM_TESTS)
-            target_compile_definitions(test_fileindex_obj PRIVATE USN_WINDOWS_TESTS)
         endif()
 
         message(STATUS "  Created object libraries for shared test sources (faster incremental builds)")
-
-        # Apply sanitizers, coverage, and FAST_LIBS_BOOST to all object libraries.
-        # Object libraries propagate compile flags to consuming executables but need their own
-        # compile-time instrumentation for coverage/sanitizer reports to be accurate.
-        foreach(_obj_lib
-                test_utils_obj test_path_obj test_string_utils_obj
-                test_core_obj test_search_obj test_fileindex_obj)
-            apply_asan_to_target(${_obj_lib})
-            apply_tsan_to_target(${_obj_lib})
-            apply_coverage_to_target(${_obj_lib})
-            apply_fast_libs_boost(${_obj_lib})
-        endforeach()
 
         # ============================================================================
         # Test Executables
@@ -1243,13 +1162,6 @@ if(BUILD_TESTS)
             $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(path_pattern_integration_tests WITH_AVX2)
-        if(MSVC)
-            # Ensure AVX2 is enabled for this TU on MSVC
-            target_compile_options(path_pattern_integration_tests PRIVATE
-                $<$<CONFIG:Debug>:/arch:AVX2>
-                $<$<CONFIG:Release>:/arch:AVX2>
-            )
-        endif()
         if(WIN32)
             target_link_libraries(path_pattern_integration_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1365,19 +1277,17 @@ if(BUILD_TESTS)
         )
         configure_test_target(parallel_search_engine_tests WITH_AVX2)
         configure_msvc_ltcg(parallel_search_engine_tests)
-        message(STATUS "  Cross-platform test mode enabled for parallel_search_engine_tests")
         add_test(NAME ParallelSearchEngineTests COMMAND parallel_search_engine_tests)
         message(STATUS "  Test executable: parallel_search_engine_tests")
 
         # TimeFilterUtils tests
-        set(TIME_FILTER_UTILS_TESTS_PLATFORM_SOURCES ${PLATFORM_THREAD_UTILS_SRC})
         add_executable(time_filter_utils_tests
             tests/TimeFilterUtilsTests.cpp
             tests/TestHelpers.cpp
             src/filters/TimeFilterUtils.cpp
             src/filters/SizeFilterUtils.cpp
             src/gui/GuiState.cpp
-            ${TIME_FILTER_UTILS_TESTS_PLATFORM_SOURCES}
+            ${PLATFORM_THREAD_UTILS_SRC}
             $<TARGET_OBJECTS:test_fileindex_obj>
             $<TARGET_OBJECTS:test_search_obj>
             $<TARGET_OBJECTS:test_utils_obj>
@@ -1393,8 +1303,28 @@ if(BUILD_TESTS)
         add_test(NAME TimeFilterUtilsTests COMMAND time_filter_utils_tests)
         message(STATUS "  Test executable: time_filter_utils_tests")
 
+        # CommandLineArgs tests
+        add_executable(command_line_args_tests
+            tests/CommandLineArgsTests.cpp
+            src/core/CommandLineArgs.cpp
+            ${PLATFORM_THREAD_UTILS_SRC}
+            $<TARGET_OBJECTS:test_search_obj>
+            $<TARGET_OBJECTS:test_utils_obj>
+            $<TARGET_OBJECTS:test_core_obj>
+            $<TARGET_OBJECTS:test_path_obj>
+            $<TARGET_OBJECTS:test_string_utils_obj>
+            $<TARGET_OBJECTS:test_fileindex_obj>
+        )
+        configure_test_target(command_line_args_tests WITH_AVX2)
+        configure_msvc_ltcg(command_line_args_tests)
+        if(WIN32)
+            target_link_libraries(command_line_args_tests PRIVATE shlwapi shcore ole32)
+        endif()
+        add_test(NAME CommandLineArgsTests COMMAND command_line_args_tests)
+        message(STATUS "  Test executable: command_line_args_tests")
+
         # GuiState tests
-        set(GUI_STATE_TEST_SOURCES
+        add_executable(gui_state_tests
             tests/GuiStateTests.cpp
             src/gui/GuiState.cpp
             src/search/SearchController.cpp
@@ -1407,9 +1337,6 @@ if(BUILD_TESTS)
             ${SHARED_UTIL_SOURCES_FOR_TESTS}
             ${PLATFORM_THREAD_UTILS_SRC}
             $<TARGET_OBJECTS:test_fileindex_obj>
-        )
-        add_executable(gui_state_tests
-            ${GUI_STATE_TEST_SOURCES}
             $<TARGET_OBJECTS:test_search_obj>
             $<TARGET_OBJECTS:test_utils_obj>
             $<TARGET_OBJECTS:test_path_obj>
@@ -1425,14 +1352,11 @@ if(BUILD_TESTS)
         message(STATUS "  Test executable: gui_state_tests")
 
         # FileIndex search strategy tests
-        set(FILE_INDEX_TEST_SOURCES
+        add_executable(file_index_search_strategy_tests
             tests/FileIndexSearchStrategyTests.cpp
             tests/LoadBalancingStrategyTests.cpp
             tests/TestHelpers.cpp
             ${PLATFORM_THREAD_UTILS_SRC}
-        )
-        add_executable(file_index_search_strategy_tests
-            ${FILE_INDEX_TEST_SOURCES}
             $<TARGET_OBJECTS:test_search_obj>
             $<TARGET_OBJECTS:test_utils_obj>
             $<TARGET_OBJECTS:test_fileindex_obj>
@@ -1441,7 +1365,6 @@ if(BUILD_TESTS)
             $<TARGET_OBJECTS:test_core_obj>
         )
         configure_test_target(file_index_search_strategy_tests WITH_AVX2)
-        message(STATUS "  Cross-platform test mode enabled for file_index_search_strategy_tests")
         if(MSVC)
             # This target unconditionally uses /GL for whole-program optimization in Release
             target_compile_options(file_index_search_strategy_tests PRIVATE
@@ -1531,7 +1454,6 @@ if(BUILD_TESTS)
         )
         configure_test_target(search_context_tests)
         configure_msvc_ltcg(search_context_tests)
-        message(STATUS "  Cross-platform test mode enabled for search_context_tests")
         if(WIN32)
             target_link_libraries(search_context_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1553,7 +1475,6 @@ if(BUILD_TESTS)
         )
         configure_test_target(index_operations_tests)
         configure_msvc_ltcg(index_operations_tests)
-        message(STATUS "  Cross-platform test mode enabled for index_operations_tests")
         add_test(NAME IndexOperationsTests COMMAND index_operations_tests)
         message(STATUS "  Test executable: index_operations_tests")
 
@@ -1570,7 +1491,6 @@ if(BUILD_TESTS)
         )
         configure_test_target(path_operations_tests)
         configure_msvc_ltcg(path_operations_tests)
-        message(STATUS "  Cross-platform test mode enabled for path_operations_tests")
         if(WIN32)
             target_link_libraries(path_operations_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1591,7 +1511,6 @@ if(BUILD_TESTS)
         )
         configure_test_target(directory_resolver_tests)
         configure_msvc_ltcg(directory_resolver_tests)
-        message(STATUS "  Cross-platform test mode enabled for directory_resolver_tests")
         if(WIN32)
             target_link_libraries(directory_resolver_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1612,7 +1531,6 @@ if(BUILD_TESTS)
         )
         configure_test_target(file_index_maintenance_tests)
         configure_msvc_ltcg(file_index_maintenance_tests)
-        message(STATUS "  Cross-platform test mode enabled for file_index_maintenance_tests")
         if(WIN32)
             target_link_libraries(file_index_maintenance_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1655,6 +1573,16 @@ if(BUILD_TESTS)
         )
         add_test(NAME SearchResultSortTests COMMAND search_result_sort_tests)
         message(STATUS "  Test executable: search_result_sort_tests")
+
+        # Exception handling tests
+        add_executable(exception_handling_tests
+            tests/ExceptionHandlingTests.cpp
+            ${SHARED_UTIL_SOURCES_FOR_TESTS}
+            $<TARGET_OBJECTS:test_utils_obj>
+        )
+        configure_test_target(exception_handling_tests)
+        add_test(NAME ExceptionHandlingTests COMMAND exception_handling_tests)
+        message(STATUS "  Test executable: exception_handling_tests")
 
         # Total size computation tests
         add_executable(total_size_computation_tests
@@ -1705,6 +1633,26 @@ if(BUILD_TESTS)
         configure_msvc_ltcg(folder_size_aggregator_tests)
         add_test(NAME FolderSizeAggregatorTests COMMAND folder_size_aggregator_tests)
         message(STATUS "  Test executable: folder_size_aggregator_tests")
+
+        # FolderCrawler tests
+        add_executable(folder_crawler_tests
+            tests/FolderCrawlerTests.cpp
+            tests/TestHelpers.cpp
+            src/crawler/FolderCrawler.cpp
+            ${PLATFORM_THREAD_UTILS_SRC}
+            $<TARGET_OBJECTS:test_utils_obj>
+            $<TARGET_OBJECTS:test_core_obj>
+            $<TARGET_OBJECTS:test_path_obj>
+            $<TARGET_OBJECTS:test_string_utils_obj>
+            $<TARGET_OBJECTS:test_fileindex_obj>
+            $<TARGET_OBJECTS:test_search_obj>
+        )
+        configure_test_target(folder_crawler_tests)
+        target_include_directories(folder_crawler_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
+        )
+        add_test(NAME FolderCrawlerTests COMMAND folder_crawler_tests)
+        message(STATUS "  Test executable: folder_crawler_tests")
 
         # Comprehensive coverage test executable
         option(ENABLE_COVERAGE_ALL_SOURCES "Include all source files in coverage report" OFF)
@@ -1773,31 +1721,13 @@ if(BUILD_TESTS)
             message(STATUS "  Test executable: coverage_all_sources (comprehensive coverage)")
         endif()
 
-        # Set timeout for Windows tests (must match all add_test(NAME ...) above)
+        # Set 5-minute timeout for all registered tests on Windows
         if(WIN32)
-            set(WINDOWS_TESTS
-                StringSearchTests FuzzySearchTests CpuFeaturesTests StringSearchAVX2Tests StringSearchNEONTests
-                PathUtilsTests PathPatternMatcherTests PathPatternIntegrationTests
-                SimpleRegexTests SearchPatternUtilsTests ExportSearchResultsServiceTests RegexGeneratorUtilsTests
-                StringUtilsTests FileSystemUtilsTests
-                LazyAttributeLoaderTests ParallelSearchEngineTests TimeFilterUtilsTests
-                GuiStateTests FileIndexSearchStrategyTests StreamingResultsCollectorTests GeminiApiUtilsTests
-                SettingsTests SearchContextTests IndexOperationsTests
-                PathOperationsTests DirectoryResolverTests FileIndexMaintenanceTests
-                StdRegexUtilsTests SearchResultSortTests TotalSizeComputationTests IncrementalSearchStateTests
-                FolderSizeAggregatorTests
-                PathPatternBenchmarkSmoke SearchBenchmarkSmoke
-            )
-            set(EXISTING_TESTS)
-            foreach(test ${WINDOWS_TESTS})
-                if(TARGET ${test})
-                    list(APPEND EXISTING_TESTS ${test})
-                endif()
-            endforeach()
-            if(EXISTING_TESTS)
-                set_tests_properties(${EXISTING_TESTS} PROPERTIES TIMEOUT 300)
-                list(LENGTH EXISTING_TESTS num_tests)
-                message(STATUS "  ${num_tests} tests registered for Windows CTest")
+            get_cmake_property(_all_tests TESTS)
+            if(_all_tests)
+                set_tests_properties(${_all_tests} PROPERTIES TIMEOUT 300)
+                list(LENGTH _all_tests _num_tests)
+                message(STATUS "  ${_num_tests} tests registered for Windows CTest")
             else()
                 message(WARNING "  No Windows tests found to configure")
             endif()
@@ -1839,14 +1769,14 @@ if(BUILD_TESTS)
             path_utils_tests path_pattern_matcher_tests path_pattern_integration_tests
             simple_regex_tests search_pattern_utils_tests export_search_results_service_tests regex_generator_utils_tests
             string_utils_tests file_system_utils_tests
-            lazy_attribute_loader_tests parallel_search_engine_tests time_filter_utils_tests
+            lazy_attribute_loader_tests parallel_search_engine_tests time_filter_utils_tests command_line_args_tests
             gui_state_tests file_index_search_strategy_tests gemini_api_utils_tests
             streaming_results_collector_tests
             settings_tests search_context_tests index_operations_tests
             path_operations_tests directory_resolver_tests file_index_maintenance_tests
-            std_regex_utils_tests search_result_sort_tests total_size_computation_tests
+            std_regex_utils_tests search_result_sort_tests total_size_computation_tests exception_handling_tests
             incremental_search_state_tests
-            folder_size_aggregator_tests
+            folder_size_aggregator_tests folder_crawler_tests
             path_pattern_benchmark search_benchmark
         )
         set(TEST_DEPENDENCIES "")

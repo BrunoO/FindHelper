@@ -194,4 +194,5 @@ esac
 
 echo ""
 echo -e "${BLUE}Duplications in SonarCloud:${NC} https://sonarcloud.io/project/duplications?id=${PROJECT_KEY}"
+echo -e "${BLUE}Per-file duplication API:${NC} scripts/fetch_sonar_duplications.sh"
 echo -e "${BLUE}Quality gate:${NC} https://sonarcloud.io/project/quality_gate?id=${PROJECT_KEY}"

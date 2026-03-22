@@ -147,7 +147,7 @@ if [[ "$COMPILER_ID" == "Clang" ]]; then
     echo "$PROFRAW_FILES" | sed 's|^|    |'
     echo ""
     
-    # Find test executables (must match TEST_TARGETS in build_tests_macos.sh so coverage is cumulative)
+    # Find test executables — same order as TEST_TARGETS in build_tests_macos.sh / CMakeLists.txt set(TEST_TARGETS ...)
     TEST_EXECUTABLES=(
         "$BUILD_DIR/string_search_tests"
         "$BUILD_DIR/fuzzy_search_tests"
@@ -166,10 +166,11 @@ if [[ "$COMPILER_ID" == "Clang" ]]; then
         "$BUILD_DIR/lazy_attribute_loader_tests"
         "$BUILD_DIR/parallel_search_engine_tests"
         "$BUILD_DIR/time_filter_utils_tests"
+        "$BUILD_DIR/command_line_args_tests"
         "$BUILD_DIR/gui_state_tests"
         "$BUILD_DIR/file_index_search_strategy_tests"
-        "$BUILD_DIR/streaming_results_collector_tests"
         "$BUILD_DIR/gemini_api_utils_tests"
+        "$BUILD_DIR/streaming_results_collector_tests"
         "$BUILD_DIR/settings_tests"
         "$BUILD_DIR/search_context_tests"
         "$BUILD_DIR/index_operations_tests"
@@ -179,7 +180,10 @@ if [[ "$COMPILER_ID" == "Clang" ]]; then
         "$BUILD_DIR/std_regex_utils_tests"
         "$BUILD_DIR/search_result_sort_tests"
         "$BUILD_DIR/total_size_computation_tests"
+        "$BUILD_DIR/exception_handling_tests"
         "$BUILD_DIR/incremental_search_state_tests"
+        "$BUILD_DIR/folder_size_aggregator_tests"
+        "$BUILD_DIR/folder_crawler_tests"
         "$BUILD_DIR/path_pattern_benchmark"
         "$BUILD_DIR/search_benchmark"
     )

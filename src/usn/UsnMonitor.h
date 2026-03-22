@@ -480,7 +480,7 @@ public:
   [[nodiscard]] UsnMonitorMetrics::Snapshot GetMetricsSnapshot() const {
     return metrics_.GetSnapshot();
   }
-  void ResetMetrics() { metrics_.Reset(); }
+  void ResetMetrics() const { metrics_.Reset(); }
 
   // Configuration
   const MonitoringConfig &GetConfig() const { return config_; }

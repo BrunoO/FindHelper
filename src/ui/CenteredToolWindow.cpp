@@ -7,17 +7,14 @@
 
 #include "imgui.h"
 
+#include "gui/ImGuiUtils.h"
 #include "ui/IconsFontAwesome.h"
 #include "ui/LayoutConstants.h"
 
 namespace ui::detail {
 
 void SetupCenteredToolWindow(float width, float height) {
-  const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
-  constexpr float kPivot = 0.5F;
-  const ImVec2 center(main_viewport->WorkPos.x + (main_viewport->WorkSize.x * kPivot),
-                      main_viewport->WorkPos.y + (main_viewport->WorkSize.y * kPivot));
-  ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(kPivot, kPivot));
+  CenterNextWindowInMainWindow(ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_FirstUseEver);
 }
 

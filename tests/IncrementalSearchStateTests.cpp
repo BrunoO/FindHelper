@@ -23,6 +23,14 @@ struct ResultStore {
   }
 };
 
+struct SearchStateFixture {
+  ResultStore store;
+  ui::IncrementalSearchState state;
+  std::vector<SearchResult> results;
+  int selected_row = -1;
+  bool scroll_to_selected = false;
+};
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Aggregated doctest suite with many small cases
@@ -36,13 +44,9 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK(state.Query().empty());
   }
 
-  TEST_CASE("Begin sets prompt visible") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "Begin sets prompt visible") {
     results.push_back(store.MakeResult("folder/file.txt"));
 
-    const int selected_row = -1;
     constexpr float kInitialScrollY = 10.0F;
     state.Begin(results, selected_row, kInitialScrollY, 1U);
 
@@ -52,15 +56,10 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
   }
 
   // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Aggregated doctest case with multiple checks
-  TEST_CASE("UpdateQuery - matching query") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "UpdateQuery - matching query") {
     results.push_back(store.MakeResult("folder/foo.txt"));
     results.push_back(store.MakeResult("other/bar.txt"));
 
-    int selected_row = -1;
-    bool scroll_to_selected = false;
     state.Begin(results, selected_row, 0.0F, 1U);
 
     state.UpdateQuery("foo", results, selected_row, scroll_to_selected);
@@ -74,14 +73,9 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK(scroll_to_selected);
   }
 
-  TEST_CASE("UpdateQuery - empty query clears filter") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "UpdateQuery - empty query clears filter") {
     results.push_back(store.MakeResult("folder/foo.txt"));
 
-    int selected_row = -1;
-    bool scroll_to_selected = false;
     state.Begin(results, selected_row, 0.0F, 1U);
 
     state.UpdateQuery("foo", results, selected_row, scroll_to_selected);
@@ -93,14 +87,9 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK_EQ(selected_row, -1);
   }
 
-  TEST_CASE("UpdateQuery - no matches") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "UpdateQuery - no matches") {
     results.push_back(store.MakeResult("folder/foo.txt"));
 
-    int selected_row = -1;
-    bool scroll_to_selected = false;
     state.Begin(results, selected_row, 0.0F, 1U);
 
     state.UpdateQuery("zzz", results, selected_row, scroll_to_selected);
@@ -110,15 +99,10 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK_FALSE(scroll_to_selected);
   }
 
-  TEST_CASE("NavigateNext wraps") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "NavigateNext wraps") {
     results.push_back(store.MakeResult("folder/a.txt"));
     results.push_back(store.MakeResult("folder/b.txt"));
 
-    int selected_row = -1;
-    bool scroll_to_selected = false;
     state.Begin(results, selected_row, 0.0F, 1U);
     state.UpdateQuery("folder", results, selected_row, scroll_to_selected);
 
@@ -133,15 +117,10 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK_EQ(selected_row, 0);
   }
 
-  TEST_CASE("NavigatePrev wraps") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "NavigatePrev wraps") {
     results.push_back(store.MakeResult("folder/a.txt"));
     results.push_back(store.MakeResult("folder/b.txt"));
 
-    int selected_row = -1;
-    bool scroll_to_selected = false;
     state.Begin(results, selected_row, 0.0F, 1U);
     state.UpdateQuery("folder", results, selected_row, scroll_to_selected);
 
@@ -153,14 +132,9 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK_EQ(selected_row, 0);
   }
 
-  TEST_CASE("Accept - non-empty query keeps filter") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "Accept - non-empty query keeps filter") {
     results.push_back(store.MakeResult("folder/foo.txt"));
 
-    int selected_row = -1;
-    bool scroll_to_selected = false;
     state.Begin(results, selected_row, 0.0F, 1U);
     state.UpdateQuery("foo", results, selected_row, scroll_to_selected);
 
@@ -171,13 +145,9 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK_EQ(state.MatchCount(), 1);
   }
 
-  TEST_CASE("Accept - empty query clears filter") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "Accept - empty query clears filter") {
     results.push_back(store.MakeResult("folder/foo.txt"));
 
-    const int selected_row = -1;
     state.Begin(results, selected_row, 0.0F, 1U);
 
     state.Accept();
@@ -187,15 +157,11 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
   }
 
   // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Aggregated doctest case with multiple checks
-  TEST_CASE("Cancel restores selection and scroll") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "Cancel restores selection and scroll") {
     results.push_back(store.MakeResult("folder/foo.txt"));
     results.push_back(store.MakeResult("folder/bar.txt"));
 
-    int selected_row = 1;
-    bool scroll_to_selected = false;
+    selected_row = 1;
     const float original_scroll = 42.0F;
     state.Begin(results, selected_row, original_scroll, 1U);
 
@@ -216,14 +182,9 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
   }
 
   // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Aggregated doctest case with multiple checks
-  TEST_CASE("CheckBatchNumber resets on change") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "CheckBatchNumber resets on change") {
     results.push_back(store.MakeResult("folder/foo.txt"));
 
-    int selected_row = -1;
-    bool scroll_to_selected = false;
     state.Begin(results, selected_row, 0.0F, 1U);
     state.UpdateQuery("foo", results, selected_row, scroll_to_selected);
 
@@ -238,14 +199,9 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK_EQ(selected_row, -1);
   }
 
-  TEST_CASE("CheckBatchNumber no-op when unchanged") {
-    ResultStore store;
-    ui::IncrementalSearchState state;
-    std::vector<SearchResult> results;
+  TEST_CASE_FIXTURE(SearchStateFixture, "CheckBatchNumber no-op when unchanged") {
     results.push_back(store.MakeResult("folder/foo.txt"));
 
-    int selected_row = -1;
-    bool scroll_to_selected = false;
     constexpr unsigned kBatchNumber = 5U;
     state.Begin(results, selected_row, 0.0F, kBatchNumber);
     state.UpdateQuery("foo", results, selected_row, scroll_to_selected);
@@ -256,21 +212,18 @@ TEST_SUITE("IncrementalSearchState") {  // NOLINT(readability-identifier-naming,
     CHECK_EQ(state.MatchCount(), 1);
   }
 
-  TEST_CASE("IncrementalSearchMatches - case insensitive") {
-    ResultStore store;
+  TEST_CASE_FIXTURE(SearchStateFixture, "IncrementalSearchMatches - case insensitive") {
     const SearchResult result = store.MakeResult("dir/FoObAr.txt");
     CHECK(ui::IncrementalSearchMatches("foo", result));
     CHECK(ui::IncrementalSearchMatches("FOO", result));
   }
 
-  TEST_CASE("IncrementalSearchMatches - empty query matches all") {
-    ResultStore store;
+  TEST_CASE_FIXTURE(SearchStateFixture, "IncrementalSearchMatches - empty query matches all") {
     const SearchResult result = store.MakeResult("anything.txt");
     CHECK(ui::IncrementalSearchMatches("", result));
   }
 
-  TEST_CASE("IncrementalSearchMatches - dotfile matched by basename") {
-    ResultStore store;
+  TEST_CASE_FIXTURE(SearchStateFixture, "IncrementalSearchMatches - dotfile matched by basename") {
     const SearchResult result = store.MakeResult("/home/user/.bashrc");
     CHECK(ui::IncrementalSearchMatches("bash", result));
   }
