@@ -501,12 +501,13 @@ private:
   // Initialized in constructor to reference storage_, path_storage_, index_mutex_, and counters
   IndexOperations operations_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
 
+  // ID counter must be declared before DirectoryResolver: resolver holds a reference to next_file_id_
+  // (member construction order is declaration order, not ctor initializer list order).
+  std::atomic<uint64_t> next_file_id_{1};  // NOLINT(readability-identifier-naming) - project convention: snake_case_
+
   // Directory resolver for ID resolution and creation
   // Initialized in constructor to reference storage_, operations_, and next_file_id_
   DirectoryResolver directory_resolver_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
-
-  // For populating from file
-  std::atomic<uint64_t> next_file_id_{1};  // NOLINT(readability-identifier-naming) - project convention: snake_case_
 
   // Thread pool lifecycle delegated to SearchThreadPoolManager (Option C)
   SearchThreadPoolManager thread_pool_manager_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
