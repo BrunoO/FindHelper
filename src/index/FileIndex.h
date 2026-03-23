@@ -407,9 +407,6 @@ private:
   // Core data storage (ID -> metadata, string pool, directory cache)
   FileIndexStorage storage_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
 
-  // Lazy attribute loader (handles file size and modification time loading)
-  mutable LazyAttributeLoader lazy_loader_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
-
   // ============================================================================
   // PERFORMANCE-CRITICAL: Structure of Arrays (SoA) Design for Parallel Search
   // ============================================================================
@@ -465,6 +462,9 @@ private:
   // PathStorage manages all SoA arrays for parallel search
   // This encapsulates the Structure of Arrays design for cache-efficient searching
   PathStorage path_storage_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
+
+  // Lazy loader holds references to storage_, path_storage_, index_mutex_; must follow path_storage_.
+  mutable LazyAttributeLoader lazy_loader_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
 
   // PathOperations provides higher-level path operations API
   // Wraps PathStorage and handles type conversions
