@@ -17,12 +17,14 @@
 #include "index/LazyAttributeLoader.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <future>
+#include <memory>
 #include <numeric>
-#include <stdexcept>  // For std::future_error
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 
 // CompareFileTime is now in FileTimeTypes.h
@@ -48,41 +50,24 @@ namespace {
 constexpr int kMaxWaitForCancelledTasksMs = 10;
 
 /**
- * @brief Check if all attribute loading futures are complete
- *
- * Performs a non-blocking check to see if all futures are ready.
- *
- * @param futures Vector of futures to check
- * @return True if all futures are ready, false otherwise
- */
-bool AreAllFuturesComplete(const std::vector<std::future<void>>& futures) {
-  return std::all_of(futures.begin(), futures.end(), [](const auto& f) {  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
-    return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
-  });
-}
-
-/**
  * @brief Wait briefly for cancelled tasks to finish
  *
  * Gives cancelled tasks time to see the cancellation flag and exit,
  * preventing use-after-free if results are replaced while tasks are running.
  *
- * @param futures Vector of futures to wait for
+ * @param counter Atomic countdown counter (decremented by each task on completion)
  * @param max_wait_ms Maximum time to wait in milliseconds
  */
-void WaitBrieflyForCancelledTasks(const std::vector<std::future<void>>& futures, int max_wait_ms) {
-  auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(max_wait_ms);
-  for (const auto& f : futures) {
-    if (f.valid()) {
-      auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-        deadline - std::chrono::steady_clock::now());
-      if (remaining.count() > 0) {
-        // Wait briefly for cancelled task to finish (non-blocking)
-        f.wait_for(remaining);
-      }
-      // If future is not ready, it's cancelled and will be cleaned up later
-      // We can't block here, so we'll rely on the cancellation token to prevent work
-    }
+void WaitBrieflyForCancelledTasks(const std::shared_ptr<std::atomic<int>>& counter,
+                                   int max_wait_ms) {
+  if (!counter) {
+    return;
+  }
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(max_wait_ms);
+  while (counter->load(std::memory_order_acquire) > 0 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
   }
 }
 
@@ -102,28 +87,19 @@ bool CheckAndHandleSortDataReady(GuiState& state, SortGeneration sort_generation
     return true;
   }
 
-  // If no futures or if this is for an outdated sort operation, do nothing
-  if (state.attributeLoadingFutures.empty() || state.sort_generation_ != sort_generation) {
+  // No counter or outdated sort operation — nothing to check
+  if (!state.attributeLoadingCounter || state.sort_generation_ != sort_generation) {
     return false;
   }
 
-  // Check if all futures are complete (non-blocking check)
-  if (!AreAllFuturesComplete(state.attributeLoadingFutures)) {
+  // Non-blocking check: counter reaches 0 when all tasks have decremented it
+  if (state.attributeLoadingCounter->load(std::memory_order_acquire) > 0) {
     return false;  // Still loading
   }
 
-  // All futures are complete - get results and format display strings
-  // CRITICAL: Must call .get() on each future to clean up resources and prevent memory leaks
-  // All futures are ready at this point (we checked above), so use blocking mode
-  CleanupAttributeLoadingFutures(state, true);
-
-  // If a newer sort has been started, don't apply the results of this one
-  if (state.sort_generation_ != sort_generation) {
-    CleanupAttributeLoadingFutures(state, false);
-    return false;
-  }
-
-  return true;  // Data is ready
+  // All tasks done — reset counter and loading flag
+  CleanupAttributeLoadingFutures(state, false);
+  return true;
 }
 
 struct FolderStatsForSort {
@@ -660,6 +636,12 @@ void UpdateDisplayedTotalSizeIfNeeded(GuiState& state, const FileIndex& file_ind
   if (state.displayedTotalSizeValid) {
     return;  // Already computed (e.g. by size filter piggyback)
   }
+  if (state.loadingAttributes) {
+    // Background tasks (StartSortAttributeLoading) are loading sizes into the FileIndex cache.
+    // Defer: once loadingAttributes becomes false, sizes will be cached and this function
+    // will complete without any stat() calls on the render thread.
+    return;
+  }
 
   // Determine which vector to sum (same logic as GetDisplayResults)
   const std::vector<SearchResult>* display_results_ptr = nullptr;
@@ -754,25 +736,39 @@ static bool ValidateIndexAndCancellation(const SortCancellationToken& token,
 /**
  * @brief Start async loading of file attributes for sorting (non-blocking)
  *
- * This function enqueues all size and modification time fetch tasks to the thread pool
- * without waiting for completion. The futures are returned for later checking.
+ * Enqueues all size and modification time fetch tasks to the thread pool without
+ * waiting for completion. Returns an atomic countdown counter initialised to the
+ * number of tasks; each task decrements it on completion (including on cancellation).
+ * Returns nullptr when there is nothing to load.
  *
- * @param results Search results to pre-fetch data for (will be modified by futures)
+ * @param results Search results to pre-fetch data for (modified by background tasks)
  * @param file_index File index for loading metadata
  * @param thread_pool Thread pool for parallel pre-fetching
- * @return Vector of futures that will complete when attributes are loaded
+ * @param token Cancellation token; tasks check it before performing I/O
+ * @return Shared atomic counter (null if no tasks were enqueued)
  */
-static std::vector<std::future<void>> StartAttributeLoadingAsync(
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - two-pass design (count then submit) with per-result branching; extraction would obscure the logic
+static std::shared_ptr<std::atomic<int>> StartAttributeLoadingAsync(
   std::vector<SearchResult>& results, const FileIndex& file_index, ThreadPool& thread_pool,
   const SortCancellationToken& token) {
-  std::vector<std::future<void>> futures;
-
   if (results.empty()) {
-    return futures;
+    return nullptr;
   }
 
-  // At most one task per result (combined size+time task, or size-only, or time-only).
-  futures.reserve(results.size());
+  // Count tasks first to initialise the counter at the correct value before any task runs.
+  int task_count = 0;
+  for (const auto& result : results) {
+    if ((!result.isDirectory && result.fileSize == kFileSizeNotLoaded) ||
+        IsSentinelTime(result.lastModificationTime)) {
+      ++task_count;
+    }
+  }
+
+  if (task_count == 0) {
+    return nullptr;
+  }
+
+  auto counter = std::make_shared<std::atomic<int>>(task_count);
 
   // Enqueue all I/O tasks using index-based access for safety.
   // This prevents use-after-free if the results vector is replaced while tasks are running.
@@ -788,34 +784,35 @@ static std::vector<std::future<void>> StartAttributeLoadingAsync(
       // writes both to the cache. The subsequent GetFileModificationTimeById() then hits the
       // cache — no second stat(). This replaces the old two-task approach where both tasks raced
       // to stat() the same file before either could write to the cache.
-      futures.emplace_back(thread_pool.enqueue([i, &results, &file_index, &token] {
-        if (!ValidateIndexAndCancellation(token, results, i)) {
-          return;
+      thread_pool.submit([i, &results, &file_index, &token, counter] {
+        if (ValidateIndexAndCancellation(token, results, i)) {
+          auto& r = results[i];
+          r.fileSize = file_index.GetFileSizeById(r.fileId);
+          r.lastModificationTime = file_index.GetFileModificationTimeById(r.fileId);
         }
-        auto& r = results[i];
-        r.fileSize = file_index.GetFileSizeById(r.fileId);
-        r.lastModificationTime = file_index.GetFileModificationTimeById(r.fileId);
-      }));
+        counter->fetch_sub(1, std::memory_order_acq_rel);
+      });
     } else if (need_size) {
-      futures.emplace_back(thread_pool.enqueue([i, &results, &file_index, &token] {
+      thread_pool.submit([i, &results, &file_index, &token, counter] {
         auto& r = results[i];
-        r.fileSize = ValidateIndexAndCancellation(token, results, i)
-                         ? file_index.GetFileSizeById(r.fileId)
-                         : r.fileSize;
-      }));
+        if (ValidateIndexAndCancellation(token, results, i)) {
+          r.fileSize = file_index.GetFileSizeById(r.fileId);
+        }
+        counter->fetch_sub(1, std::memory_order_acq_rel);
+      });
     } else if (need_time) {
-      futures.emplace_back(thread_pool.enqueue([i, &results, &file_index, &token] {
+      thread_pool.submit([i, &results, &file_index, &token, counter] {
         auto& r = results[i];
-        r.lastModificationTime =
-            ValidateIndexAndCancellation(token, results, i)
-                ? file_index.GetFileModificationTimeById(r.fileId)
-                : r.lastModificationTime;
-      }));
+        if (ValidateIndexAndCancellation(token, results, i)) {
+          r.lastModificationTime = file_index.GetFileModificationTimeById(r.fileId);
+        }
+        counter->fetch_sub(1, std::memory_order_acq_rel);
+      });
     }
   }
   // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
-  return futures;
+  return counter;
 }
 
 /**
@@ -870,18 +867,21 @@ static void PrefetchAndFormatSortDataBlocking(
   // For blocking calls, we don't need a real cancellation token, but the
   // function signature requires one.
   const SortCancellationToken dummy_token;
-  auto futures = StartAttributeLoadingAsync(results, file_index, thread_pool, dummy_token);
+  const auto counter =
+      StartAttributeLoadingAsync(results, file_index, thread_pool, dummy_token);
 
-  // Wait for all I/O tasks to complete.
-  for (auto& f : futures) {
-    f.get();
+  // Blocking spin-wait until all tasks have decremented the counter to zero.
+  if (counter) {
+    while (counter->load(std::memory_order_acquire) > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
 
   // Format the display strings (now that we have the data).
   FormatDisplayStrings(results);
 
   // Log lazy loading statistics after sorting (if any lazy loading occurred)
-  // Must be called AFTER lazy loading completes (futures.get()) to see actual statistics
+  // Must be called AFTER lazy loading completes to see actual statistics
   LazyAttributeLoader::LogStatistics();
 }
 
@@ -935,7 +935,7 @@ void SortSearchResults(std::vector<SearchResult>& results, int column_index,
     std::vector<SearchResult> sorted;
     sorted.reserve(n);
     for (const size_t idx : indices) {
-      sorted.push_back(results[idx]);
+      sorted.push_back(std::move(results[idx]));
     }
     // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
     results = std::move(sorted);
@@ -952,14 +952,13 @@ void StartSortAttributeLoading(GuiState& state, std::vector<SearchResult>& resul
   // Cancel any previously running sort operations
   state.sort_cancellation_token_.Cancel();
 
-  // Brief non-blocking wait for cancelled tasks to finish (max 10ms)
-  // This gives cancelled tasks time to see the cancellation flag and exit,
-  // preventing use-after-free if results are replaced while tasks are running
-  WaitBrieflyForCancelledTasks(state.attributeLoadingFutures, kMaxWaitForCancelledTasksMs);
+  // Brief non-blocking wait for cancelled tasks to finish (max 10ms).
+  // Gives cancelled tasks time to see the cancellation flag and exit,
+  // preventing use-after-free if results are replaced while tasks are running.
+  WaitBrieflyForCancelledTasks(state.attributeLoadingCounter, kMaxWaitForCancelledTasksMs);
 
-  // Now safe to clear futures - CRITICAL: Must clear before incrementing generation
-  // to ensure old futures are fully cleaned up
-  // Use non-blocking cleanup since we're in a cancellation path
+  // Reset counter — tasks still running hold their own shared_ptr copy and will
+  // decrement safely; we simply stop watching the old counter.
   CleanupAttributeLoadingFutures(state, false);
 
   // Only start async loading for Size or Last Modified columns
@@ -978,7 +977,7 @@ void StartSortAttributeLoading(GuiState& state, std::vector<SearchResult>& resul
   assert(state.completed_sort_generation_ <= state.sort_generation_);
 
   // Start async attribute loading with the new generation
-  state.attributeLoadingFutures =
+  state.attributeLoadingCounter =
     StartAttributeLoadingAsync(results, file_index, thread_pool, state.sort_cancellation_token_);
 
   // Show "Loading attributes..." for the entire sort-by-Size/LastModified flow
@@ -995,7 +994,7 @@ void StartSortAttributeLoading(GuiState& state, std::vector<SearchResult>& resul
   // because we want to keep the sort logic in CheckSortAttributeLoadingAndSort
   // to maintain a consistent code path. Setting completed_sort_generation_ to
   // sort_generation_ - 1 ensures the next check will trigger the sort.
-  if (state.attributeLoadingFutures.empty()) {
+  if (!state.attributeLoadingCounter) {
     state.sortDataReady = true;
   }
 }
@@ -1017,7 +1016,7 @@ bool CheckSortAttributeLoadingAndSort(GuiState& state, std::vector<SearchResult>
   // All attributes loaded - perform the sort
   std::sort(results.begin(), results.end(), CreateSearchResultComparator(column_index, direction));
 
-  // Clear futures and loading flag (futures have already been consumed by .get())
+  // Reset counter and loading flag
   CleanupAttributeLoadingFutures(state, false);
   state.completed_sort_generation_ = sort_generation;
   assert(state.completed_sort_generation_ <= state.sort_generation_);
@@ -1027,39 +1026,6 @@ bool CheckSortAttributeLoadingAndSort(GuiState& state, std::vector<SearchResult>
   LazyAttributeLoader::LogStatistics();
 
   return true;  // Sort completed
-}
-
-// Helper function to cleanup a single future
-// Extracted to reduce nesting depth in CleanupAttributeLoadingFutures()
-static void CleanupSingleFuture(std::future<void>& f, bool blocking) {
-  try {
-    if (blocking) {
-      // Blocking mode: wait for future if not ready, then get it
-      if (f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-        f.wait();
-      }
-      f.get();
-    } else {
-      // Non-blocking mode: only clean up if future is ready
-      if (f.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        f.get();
-      }
-    }
-  } catch (const std::future_error& e) {
-    // Future cleanup must not throw - log error but don't propagate
-    LOG_ERROR_BUILD("Future error during cleanup: " << e.what());
-    // Explicitly ignore to prevent propagation (destructor safety)
-  } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Generic catch needed for destructor
-                                       // safety, specific catch above handles future_error
-    // Future cleanup must not throw - log error but don't propagate
-    LOG_ERROR_BUILD("Exception during future cleanup: " << e.what());
-    // Explicitly ignore to prevent propagation (destructor safety)
-  } catch (...) {  // NOSONAR(cpp:S2738) - Final safety net in cleanup path: must catch any
-                   // non-standard exceptions to prevent crashes during asynchronous future cleanup
-    // Future cleanup must not throw - log unknown error but don't propagate
-    LOG_ERROR_BUILD("Unknown exception during future cleanup");
-    // Explicitly ignore to prevent propagation (destructor safety)
-  }
 }
 
 uint64_t ComputeTotalFileBytes(const std::vector<SearchResult>& results) {
@@ -1072,12 +1038,10 @@ uint64_t ComputeTotalFileBytes(const std::vector<SearchResult>& results) {
   return total;
 }
 
-void CleanupAttributeLoadingFutures(GuiState& state, bool blocking) {
-  for (auto& f : state.attributeLoadingFutures) {
-    if (f.valid()) {
-      CleanupSingleFuture(f, blocking);
-    }
-  }
-  state.attributeLoadingFutures.clear();
+void CleanupAttributeLoadingFutures(GuiState& state, bool /*blocking*/) {
+  // Atomic counter replaces futures — no per-task resources to release.
+  // Tasks that are still running hold their own shared_ptr copy of the counter
+  // and will decrement it safely; we simply release our reference here.
+  state.attributeLoadingCounter.reset();
   state.loadingAttributes = false;
 }

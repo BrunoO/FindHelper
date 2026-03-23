@@ -11,7 +11,7 @@
  * - Resource management: Ensures futures are properly cleaned up to prevent leaks
  *
  * FUTURE CLEANUP:
- * - attributeLoadingFutures: Must call .get() before clearing to prevent leaks
+ * - attributeLoadingCounter: Spin-wait until counter reaches zero, then reset
  * - gemini_api_future_: Must wait and get result before resetting
  * - Both are cleaned up in ClearInputs() to prevent accessing invalid memory
  *
@@ -26,7 +26,9 @@
 
 #include "gui/GuiState.h"
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 #include "api/GeminiApiUtils.h"
 #include "filters/SizeFilter.h"
@@ -46,16 +48,19 @@ void GuiState::ClearInputs() {
   caseSensitive = false; // Default to case-insensitive
 
   // Cancel any pending sort attribute loading operations.
-  // This signals to any running futures that they should stop early.
+  // This signals to any running tasks that they should stop early.
   sort_cancellation_token_.Cancel();
 
-  // Clear any pending attribute loading futures before clearing results
-  // (futures reference SearchResult objects which will be destroyed)
-  // CRITICAL: Must call .get() on each future to properly clean up resources and prevent memory leaks
-  for (auto& f : attributeLoadingFutures) {
-    async_utils::SafeWaitFuture(f);
+  // Spin-wait for all attribute loading tasks to decrement the counter to zero,
+  // then release our reference. Tasks hold their own shared_ptr copy; they will
+  // decrement safely even after we reset ours.
+  if (attributeLoadingCounter) {
+    while (attributeLoadingCounter->load(std::memory_order_acquire) > 0) {
+      // Tasks are checking the cancellation token and will exit promptly.
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    attributeLoadingCounter.reset();
   }
-  attributeLoadingFutures.clear();
   loadingAttributes = false;
 
   // Clean up cloud file loading futures

@@ -1273,11 +1273,20 @@ void FlushAggregatorSizesAndTriggerSortIfReady(GuiState& state,
   const auto pending_before = std::count_if(  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
       state.searchResults.begin(), state.searchResults.end(), kIsUnsizedDir);
 
+  // Pass 1: enqueue all unsized directories in a single lock acquisition.
+  std::vector<std::pair<uint64_t, std::string_view>> batch;
+  for (const auto& result : state.searchResults) {
+    if (result.isDirectory && result.fileSize == kFileSizeNotLoaded) {
+      batch.emplace_back(result.fileId, std::string_view{result.fullPath});
+    }
+  }
+  aggregator->RequestBatch(batch);
+
+  // Pass 2: collect any results that are already computed.
   for (auto& result : state.searchResults) {
     if (!(result.isDirectory && result.fileSize == kFileSizeNotLoaded)) {
       continue;
     }
-    aggregator->Request(result.fileId, result.fullPath);
     const auto size = aggregator->GetResult(result.fileId);
     if (!size.has_value()) {
       continue;

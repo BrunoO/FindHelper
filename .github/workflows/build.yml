@@ -1,13 +1,16 @@
 # Build FindHelper on Windows, macOS, Linux.
 # Triggers:
 #   - workflow_dispatch: manual run (build + test only, no release)
+#   - pull_request to main: build + test (no release)
 #   - push to main: build + test + publish rolling "latest" pre-release (public repo only)
 #   - push of vX.Y.Z tag: build + test + publish versioned release (public repo only)
-# Private repo: only workflow_dispatch runs (no automatic runs on push).
+# Private repo: only workflow_dispatch and pull_request run (no automatic runs on push).
 name: Build
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     tags: ['v*.*.*']
@@ -16,7 +19,7 @@ jobs:
   build:
     permissions:
       contents: read
-    if: github.event_name == 'workflow_dispatch' || github.event.repository.private != true
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.event.repository.private != true
     strategy:
       fail-fast: false
       matrix:
@@ -146,15 +149,15 @@ jobs:
         run: cmake --build build
 
       - name: Run tests (Windows)
-        if: matrix.os == 'windows-latest' && github.event.repository.private == true
+        if: matrix.os == 'windows-latest'
         run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
 
       - name: Run tests (macOS)
-        if: matrix.os == 'macos-latest' && github.event.repository.private == true
+        if: matrix.os == 'macos-latest'
         run: ctest --test-dir build --output-on-failure
 
       - name: Run tests (Linux)
-        if: matrix.os == 'ubuntu-22.04' && github.event.repository.private == true
+        if: matrix.os == 'ubuntu-22.04'
         run: ctest --test-dir build --output-on-failure
 
       - name: Package (Windows)

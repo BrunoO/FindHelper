@@ -70,6 +70,29 @@ void FolderSizeAggregator::Request(uint64_t folder_id, std::string_view folder_p
   cv_.notify_one();
 }
 
+void FolderSizeAggregator::RequestBatch(
+    const std::vector<std::pair<uint64_t, std::string_view>>& folders) {
+  if (folders.empty()) {
+    return;
+  }
+  const std::scoped_lock lock(mutex_);
+  bool any_new = false;
+  for (const auto& [id, path] : folders) {
+    if (results_.count(id) > 0) {
+      continue;
+    }
+    if (pending_requests_.count(id) > 0) {
+      continue;
+    }
+    pending_requests_.emplace(id);
+    queue_.push_back({id, std::string(path), generation_});
+    any_new = true;
+  }
+  if (any_new) {
+    cv_.notify_one();
+  }
+}
+
 std::optional<uint64_t> FolderSizeAggregator::GetResult(uint64_t folder_id) const {
   const std::shared_lock lock(mutex_);
   if (auto it = results_.find(folder_id); it != results_.end()) {

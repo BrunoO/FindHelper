@@ -105,7 +105,7 @@ bool SearchResultsService::CheckAndCompleteAsyncSort(GuiState& state,
   // Check for async sorting completion
   // Also check sortDataReady flag for immediate sorting when all data is already loaded
   if (const bool has_pending =
-          !state.attributeLoadingFutures.empty() || state.sortDataReady;
+          state.attributeLoadingCounter || state.sortDataReady;
       !has_pending) {
     return false;
   }

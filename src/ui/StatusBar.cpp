@@ -53,7 +53,7 @@ static std::string GetStatusText(const GuiState& state, const SearchWorker& sear
   if (search_worker.IsBusy()) {
     return "Status: Searching...";
   }
-  if (!state.attributeLoadingFutures.empty() || state.loadingAttributes) {
+  if (state.loadingAttributes) {
     return "Status: Loading attributes...";
   }
   if (state.computingFolderSizes) {
@@ -73,8 +73,7 @@ static std::string GetStatusText(const GuiState& state, const SearchWorker& sear
 // Returns true when the status bar should show the animated busy progress bar (indexing, searching, loading attributes, computing folder sizes).
 static bool IsStatusBarBusy(const GuiState& state, const SearchWorker& search_worker) {
   return state.index_build_in_progress || search_worker.IsBusy() ||
-         !state.attributeLoadingFutures.empty() || state.loadingAttributes ||
-         state.computingFolderSizes;
+         state.loadingAttributes || state.computingFolderSizes;
 }
 
 // Draws the indeterminate progress bar in the given rect (same animation as ImGui::ProgressBar with fraction < 0).
@@ -413,8 +412,7 @@ static void RenderRightGroup(const GuiState &state, const SearchWorker &search_w
   // Use pre-built status text (passed from Render to avoid duplicate building).
   // Determine color from status type, then single render call (avoids bugprone-branch-clone).
   const ImVec4* status_color = nullptr;
-  if (const bool is_loading_attributes =
-          !state.attributeLoadingFutures.empty() || state.loadingAttributes;
+  if (const bool is_loading_attributes = state.loadingAttributes;
       state.index_build_in_progress || is_loading_attributes || state.computingFolderSizes) {
     status_color = &Theme::Colors::Warning;
   } else if (state.index_build_failed) {

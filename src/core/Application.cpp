@@ -307,10 +307,12 @@ Application::~Application() {
   // a worker can run a StartAttributeLoadingAsync task after state_ is destroyed
   // and dereference dangling references → use-after-free / SIGSEGV on quit.
   state_.sort_cancellation_token_.Cancel();
-  for (auto& f : state_.attributeLoadingFutures) {
-    async_utils::SafeWaitFuture(f);
+  if (state_.attributeLoadingCounter) {
+    while (state_.attributeLoadingCounter->load(std::memory_order_acquire) > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
-  state_.attributeLoadingFutures.clear();
+  state_.attributeLoadingCounter.reset();
   for (auto& f : state_.cloudFileLoadingFutures) {
     async_utils::SafeWaitFuture(f);
   }
@@ -449,7 +451,9 @@ bool Application::HandleFocusedWindow(double idle_timeout_seconds, double idle_w
   // Choose event handling strategy
 
   if (const bool has_background_work{search_worker_.IsBusy() || IsIndexBuilding() ||
-                                     !state_.attributeLoadingFutures.empty()};
+                                     (state_.attributeLoadingCounter &&
+                                      state_.attributeLoadingCounter->load(
+                                          std::memory_order_relaxed) > 0)};
       is_idle && !has_background_work) {
     glfwWaitEventsTimeout(idle_wait_timeout);  // ~10 FPS when idle
   } else {

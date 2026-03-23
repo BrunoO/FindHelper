@@ -223,7 +223,7 @@ void SortSearchResults(std::vector<SearchResult> &results,
  * Starts loading file attributes asynchronously for sorting by Size or Last Modified.
  * The futures are stored in GuiState and should be checked each frame until complete.
  *
- * @param state GUI state (futures stored in attributeLoadingFutures)
+ * @param state GUI state (counter stored in attributeLoadingCounter)
  * @param results Search results to load attributes for
  * @param column_index Column index to sort by (ResultColumn::Size or ResultColumn::LastModified)
  * @param file_index File index for loading metadata
@@ -242,7 +242,7 @@ void StartSortAttributeLoading(GuiState &state,
  * strings, performs the sort, and clears the futures. Returns true if sort was
  * completed, false if still loading.
  *
- * @param state GUI state (futures checked and cleared from attributeLoadingFutures)
+ * @param state GUI state (counter checked and reset from attributeLoadingCounter)
  * @param results Search results to sort (modified if loading complete)
  * @param column_index Column index to sort by (Mark to Extension)
  * @param direction Sort direction (Ascending or Descending)
@@ -264,7 +264,7 @@ bool CheckSortAttributeLoadingAndSort(GuiState &state,
  * PERFORMANCE: This is cleanup code, not in hot path. Called only when
  * updating search results or cancelling attribute loading.
  *
- * @param state GUI state containing attributeLoadingFutures to clean up
+ * @param state GUI state whose attributeLoadingCounter should be reset
  * @param blocking If true, waits for futures that aren't ready. If false,
  *                 only cleans up futures that are already ready.
  */

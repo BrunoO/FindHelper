@@ -57,6 +57,7 @@
 #include <chrono>
 #include <iterator>
 #include <numeric>
+#include <thread>
 
 #include "core/Settings.h"
 #include "index/FileIndex.h"
@@ -134,10 +135,13 @@ inline void InvalidateFilterCaches(GuiState& state) {
  * @param state GUI state containing attribute loading futures
  */
 void WaitForAllAttributeLoadingFutures(GuiState& state) {
-  for (auto& future : state.attributeLoadingFutures) {
-    WaitAndCleanupFuture(future);
+  // Spin-wait for all attribute loading tasks to decrement the counter to zero.
+  if (state.attributeLoadingCounter) {
+    while (state.attributeLoadingCounter->load(std::memory_order_acquire) > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
-  state.attributeLoadingFutures.clear();
+  state.attributeLoadingCounter.reset();
   state.loadingAttributes = false;
 
   // Also clean up cloud file loading futures

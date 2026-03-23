@@ -77,6 +77,10 @@ public:
   // Queue folder for background size computation. No-op if already queued or done.
   void Request(uint64_t folder_id, std::string_view folder_path);
 
+  // Queue multiple folders in a single lock acquisition. More efficient than
+  // calling Request() in a loop when enqueueing many directories at once.
+  void RequestBatch(const std::vector<std::pair<uint64_t, std::string_view>>& folders);
+
   // Non-blocking poll. Returns nullopt if not yet computed.
   [[nodiscard]] std::optional<uint64_t> GetResult(uint64_t folder_id) const;
 

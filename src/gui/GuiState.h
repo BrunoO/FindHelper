@@ -253,8 +253,8 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   bool sortDataReady =
     false;  // True when all data is already loaded and sort can happen immediately
-  std::vector<std::future<void>>
-    attributeLoadingFutures;  // NOLINT(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional - Futures for async attribute loading during sorting
+  std::shared_ptr<std::atomic<int>>
+    attributeLoadingCounter;  // NOLINT(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional - Atomic countdown latch for async attribute loading tasks; null or zero when idle
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, snake_case with trailing underscore is intentional
   SortCancellationToken sort_cancellation_token_;
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, snake_case with trailing underscore is intentional

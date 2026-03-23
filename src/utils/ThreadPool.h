@@ -24,6 +24,20 @@ public:
     auto enqueue(F&& f, Args&&... args)
         -> std::future<std::invoke_result_t<F, Args...>>;
 
+    // Fire-and-forget task submission without future overhead.
+    // Use when completion is tracked externally (e.g. via atomic countdown counter).
+    // NOLINTNEXTLINE(readability-identifier-naming) - public API method name submit
+    void submit(std::function<void()> f) {
+        {
+            const std::unique_lock lock(queue_mutex);
+            if (stop) {
+                throw std::runtime_error("submit on stopped ThreadPool");  // NOSONAR(cpp:S112) - std::runtime_error is appropriate for invalid operation errors
+            }
+            tasks.emplace(std::move(f));
+        }
+        condition.notify_one();
+    }
+
 private:
     std::vector<std::thread> workers;
     std::queue<std::function<void()>> tasks;
