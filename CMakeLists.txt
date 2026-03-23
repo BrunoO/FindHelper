@@ -881,6 +881,12 @@ function(configure_test_target target_name)
     apply_asan_to_target(${target_name})
     apply_tsan_to_target(${target_name})
     apply_coverage_to_target(${target_name})
+    # CRITICAL: must match configure_obj_library so FileIndex.h is seen with the same
+    # type aliases (hash_map_t = boost::unordered_map vs std::unordered_map) in both
+    # the compiled object library and the test executable TU.  A mismatch changes
+    # sizeof(FileIndex) between the allocating TU and the constructor TU, which causes
+    # an ASan stack-buffer-overflow when the Boost version is larger.
+    apply_fast_libs_boost(${target_name})
 endfunction()
 
 # Configure a shared-source object library: compile features, compiler options,
