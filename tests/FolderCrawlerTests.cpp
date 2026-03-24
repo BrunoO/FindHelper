@@ -117,11 +117,23 @@ TEST_CASE("crawl fixture - empty path returns false") {
 TEST_CASE("crawl fixture - non-existent path succeeds with zero entries") {
   // ENOENT from open() is treated as "directory vanished" — not a hard error.
   // The crawl returns true with zero files/directories processed.
+  // Use a path under the system temp directory: a Unix-style absolute path like
+  // /this/... is not reliably resolved by Win32 enumeration APIs and can yield
+  // errors other than ERROR_PATH_NOT_FOUND, causing Crawl() to return false.
+  std::error_code ec;
+  const std::filesystem::path temp_base = std::filesystem::temp_directory_path(ec);
+  if (ec || temp_base.empty()) {
+    MESSAGE("temp directory unavailable — skipping");
+    return;
+  }
+  const std::string nonexistent_path =
+      (temp_base / "findhelper_crawler_nonexistent_xyz").string();
+
   const test_helpers::TestSettingsFixture settings("static");
   FileIndex file_index;
   FolderCrawler crawler(file_index);
 
-  const bool result = crawler.Crawl("/this/path/does/not/exist/fixture_xyz");
+  const bool result = crawler.Crawl(nonexistent_path);
   CHECK(result);
   CHECK(crawler.GetFilesProcessed() == 0);
   CHECK(crawler.GetDirectoriesProcessed() == 0);

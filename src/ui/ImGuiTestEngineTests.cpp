@@ -357,8 +357,9 @@ static void RunFixtureCrawlSearchAssertions(ImGuiTestContext* ctx,
 
 /**
  * Verifies that the given load-balancing strategy returns the same ext=txt count (kExtTxt)
- * as the other strategies on the fixture index. All three strategies must be parity-correct
- * on small indices (fewer entries than thread count).
+ * as the other strategies on the fixture index. All available strategies (static, hybrid, and
+ * work_stealing when FAST_LIBS_BOOST) must be parity-correct on small indices (fewer entries
+ * than thread count).
  */
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Test orchestration; IM_CHECK/IM_ERRORF macros add nesting
 static void RunFixtureLoadBalancingCase(ImGuiTestContext* ctx,
@@ -1039,7 +1040,7 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   // Extension counts are exact (ancestor dirs carry no extension); dir/total counts use >= because
   // DirectoryResolver inserts ancestor dirs whose count depends on the runtime path depth.
 
-  // Load-balancing parity: all three strategies must return kExtTxt=4 on the fixture.
+  // Load-balancing parity: each available strategy must return kExtTxt=4 on the fixture.
   ImGuiTest* fx_lb_s = IM_REGISTER_TEST(engine, "fixture", "load_balancing_static");
   fx_lb_s->TestFunc = [](ImGuiTestContext* ctx) {
     IRegressionTestHook* hook = g_regression_hook;
@@ -1054,13 +1055,15 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
       RunFixtureLoadBalancingCase(ctx, hook, "load_balancing_hybrid", "hybrid");
     }
   };
-  ImGuiTest* fx_lb_d = IM_REGISTER_TEST(engine, "fixture", "load_balancing_dynamic");
-  fx_lb_d->TestFunc = [](ImGuiTestContext* ctx) {
+#if defined(FAST_LIBS_BOOST)
+  ImGuiTest* fx_lb_ws = IM_REGISTER_TEST(engine, "fixture", "load_balancing_work_stealing");
+  fx_lb_ws->TestFunc = [](ImGuiTestContext* ctx) {
     IRegressionTestHook* hook = g_regression_hook;
     if (hook != nullptr) {
-      RunFixtureLoadBalancingCase(ctx, hook, "load_balancing_dynamic", "dynamic");
+      RunFixtureLoadBalancingCase(ctx, hook, "load_balancing_work_stealing", "work_stealing");
     }
   };
+#endif  // FAST_LIBS_BOOST
 
   // Streaming parity: stream on and off must both return kExtCpp=2 on the fixture.
   ImGuiTest* fx_str_on = IM_REGISTER_TEST(engine, "fixture", "streaming_on");

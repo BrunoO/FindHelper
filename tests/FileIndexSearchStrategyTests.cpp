@@ -94,7 +94,7 @@ CollectSearchResults(  // NOSONAR(cpp:S107) - Test-only convenience wrapper with
 
 // Helper to check if result extension matches any expected extension (reduces nesting in
 // ValidateResults).
-bool ExtensionMatches(std::string_view result_ext,
+bool ExtensionMatches(std::string_view result_ext,  // NOSONAR(cpp:S1144) - used by ValidateResults; Sonar duplicate/stale "GetExtension" report
                       const std::vector<std::string>& expected_extensions) {
   for (const auto& ext : expected_extensions) {
     std::string ext_lower = ToLower(ext);

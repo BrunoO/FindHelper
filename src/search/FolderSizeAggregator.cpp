@@ -11,6 +11,18 @@
 
 namespace {
 
+#ifdef _WIN32
+// Win32 accepts '/' and '\\' in paths; PathBuilder uses '\\' but some callers may mix.
+// Normalize to '\\' so prefix_to_id keys match lookup_key (see ComputeSizeBatch).
+void NormalizeWindowsSeparatorsInPlace(std::string& path) {
+  for (char& c : path) {
+    if (c == '/') {
+      c = '\\';
+    }
+  }
+}
+#endif  // _WIN32
+
 // Walk up path levels and add (file_id, cached_size) to every batch directory that contains it.
 // cached_size is the size read from FileEntry under the index read lock (kFileSizeNotLoaded if not
 // yet cached). Pass 2 uses cached_size directly to avoid stat() for already-loaded files.
@@ -22,13 +34,23 @@ void AccumulateAncestorDirsForFile(
     const hash_map_t<std::string, uint64_t>& prefix_to_id,
     hash_map_t<uint64_t, std::vector<std::pair<uint64_t, uint64_t>>>& file_data_per_dir,
     std::string& lookup_key) {
+#ifdef _WIN32
+  // Canonical paths from PathBuilder use '\\' only — skip per-level '/' scans when possible.
+  const bool path_has_forward_slash = (path.find('/') != std::string_view::npos);
+#endif  // _WIN32
   std::string_view remaining = path;
   while (true) {
-    const auto slash = remaining.rfind(path_utils::kPathSeparator);
+    // Match PathUtils::GetFilename — treat '/' and '\\' as separators (mixed paths on Windows).
+    const auto slash = remaining.find_last_of("/\\");
     if (slash == std::string_view::npos) {
       break;
     }
     lookup_key.assign(remaining.data(), slash + 1);  // NOLINT(bugprone-suspicious-stringview-data-usage) - assign(ptr, count) is safe; count is always ≤ remaining.size()
+#ifdef _WIN32
+    if (path_has_forward_slash) {
+      NormalizeWindowsSeparatorsInPlace(lookup_key);
+    }
+#endif  // _WIN32
     if (const auto it = prefix_to_id.find(lookup_key); it != prefix_to_id.end()) {
       file_data_per_dir[it->second].emplace_back(id, cached_size);
     }
@@ -180,7 +202,16 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
   hash_map_t<std::string, uint64_t> prefix_to_id;
   prefix_to_id.reserve(jobs.size());
   for (const auto& job : jobs) {
-    prefix_to_id.emplace(job.folder_path + path_utils::kPathSeparatorStr, job.folder_id);
+    std::string prefix_key;
+    prefix_key.reserve(job.folder_path.size() + 1U);
+    prefix_key.append(job.folder_path);
+    prefix_key.append(path_utils::kPathSeparatorStr);
+#ifdef _WIN32
+    if (job.folder_path.find('/') != std::string::npos) {
+      NormalizeWindowsSeparatorsInPlace(prefix_key);
+    }
+#endif  // _WIN32
+    prefix_to_id.emplace(std::move(prefix_key), job.folder_id);
   }
 
   // Pass 1: single index scan — for each file, walk up its path to find all

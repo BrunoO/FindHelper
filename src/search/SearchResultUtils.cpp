@@ -733,6 +733,54 @@ static bool ValidateIndexAndCancellation(const SortCancellationToken& token,
   return true;
 }
 
+// Enqueues one thread-pool task for results[i] when size and/or time attributes need loading.
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by caller; lambdas re-validate via ValidateIndexAndCancellation before accessing results[i]
+static void EnqueueAttributeLoadForResultIndex(
+  size_t i, std::vector<SearchResult>& results, const FileIndex& file_index,
+  const SortCancellationToken& token, ThreadPool& thread_pool,
+  const std::shared_ptr<std::atomic<int>>& counter) {
+  const auto& result = results[i];
+  const bool need_size = !result.isDirectory && result.fileSize == kFileSizeNotLoaded;
+  const bool need_time = IsSentinelTime(result.lastModificationTime);
+
+  if (need_size && need_time) {
+    // Single task loads both in one stat() call: LazyAttributeLoader detects that mtime is
+    // also unloaded when processing size, loads both via one GetFileAttributes() syscall, and
+    // writes both to the cache. The subsequent GetFileModificationTimeById() then hits the
+    // cache — no second stat(). This replaces the old two-task approach where both tasks raced
+    // to stat() the same file before either could write to the cache.
+    thread_pool.submit([i, &results, &file_index, &token, counter] {
+      if (ValidateIndexAndCancellation(token, results, i)) {
+        auto& r = results[i];
+        r.fileSize = file_index.GetFileSizeById(r.fileId);
+        r.lastModificationTime = file_index.GetFileModificationTimeById(r.fileId);
+      }
+      counter->fetch_sub(1, std::memory_order_acq_rel);
+    });
+    return;
+  }
+  if (need_size) {
+    thread_pool.submit([i, &results, &file_index, &token, counter] {
+      auto& r = results[i];
+      if (ValidateIndexAndCancellation(token, results, i)) {
+        r.fileSize = file_index.GetFileSizeById(r.fileId);
+      }
+      counter->fetch_sub(1, std::memory_order_acq_rel);
+    });
+    return;
+  }
+  if (need_time) {
+    thread_pool.submit([i, &results, &file_index, &token, counter] {
+      auto& r = results[i];
+      if (ValidateIndexAndCancellation(token, results, i)) {
+        r.lastModificationTime = file_index.GetFileModificationTimeById(r.fileId);
+      }
+      counter->fetch_sub(1, std::memory_order_acq_rel);
+    });
+  }
+}
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+
 /**
  * @brief Start async loading of file attributes for sorting (non-blocking)
  *
@@ -747,7 +795,6 @@ static bool ValidateIndexAndCancellation(const SortCancellationToken& token,
  * @param token Cancellation token; tasks check it before performing I/O
  * @return Shared atomic counter (null if no tasks were enqueued)
  */
-// NOLINTNEXTLINE(readability-function-cognitive-complexity) - two-pass design (count then submit) with per-result branching; extraction would obscure the logic
 static std::shared_ptr<std::atomic<int>> StartAttributeLoadingAsync(
   std::vector<SearchResult>& results, const FileIndex& file_index, ThreadPool& thread_pool,
   const SortCancellationToken& token) {
@@ -772,43 +819,9 @@ static std::shared_ptr<std::atomic<int>> StartAttributeLoadingAsync(
 
   // Enqueue all I/O tasks using index-based access for safety.
   // This prevents use-after-free if the results vector is replaced while tasks are running.
-  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by results.size() in outer loop; lambdas re-validate via ValidateIndexAndCancellation before accessing results[i]
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by results.size() in outer loop
   for (size_t i = 0; i < results.size(); ++i) {
-    const auto& result = results[i];
-    const bool need_size = !result.isDirectory && result.fileSize == kFileSizeNotLoaded;
-    const bool need_time = IsSentinelTime(result.lastModificationTime);
-
-    if (need_size && need_time) {
-      // Single task loads both in one stat() call: LazyAttributeLoader detects that mtime is
-      // also unloaded when processing size, loads both via one GetFileAttributes() syscall, and
-      // writes both to the cache. The subsequent GetFileModificationTimeById() then hits the
-      // cache — no second stat(). This replaces the old two-task approach where both tasks raced
-      // to stat() the same file before either could write to the cache.
-      thread_pool.submit([i, &results, &file_index, &token, counter] {
-        if (ValidateIndexAndCancellation(token, results, i)) {
-          auto& r = results[i];
-          r.fileSize = file_index.GetFileSizeById(r.fileId);
-          r.lastModificationTime = file_index.GetFileModificationTimeById(r.fileId);
-        }
-        counter->fetch_sub(1, std::memory_order_acq_rel);
-      });
-    } else if (need_size) {
-      thread_pool.submit([i, &results, &file_index, &token, counter] {
-        auto& r = results[i];
-        if (ValidateIndexAndCancellation(token, results, i)) {
-          r.fileSize = file_index.GetFileSizeById(r.fileId);
-        }
-        counter->fetch_sub(1, std::memory_order_acq_rel);
-      });
-    } else if (need_time) {
-      thread_pool.submit([i, &results, &file_index, &token, counter] {
-        auto& r = results[i];
-        if (ValidateIndexAndCancellation(token, results, i)) {
-          r.lastModificationTime = file_index.GetFileModificationTimeById(r.fileId);
-        }
-        counter->fetch_sub(1, std::memory_order_acq_rel);
-      });
-    }
+    EnqueueAttributeLoadForResultIndex(i, results, file_index, token, thread_pool, counter);
   }
   // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
@@ -867,11 +880,11 @@ static void PrefetchAndFormatSortDataBlocking(
   // For blocking calls, we don't need a real cancellation token, but the
   // function signature requires one.
   const SortCancellationToken dummy_token;
-  const auto counter =
-      StartAttributeLoadingAsync(results, file_index, thread_pool, dummy_token);
 
   // Blocking spin-wait until all tasks have decremented the counter to zero.
-  if (counter) {
+  if (const auto counter =
+          StartAttributeLoadingAsync(results, file_index, thread_pool, dummy_token);
+      counter) {
     while (counter->load(std::memory_order_acquire) > 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }

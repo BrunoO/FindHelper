@@ -151,3 +151,5 @@ clang-tidy-report-*.txt
 nolint_scan.json
 nolint_classified.json
 sonarqube_measures.summary.txt
+
+TRACES/

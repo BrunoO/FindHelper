@@ -34,8 +34,8 @@
 #include "TestHelpers.h"
 #include "api/GeminiApiUtils.h"
 #include "core/Settings.h"
-#include "filters/TimeFilterUtils.h"
-#include "utils/FileTimeTypes.h"  // NOSONAR(cpp:S954) - include order matches llvm-include-order for this TU
+#include "filters/TimeFilterUtils.h"  // NOSONAR(cpp:S954) - project include block after std/platform; matches llvm-include-order
+#include "utils/FileTimeTypes.h"  // NOSONAR(cpp:S954) - project include block after std/platform; matches llvm-include-order
 #include "utils/Logger.h"
 #include "utils/StringUtils.h"
 
@@ -96,8 +96,7 @@ void SetEnvironmentVariable(const char* name, std::string_view value) noexcept {
       setenv(name, value_str.c_str(), 1);
     }
 #endif  // _WIN32
-  } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test helper: must catch all exceptions to prevent
-                   // propagation from destructors. NOLINT(bugprone-empty-catch) - intentional: noexcept-safe for destructors
+  } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test helper: catch-all for noexcept destructor safety. NOLINT(bugprone-empty-catch)
     // Silently ignore failures - environment variable setting failures in tests are non-critical
     // This ensures the function is safe for use in destructors (noexcept guarantee)
   }
@@ -118,6 +117,7 @@ void SafeRemoveFile(const std::filesystem::path& path) {
     }
   } catch (const std::exception& e) {  // NOSONAR(cpp:S1181) - Test cleanup: catch std then catch(...) for rest
     LOG_DEBUG_BUILD("SafeRemoveFile: " << e.what());
+    (void)e;  // LOG_DEBUG_BUILD is no-op in Release; reference e for MSVC C4101
   } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test cleanup: catch all to prevent test failure
     LOG_DEBUG_BUILD("SafeRemoveFile: non-std exception");
   }
@@ -206,9 +206,7 @@ std::string CreateTempDirectory(std::string_view prefix) {
   // GetTempFileNameA creates a file, so we delete it and create a directory instead
   DeleteFileA(tempDir);
   if (CreateDirectoryA(tempDir, nullptr) == 0) {
-    throw std::runtime_error(
-      "Failed to create temporary directory");  // NOSONAR(cpp:S112) - std::runtime_error is
-                                                // appropriate for simple test setup errors
+    throw std::runtime_error("Failed to create temporary directory");  // NOSONAR(cpp:S112) - test temp dir setup; std::runtime_error acceptable
   }
   path = tempDir;
 #else
@@ -236,7 +234,7 @@ std::string CreateTempDirectory(std::string_view prefix) {
   }
   tempTemplate.push_back('\0');
 
-  const char* const dir_path = mkdtemp(tempTemplate.data());  // NOSONAR(cpp:S995) - mkdtemp returns char*; assign to const char* for read-only use
+  const char* const dir_path = mkdtemp(tempTemplate.data());  // NOSONAR(cpp:S995,cpp:S5350) - mkdtemp returns char*; use as const char* for read-only path
   if (dir_path == nullptr) {
     throw std::runtime_error("Failed to create temporary directory");  // NOSONAR(cpp:S112) - test helper; std::runtime_error acceptable
   }
@@ -292,6 +290,7 @@ TestSettingsFixture::~TestSettingsFixture() {  // NOLINT(bugprone-exception-esca
     }
   } catch (const std::exception& e) {
     LOG_DEBUG_BUILD("TestSettingsFixture: teardown failed: " << e.what());
+    (void)e;  // LOG_DEBUG_BUILD is no-op in Release; reference e for MSVC C4101
   } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Teardown must not throw
     LOG_DEBUG_BUILD("TestSettingsFixture: teardown failed (non-std exception)");
   }
@@ -727,6 +726,7 @@ TestGeminiApiKeyFixture::~TestGeminiApiKeyFixture() {  // NOLINT(bugprone-except
     }
   } catch (const std::exception& e) {
     LOG_DEBUG_BUILD("TestGeminiApiKeyFixture: cleanup failed: " << e.what());
+    (void)e;  // LOG_DEBUG_BUILD is no-op in Release; reference e for MSVC C4101
   } catch (...) {  // NOSONAR(cpp:S2738,cpp:S2486) - Test cleanup: catch all to prevent destructor from throwing
     LOG_DEBUG_BUILD("TestGeminiApiKeyFixture: cleanup failed (non-std exception)");
   }

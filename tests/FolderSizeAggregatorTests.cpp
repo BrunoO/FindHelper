@@ -5,13 +5,14 @@
 
 #include "doctest/doctest.h"
 #include "index/FileIndex.h"
+#include "path/PathUtils.h"
 #include "search/FolderSizeAggregator.h"
 
 namespace {
 
-// Spin-poll helper: waits up to 1 second for a result to become available.
+// Spin-poll helper: waits up to ~2 seconds for a result (Windows CI can schedule the worker slowly).
 std::optional<uint64_t> WaitForResult(const FolderSizeAggregator& aggregator, uint64_t folder_id) {
-  for (int i = 0; i < 100; ++i) {
+  for (int i = 0; i < 200; ++i) {
     if (const auto result = aggregator.GetResult(folder_id); result.has_value()) {
       return result;
     }
@@ -34,7 +35,8 @@ TEST_CASE("FolderSizeAggregator - sums files under prefix") {
   index.RecomputeAllPaths();
 
   FolderSizeAggregator aggregator(index);
-  aggregator.Request(1, "/root");
+  const std::string root_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "root");
+  aggregator.Request(1, root_path);
 
   const auto result = WaitForResult(aggregator, 1);
   CHECK(result == std::optional<uint64_t>{350U});  // 100 + 200 + 50; /other/d.txt excluded
@@ -49,7 +51,8 @@ TEST_CASE("FolderSizeAggregator - excludes sibling directories") {
   index.RecomputeAllPaths();
 
   FolderSizeAggregator aggregator(index);
-  aggregator.Request(6, "/other");
+  const std::string other_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "other");
+  aggregator.Request(6, other_path);
 
   const auto result = WaitForResult(aggregator, 6);
   CHECK(result == std::optional<uint64_t>{200U});
@@ -63,7 +66,8 @@ TEST_CASE("FolderSizeAggregator - directory entries do not contribute to sum") {
   index.RecomputeAllPaths();
 
   FolderSizeAggregator aggregator(index);
-  aggregator.Request(1, "/root");
+  const std::string root_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "root");
+  aggregator.Request(1, root_path);
 
   const auto result = WaitForResult(aggregator, 1);
   CHECK(result == std::optional<uint64_t>{50U});  // /root/sub (dir) excluded; /root/sub/f.txt counted
@@ -75,7 +79,8 @@ TEST_CASE("FolderSizeAggregator - empty folder returns 0") {
   index.RecomputeAllPaths();
 
   FolderSizeAggregator aggregator(index);
-  aggregator.Request(1, "/empty");
+  const std::string empty_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "empty");
+  aggregator.Request(1, empty_path);
 
   const auto result = WaitForResult(aggregator, 1);
   CHECK(result == std::optional<uint64_t>{0U});
@@ -84,7 +89,8 @@ TEST_CASE("FolderSizeAggregator - empty folder returns 0") {
 TEST_CASE("FolderSizeAggregator - non-existent path returns 0") {
   FileIndex index;
   FolderSizeAggregator aggregator(index);
-  aggregator.Request(999, "/noexist");
+  const std::string noexist_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "noexist");
+  aggregator.Request(999, noexist_path);
 
   const auto result = WaitForResult(aggregator, 999);
   CHECK(result == std::optional<uint64_t>{0U});
@@ -97,8 +103,9 @@ TEST_CASE("FolderSizeAggregator - deduplicates requests") {
   index.RecomputeAllPaths();
 
   FolderSizeAggregator aggregator(index);
-  aggregator.Request(1, "/root");
-  aggregator.Request(1, "/root");  // Should be a no-op.
+  const std::string root_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "root");
+  aggregator.Request(1, root_path);
+  aggregator.Request(1, root_path);  // Should be a no-op.
 
   const auto result = WaitForResult(aggregator, 1);
   CHECK(result == std::optional<uint64_t>{100U});
@@ -111,7 +118,8 @@ TEST_CASE("FolderSizeAggregator - Reset clears results") {
   index.RecomputeAllPaths();
 
   FolderSizeAggregator aggregator(index);
-  aggregator.Request(1, "/root");
+  const std::string root_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "root");
+  aggregator.Request(1, root_path);
 
   const auto before_reset = WaitForResult(aggregator, 1);
   CHECK(before_reset.has_value());
@@ -130,7 +138,8 @@ TEST_CASE("FolderSizeAggregator - Reset discards in-flight result") {
   index.RecomputeAllPaths();
 
   FolderSizeAggregator aggregator(index);
-  aggregator.Request(1, "/root");
+  const std::string root_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "root");
+  aggregator.Request(1, root_path);
   aggregator.Reset();  // Bumps generation before job completes.
 
   // Give the worker time to finish the computation and attempt to write its result.

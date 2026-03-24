@@ -347,11 +347,29 @@ if(WIN32)
         message(WARNING "Windows: resources/icons/app_icon.ico not found - application icon will not be embedded")
     endif()
 
-    target_include_directories(find_helper PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/include
-    )
+    # Windows GLFW: prefer a system/vcpkg package; fall back to pre-built in external/glfw/.
+    # find_package creates the 'glfw' imported target when found.
+    find_package(glfw3 3.3 QUIET)
+    if(NOT glfw3_FOUND)
+        set(_glfw_lib "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib/glfw3.lib")
+        set(_glfw_inc "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/include")
+        if(NOT EXISTS "${_glfw_lib}")
+            message(FATAL_ERROR
+                "Windows: GLFW not found via find_package(glfw3) and fallback library is "
+                "missing at ${_glfw_lib}. Either install GLFW (e.g. vcpkg install glfw3:x64-windows) "
+                "or place glfw3.lib in external/glfw/lib/ and headers in external/glfw/include/.")
+        endif()
+        message(STATUS "Windows: GLFW not found via find_package — using pre-built external/glfw/lib/glfw3.lib")
+        add_library(glfw STATIC IMPORTED)
+        set_target_properties(glfw PROPERTIES
+            IMPORTED_LOCATION "${_glfw_lib}"
+            INTERFACE_INCLUDE_DIRECTORIES "${_glfw_inc}"
+        )
+    else()
+        message(STATUS "Windows: Found GLFW via find_package (${glfw3_VERSION})")
+    endif()
     target_link_libraries(find_helper PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib/glfw3.lib
+        glfw
         freetype
         d3d11
         d3dcompiler
@@ -837,9 +855,10 @@ function(configure_msvc_ltcg target_name)
     endif()
 endfunction()
 
-# Configure a test target with standard compiler options, USN_WINDOWS_TESTS, and common includes.
-# Optional keyword: WITH_AVX2 — enables -mavx2 on x86_64 GCC/Clang builds.
-function(configure_test_target target_name)
+# Internal helper: compiler options, defines, base includes, and sanitizer/coverage/Boost
+# instrumentation shared by configure_test_target and configure_obj_library.
+# Optional keyword: WITH_AVX2 — enables -mavx2 / /arch:AVX2 on x86_64 builds.
+function(_configure_build_target target_name)
     cmake_parse_arguments(ARG "WITH_AVX2" "" "" ${ARGN})
 
     target_compile_features(${target_name} PRIVATE cxx_std_17)
@@ -873,11 +892,8 @@ function(configure_test_target target_name)
     target_include_directories(${target_name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${DOCTEST_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include
     )
 
-    # Sanitizers and coverage applied once here; no per-target blocks needed elsewhere
     apply_asan_to_target(${target_name})
     apply_tsan_to_target(${target_name})
     apply_coverage_to_target(${target_name})
@@ -889,50 +905,21 @@ function(configure_test_target target_name)
     apply_fast_libs_boost(${target_name})
 endfunction()
 
-# Configure a shared-source object library: compile features, compiler options,
-# USN_WINDOWS_TESTS define, base includes, and sanitizer/coverage/Boost instrumentation.
+# Configure a test executable: delegates to _configure_build_target, then adds doctest
+# and nlohmann_json include paths needed by the test runner and test code.
+# Optional keyword: WITH_AVX2 — enables -mavx2 on x86_64 GCC/Clang builds.
+function(configure_test_target target_name)
+    _configure_build_target(${target_name} ${ARGN})
+    target_include_directories(${target_name} PRIVATE
+        ${DOCTEST_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include
+    )
+endfunction()
+
+# Configure a shared-source object library: delegates entirely to _configure_build_target.
 # Optional keyword: WITH_AVX2 — enables -mavx2 on x86_64 GCC/Clang builds.
 function(configure_obj_library target_name)
-    cmake_parse_arguments(ARG "WITH_AVX2" "" "" ${ARGN})
-
-    target_compile_features(${target_name} PRIVATE cxx_std_17)
-
-    if(MSVC)
-        target_compile_options(${target_name} PRIVATE
-            $<$<CONFIG:Debug>:/Zi /Od>
-            $<$<CONFIG:Release>:/O2>
-        )
-        if(ARG_WITH_AVX2 AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
-            target_compile_options(${target_name} PRIVATE /arch:AVX2)
-        endif()
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        if(ARG_WITH_AVX2 AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
-            target_compile_options(${target_name} PRIVATE
-                $<$<CONFIG:Debug>:-g -O0 -mavx2>
-                $<$<CONFIG:Release>:-O2 -mavx2>
-            )
-        else()
-            target_compile_options(${target_name} PRIVATE
-                $<$<CONFIG:Debug>:-g -O0>
-                $<$<CONFIG:Release>:-O2>
-            )
-        endif()
-    endif()
-
-    if(NOT WIN32)
-        target_compile_definitions(${target_name} PRIVATE USN_WINDOWS_TESTS)
-    endif()
-
-    target_include_directories(${target_name} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-
-    # Sanitizer and coverage instrumentation (must be applied at compile time for accurate reports)
-    apply_asan_to_target(${target_name})
-    apply_tsan_to_target(${target_name})
-    apply_coverage_to_target(${target_name})
-    apply_fast_libs_boost(${target_name})
+    _configure_build_target(${target_name} ${ARGN})
 endfunction()
 
 # Instrument macOS find_helper for coverage when requested (ImGui tests contribute to report).
@@ -1023,6 +1010,21 @@ if(BUILD_TESTS)
             )
         endif()
 
+        add_library(test_thread_utils_obj OBJECT ${PLATFORM_THREAD_UTILS_SRC})
+        configure_obj_library(test_thread_utils_obj)
+
+        add_library(test_gui_obj OBJECT
+            src/search/SearchResultUtils.cpp
+            src/filters/SizeFilterUtils.cpp
+            src/filters/TimeFilterUtils.cpp
+            src/gui/GuiState.cpp
+        )
+        configure_obj_library(test_gui_obj)
+        target_include_directories(test_gui_obj PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
+            ${CMAKE_CURRENT_SOURCE_DIR}/external/nlohmann_json/single_include
+        )
+
         message(STATUS "  Created object libraries for shared test sources (faster incremental builds)")
 
         # ============================================================================
@@ -1032,38 +1034,40 @@ if(BUILD_TESTS)
         # String search tests
         add_executable(string_search_tests
             tests/StringSearchTests.cpp
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(string_search_tests)
+        target_link_libraries(string_search_tests PRIVATE test_utils_obj)
         add_test(NAME StringSearchTests COMMAND string_search_tests)
         message(STATUS "  Test executable: string_search_tests")
 
         # Fuzzy search tests
         add_executable(fuzzy_search_tests
             tests/FuzzySearchTests.cpp
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(fuzzy_search_tests)
+        target_link_libraries(fuzzy_search_tests PRIVATE
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+        )
         add_test(NAME FuzzySearchTests COMMAND fuzzy_search_tests)
         message(STATUS "  Test executable: fuzzy_search_tests")
 
         # CPU features tests
         add_executable(cpu_features_tests
             tests/CpuFeaturesTests.cpp
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(cpu_features_tests)
+        target_link_libraries(cpu_features_tests PRIVATE test_utils_obj)
         add_test(NAME CpuFeaturesTests COMMAND cpu_features_tests)
         message(STATUS "  Test executable: cpu_features_tests")
 
         # AVX2 string search tests
         add_executable(string_search_avx2_tests
             tests/StringSearchAVX2Tests.cpp
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(string_search_avx2_tests)
+        target_link_libraries(string_search_avx2_tests PRIVATE test_utils_obj)
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
         else()
             message(STATUS "  AVX2 not available on this architecture")
@@ -1074,9 +1078,9 @@ if(BUILD_TESTS)
         # NEON string search tests (arm64 — Apple Silicon, ARM64 Linux/Windows)
         add_executable(string_search_neon_tests
             tests/StringSearchNEONTests.cpp
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(string_search_neon_tests)
+        target_link_libraries(string_search_neon_tests PRIVATE test_utils_obj)
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
             message(STATUS "  NEON available: arm64 architecture")
         else()
@@ -1088,11 +1092,13 @@ if(BUILD_TESTS)
         # Path utils tests
         add_executable(path_utils_tests
             tests/PathUtilsTests.cpp
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(path_utils_tests)
+        target_link_libraries(path_utils_tests PRIVATE
+            test_path_obj
+            test_string_utils_obj
+            test_utils_obj
+        )
         if(WIN32)
             target_link_libraries(path_utils_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1102,11 +1108,13 @@ if(BUILD_TESTS)
         # PathPatternMatcher tests
         add_executable(path_pattern_matcher_tests
             tests/PathPatternMatcherTests.cpp
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(path_pattern_matcher_tests)
+        target_link_libraries(path_pattern_matcher_tests PRIVATE
+            test_path_obj
+            test_string_utils_obj
+            test_utils_obj
+        )
         if(WIN32)
             target_link_libraries(path_pattern_matcher_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1116,11 +1124,13 @@ if(BUILD_TESTS)
         # PathPatternBenchmark
         add_executable(path_pattern_benchmark
             tests/PathPatternBenchmark.cpp
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(path_pattern_benchmark)
+        target_link_libraries(path_pattern_benchmark PRIVATE
+            test_path_obj
+            test_string_utils_obj
+            test_utils_obj
+        )
         if(WIN32)
             target_link_libraries(path_pattern_benchmark PRIVATE shlwapi shcore ole32)
         endif()
@@ -1132,16 +1142,18 @@ if(BUILD_TESTS)
             src/index/IndexFromFilePopulator.cpp
             src/api/GeminiApiUtils.cpp
             ${GEMINI_API_HTTP_SRC}
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
         )
         configure_test_target(search_benchmark WITH_AVX2)
         configure_msvc_ltcg(search_benchmark)
+        target_link_libraries(search_benchmark PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_fileindex_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_thread_utils_obj
+        )
         if(WIN32)
             target_link_libraries(search_benchmark PRIVATE shlwapi shcore ole32)
         elseif(APPLE)
@@ -1163,11 +1175,13 @@ if(BUILD_TESTS)
         # PathPatternMatcher integration tests
         add_executable(path_pattern_integration_tests
             tests/path_pattern_integration_test.cpp
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(path_pattern_integration_tests WITH_AVX2)
+        target_link_libraries(path_pattern_integration_tests PRIVATE
+            test_path_obj
+            test_utils_obj
+            test_string_utils_obj
+        )
         if(WIN32)
             target_link_libraries(path_pattern_integration_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1185,11 +1199,13 @@ if(BUILD_TESTS)
         # SearchPatternUtils tests
         add_executable(search_pattern_utils_tests
             tests/SearchPatternUtilsTests.cpp
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(search_pattern_utils_tests)
+        target_link_libraries(search_pattern_utils_tests PRIVATE
+            test_path_obj
+            test_utils_obj
+            test_string_utils_obj
+        )
         add_test(NAME SearchPatternUtilsTests COMMAND search_pattern_utils_tests)
         message(STATUS "  Test executable: search_pattern_utils_tests")
 
@@ -1197,20 +1213,19 @@ if(BUILD_TESTS)
         add_executable(export_search_results_service_tests
             tests/ExportSearchResultsServiceTests.cpp
             src/search/ExportSearchResultsService.cpp
-            src/search/SearchResultUtils.cpp
-            src/filters/SizeFilterUtils.cpp
-            src/filters/TimeFilterUtils.cpp
-            src/gui/GuiState.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(export_search_results_service_tests)
         configure_msvc_ltcg(export_search_results_service_tests)
+        target_link_libraries(export_search_results_service_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_fileindex_obj
+            test_gui_obj
+            test_thread_utils_obj
+        )
         target_include_directories(export_search_results_service_tests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
         )
@@ -1229,18 +1244,18 @@ if(BUILD_TESTS)
         # StringUtils tests
         add_executable(string_utils_tests
             tests/StringUtilsTests.cpp
-            $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(string_utils_tests)
+        target_link_libraries(string_utils_tests PRIVATE test_string_utils_obj)
         add_test(NAME StringUtilsTests COMMAND string_utils_tests)
         message(STATUS "  Test executable: string_utils_tests")
 
         # FileSystemUtils tests
         add_executable(file_system_utils_tests
             tests/FileSystemUtilsTests.cpp
-            $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(file_system_utils_tests)
+        target_link_libraries(file_system_utils_tests PRIVATE test_string_utils_obj)
         if(WIN32)
             target_link_libraries(file_system_utils_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1251,16 +1266,18 @@ if(BUILD_TESTS)
         add_executable(lazy_attribute_loader_tests
             tests/LazyAttributeLoaderTests.cpp
             tests/TestHelpers.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(lazy_attribute_loader_tests)
         configure_msvc_ltcg(lazy_attribute_loader_tests)
+        target_link_libraries(lazy_attribute_loader_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_fileindex_obj
+            test_thread_utils_obj
+        )
         if(WIN32)
             target_link_libraries(lazy_attribute_loader_tests PRIVATE
                 shlwapi shcore ole32 shell32 propsys uuid
@@ -1273,16 +1290,18 @@ if(BUILD_TESTS)
         add_executable(parallel_search_engine_tests
             tests/ParallelSearchEngineTests.cpp
             tests/TestHelpers.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(parallel_search_engine_tests WITH_AVX2)
         configure_msvc_ltcg(parallel_search_engine_tests)
+        target_link_libraries(parallel_search_engine_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_fileindex_obj
+            test_thread_utils_obj
+        )
         add_test(NAME ParallelSearchEngineTests COMMAND parallel_search_engine_tests)
         message(STATUS "  Test executable: parallel_search_engine_tests")
 
@@ -1290,19 +1309,19 @@ if(BUILD_TESTS)
         add_executable(time_filter_utils_tests
             tests/TimeFilterUtilsTests.cpp
             tests/TestHelpers.cpp
-            src/filters/TimeFilterUtils.cpp
-            src/filters/SizeFilterUtils.cpp
-            src/gui/GuiState.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_fileindex_obj>
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
         )
         configure_test_target(time_filter_utils_tests)
         configure_msvc_ltcg(time_filter_utils_tests)
+        target_link_libraries(time_filter_utils_tests PRIVATE
+            test_fileindex_obj
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_gui_obj
+            test_thread_utils_obj
+        )
         target_include_directories(time_filter_utils_tests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
         )
@@ -1313,16 +1332,18 @@ if(BUILD_TESTS)
         add_executable(command_line_args_tests
             tests/CommandLineArgsTests.cpp
             src/core/CommandLineArgs.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(command_line_args_tests WITH_AVX2)
         configure_msvc_ltcg(command_line_args_tests)
+        target_link_libraries(command_line_args_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_core_obj
+            test_path_obj
+            test_string_utils_obj
+            test_fileindex_obj
+            test_thread_utils_obj
+        )
         if(WIN32)
             target_link_libraries(command_line_args_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1332,25 +1353,24 @@ if(BUILD_TESTS)
         # GuiState tests
         add_executable(gui_state_tests
             tests/GuiStateTests.cpp
-            src/gui/GuiState.cpp
             src/search/SearchController.cpp
-            src/search/SearchResultUtils.cpp
-            src/filters/TimeFilterUtils.cpp
-            src/filters/SizeFilterUtils.cpp
             src/search/FolderSizeAggregator.cpp
             src/search/SearchWorker.cpp
             src/search/StreamingResultsCollector.cpp
             ${SHARED_UTIL_SOURCES_FOR_TESTS}
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_fileindex_obj>
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
         )
         configure_test_target(gui_state_tests WITH_AVX2)
         configure_msvc_ltcg(gui_state_tests)
+        target_link_libraries(gui_state_tests PRIVATE
+            test_fileindex_obj
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_gui_obj
+            test_thread_utils_obj
+        )
         target_include_directories(gui_state_tests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
         )
@@ -1362,15 +1382,17 @@ if(BUILD_TESTS)
             tests/FileIndexSearchStrategyTests.cpp
             tests/LoadBalancingStrategyTests.cpp
             tests/TestHelpers.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
         )
         configure_test_target(file_index_search_strategy_tests WITH_AVX2)
+        target_link_libraries(file_index_search_strategy_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_fileindex_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_thread_utils_obj
+        )
         if(MSVC)
             # This target unconditionally uses /GL for whole-program optimization in Release
             target_compile_options(file_index_search_strategy_tests PRIVATE
@@ -1384,16 +1406,10 @@ if(BUILD_TESTS)
         message(STATUS "  Test executable: file_index_search_strategy_tests")
 
         # Streaming results collector tests
+        # Only the collector itself is needed — no FileIndex/search-engine/path machinery.
         add_executable(streaming_results_collector_tests
             tests/StreamingResultsCollectorTests.cpp
             src/search/StreamingResultsCollector.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
         )
         configure_test_target(streaming_results_collector_tests)
         configure_msvc_ltcg(streaming_results_collector_tests)
@@ -1408,16 +1424,18 @@ if(BUILD_TESTS)
                 tests/TestHelpers.cpp
                 src/api/GeminiApiUtils.cpp
                 ${GEMINI_API_HTTP_SRC}
-                ${PLATFORM_THREAD_UTILS_SRC}
-                $<TARGET_OBJECTS:test_search_obj>
-                $<TARGET_OBJECTS:test_utils_obj>
-                $<TARGET_OBJECTS:test_path_obj>
-                $<TARGET_OBJECTS:test_string_utils_obj>
-                $<TARGET_OBJECTS:test_core_obj>
-                $<TARGET_OBJECTS:test_fileindex_obj>
             )
             configure_test_target(gemini_api_utils_tests)
             configure_msvc_ltcg(gemini_api_utils_tests)
+            target_link_libraries(gemini_api_utils_tests PRIVATE
+                test_search_obj
+                test_utils_obj
+                test_path_obj
+                test_string_utils_obj
+                test_core_obj
+                test_fileindex_obj
+                test_thread_utils_obj
+            )
             if(WIN32)
                 target_link_libraries(gemini_api_utils_tests PRIVATE winhttp shlwapi shcore ole32)
             elseif(APPLE)
@@ -1435,16 +1453,18 @@ if(BUILD_TESTS)
         # Settings tests
         add_executable(settings_tests
             tests/SettingsTests.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(settings_tests WITH_AVX2)
         configure_msvc_ltcg(settings_tests)
+        target_link_libraries(settings_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_core_obj
+            test_path_obj
+            test_string_utils_obj
+            test_fileindex_obj
+            test_thread_utils_obj
+        )
         if(WIN32)
             target_link_libraries(settings_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1454,12 +1474,14 @@ if(BUILD_TESTS)
         # SearchContext tests
         add_executable(search_context_tests
             tests/SearchContextTests.cpp
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(search_context_tests)
         configure_msvc_ltcg(search_context_tests)
+        target_link_libraries(search_context_tests PRIVATE
+            test_path_obj
+            test_string_utils_obj
+            test_utils_obj
+        )
         if(WIN32)
             target_link_libraries(search_context_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1471,32 +1493,36 @@ if(BUILD_TESTS)
             tests/IndexOperationsTests.cpp
             tests/FileIndexInsertPathDedupTests.cpp
             tests/TestHelpers.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(index_operations_tests)
         configure_msvc_ltcg(index_operations_tests)
+        target_link_libraries(index_operations_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_fileindex_obj
+            test_thread_utils_obj
+        )
         add_test(NAME IndexOperationsTests COMMAND index_operations_tests)
         message(STATUS "  Test executable: index_operations_tests")
 
         # PathOperations tests (PathOperations now depends on FileIndexStorage for path_storage_index)
         add_executable(path_operations_tests
             tests/PathOperationsTests.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_fileindex_obj>
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(path_operations_tests)
         configure_msvc_ltcg(path_operations_tests)
+        target_link_libraries(path_operations_tests PRIVATE
+            test_fileindex_obj
+            test_search_obj
+            test_core_obj
+            test_path_obj
+            test_string_utils_obj
+            test_utils_obj
+            test_thread_utils_obj
+        )
         if(WIN32)
             target_link_libraries(path_operations_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1507,16 +1533,18 @@ if(BUILD_TESTS)
         add_executable(directory_resolver_tests
             tests/DirectoryResolverTests.cpp
             tests/TestHelpers.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(directory_resolver_tests)
         configure_msvc_ltcg(directory_resolver_tests)
+        target_link_libraries(directory_resolver_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_fileindex_obj
+            test_thread_utils_obj
+        )
         if(WIN32)
             target_link_libraries(directory_resolver_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1527,16 +1555,18 @@ if(BUILD_TESTS)
         add_executable(file_index_maintenance_tests
             tests/FileIndexMaintenanceTests.cpp
             tests/TestHelpers.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(file_index_maintenance_tests)
         configure_msvc_ltcg(file_index_maintenance_tests)
+        target_link_libraries(file_index_maintenance_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_fileindex_obj
+            test_thread_utils_obj
+        )
         if(WIN32)
             target_link_libraries(file_index_maintenance_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1546,11 +1576,13 @@ if(BUILD_TESTS)
         # StdRegexUtils tests
         add_executable(std_regex_utils_tests
             tests/StdRegexUtilsTests.cpp
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(std_regex_utils_tests WITH_AVX2)
+        target_link_libraries(std_regex_utils_tests PRIVATE
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+        )
         if(WIN32)
             target_link_libraries(std_regex_utils_tests PRIVATE shlwapi shcore ole32)
         endif()
@@ -1560,20 +1592,19 @@ if(BUILD_TESTS)
         # SearchResult sort tests
         add_executable(search_result_sort_tests
             tests/SearchResultSortTests.cpp
-            src/search/SearchResultUtils.cpp
-            src/filters/SizeFilterUtils.cpp
-            src/filters/TimeFilterUtils.cpp
-            src/gui/GuiState.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(search_result_sort_tests)
         configure_msvc_ltcg(search_result_sort_tests)
+        target_link_libraries(search_result_sort_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_fileindex_obj
+            test_gui_obj
+            test_thread_utils_obj
+        )
         target_include_directories(search_result_sort_tests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
         )
@@ -1584,31 +1615,32 @@ if(BUILD_TESTS)
         add_executable(exception_handling_tests
             tests/ExceptionHandlingTests.cpp
             ${SHARED_UTIL_SOURCES_FOR_TESTS}
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
         )
         configure_test_target(exception_handling_tests)
+        target_link_libraries(exception_handling_tests PRIVATE
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+        )
         add_test(NAME ExceptionHandlingTests COMMAND exception_handling_tests)
         message(STATUS "  Test executable: exception_handling_tests")
 
         # Total size computation tests
         add_executable(total_size_computation_tests
             tests/TotalSizeComputationTests.cpp
-            src/search/SearchResultUtils.cpp
-            src/filters/SizeFilterUtils.cpp
-            src/filters/TimeFilterUtils.cpp
-            src/gui/GuiState.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
         )
         configure_test_target(total_size_computation_tests)
         configure_msvc_ltcg(total_size_computation_tests)
+        target_link_libraries(total_size_computation_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_fileindex_obj
+            test_gui_obj
+            test_thread_utils_obj
+        )
         target_include_directories(total_size_computation_tests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
         )
@@ -1619,9 +1651,9 @@ if(BUILD_TESTS)
         add_executable(incremental_search_state_tests
             tests/IncrementalSearchStateTests.cpp
             src/ui/IncrementalSearchState.cpp
-            $<TARGET_OBJECTS:test_utils_obj>
         )
         configure_test_target(incremental_search_state_tests)
+        target_link_libraries(incremental_search_state_tests PRIVATE test_utils_obj)
         add_test(NAME IncrementalSearchStateTests COMMAND incremental_search_state_tests)
         message(STATUS "  Test executable: incremental_search_state_tests")
 
@@ -1629,16 +1661,18 @@ if(BUILD_TESTS)
         add_executable(folder_size_aggregator_tests
             tests/FolderSizeAggregatorTests.cpp
             src/search/FolderSizeAggregator.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_search_obj>
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
         )
         configure_test_target(folder_size_aggregator_tests)
         configure_msvc_ltcg(folder_size_aggregator_tests)
+        target_link_libraries(folder_size_aggregator_tests PRIVATE
+            test_search_obj
+            test_utils_obj
+            test_fileindex_obj
+            test_path_obj
+            test_string_utils_obj
+            test_core_obj
+            test_thread_utils_obj
+        )
         add_test(NAME FolderSizeAggregatorTests COMMAND folder_size_aggregator_tests)
         message(STATUS "  Test executable: folder_size_aggregator_tests")
 
@@ -1647,15 +1681,17 @@ if(BUILD_TESTS)
             tests/FolderCrawlerTests.cpp
             tests/TestHelpers.cpp
             src/crawler/FolderCrawler.cpp
-            ${PLATFORM_THREAD_UTILS_SRC}
-            $<TARGET_OBJECTS:test_utils_obj>
-            $<TARGET_OBJECTS:test_core_obj>
-            $<TARGET_OBJECTS:test_path_obj>
-            $<TARGET_OBJECTS:test_string_utils_obj>
-            $<TARGET_OBJECTS:test_fileindex_obj>
-            $<TARGET_OBJECTS:test_search_obj>
         )
         configure_test_target(folder_crawler_tests)
+        target_link_libraries(folder_crawler_tests PRIVATE
+            test_utils_obj
+            test_core_obj
+            test_path_obj
+            test_string_utils_obj
+            test_fileindex_obj
+            test_search_obj
+            test_thread_utils_obj
+        )
         target_include_directories(folder_crawler_tests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui
         )

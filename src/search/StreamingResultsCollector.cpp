@@ -11,9 +11,10 @@ StreamingResultsCollector::StreamingResultsCollector(size_t batch_size, uint32_t
 }
 
 void StreamingResultsCollector::AddResult(SearchResultData&& result) {
-  assert(!search_complete_.load());
-
   const std::scoped_lock lock(mutex_);
+  if (search_complete_.load()) {
+    return;
+  }
 
   current_batch_.push_back(std::move(result));  // NOLINT(hicpp-move-const-arg,performance-move-const-arg) - S5500 requires move on rvalue; type is trivially copyable so no-op
 
@@ -25,9 +26,10 @@ void StreamingResultsCollector::AddResult(SearchResultData&& result) {
 }
 
 void StreamingResultsCollector::AddResult(const SearchResultData& result) {
-  assert(!search_complete_.load());
-
   const std::scoped_lock lock(mutex_);
+  if (search_complete_.load()) {
+    return;
+  }
 
   current_batch_.push_back(result);
 
@@ -40,9 +42,11 @@ void StreamingResultsCollector::AddResult(const SearchResultData& result) {
 
 void StreamingResultsCollector::AddResults(const std::vector<SearchResultData>& batch) {
   if (batch.empty()) { return; }
-  assert(!search_complete_.load());
 
   const std::scoped_lock lock(mutex_);
+  if (search_complete_.load()) {
+    return;
+  }
   current_batch_.insert(current_batch_.end(), batch.begin(), batch.end());
 
   const auto now = std::chrono::steady_clock::now();
@@ -99,7 +103,8 @@ std::vector<SearchResultData> StreamingResultsCollector::GetPendingBatchesUpTo(s
                std::make_move_iterator(pending_batches_.begin() + static_cast<std::ptrdiff_t>(max_results)));
   pending_batches_.erase(pending_batches_.begin(),
                          pending_batches_.begin() + static_cast<std::ptrdiff_t>(max_results));
-  has_new_batch_.store(true);
+  // Keep true only if there are still items left in pending
+  has_new_batch_.store(!pending_batches_.empty());
   return result;
 }
 

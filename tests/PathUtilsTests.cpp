@@ -510,12 +510,21 @@ TEST_SUITE("JoinPath vector overload") {
 
     TEST_CASE("two components joined correctly") {
         const std::vector<std::string> components = {"/usr", "local"};
+#ifdef _WIN32
+        // JoinPath inserts the platform separator between segments when neither has one.
+        CHECK(path_utils::JoinPath(components) == "/usr\\local");
+#else
         CHECK(path_utils::JoinPath(components) == "/usr/local");
+#endif  // _WIN32
     }
 
     TEST_CASE("three components joined correctly") {
         const std::vector<std::string> components = {"/usr", "local", "bin"};
+#ifdef _WIN32
+        CHECK(path_utils::JoinPath(components) == "/usr\\local\\bin");
+#else
         CHECK(path_utils::JoinPath(components) == "/usr/local/bin");
+#endif  // _WIN32
     }
 
     TEST_CASE("components with trailing separator deduplicated") {

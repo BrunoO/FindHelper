@@ -42,7 +42,15 @@ FileIndex::FileIndex(std::shared_ptr<SearchThreadPool> thread_pool)  // NOLINT(c
       search_engine_(std::make_shared<ParallelSearchEngine>(
           thread_pool_manager_.GetPoolSharedPtrWithoutCreating()
               ? thread_pool_manager_.GetPoolSharedPtrWithoutCreating()
-              : std::make_shared<SearchThreadPool>(0))) {}
+              : std::make_shared<SearchThreadPool>(0))) {
+  // Pre-reserve path dedup structures for the typical 500K-file target.
+  // Matches PathStorage::kInitialPathArrayCapacity (private). Without this,
+  // path_to_id_chain_ undergoes ~19 geometric reallocs (each a memmove of all
+  // previous entries) while crawling 500K files.
+  static constexpr size_t kInitialCapacity = 500000U;
+  path_to_id_chain_.reserve(kInitialCapacity);
+  path_to_id_index_.reserve(kInitialCapacity);
+}
 
 namespace {
 

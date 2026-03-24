@@ -587,8 +587,9 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
 
   if (find_handle.get() == INVALID_HANDLE_VALUE) {
     DWORD error = GetLastError();
-    if (error == ERROR_FILE_NOT_FOUND || error == ERROR_NO_MORE_FILES) {
-      // Empty directory - not an error
+    if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ||
+        error == ERROR_NO_MORE_FILES) {
+      // Directory does not exist or is empty — treat as "vanished", not an error
       return true;
     }
     if (error == ERROR_ACCESS_DENIED) {
