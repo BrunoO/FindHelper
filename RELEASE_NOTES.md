@@ -1,5 +1,34 @@
 # Release Notes
 
+## March 27, 2026
+
+### Added
+
+- **Results table:** **# Files** column — for each **folder** row, shows the recursive count of non-directory files under that directory (enable it from the column picker; hidden by default). Shows **…** while the count is still computing and **–** for file rows. **Export CSV** and **Ctrl+Shift+X** (Windows/Linux) / **Cmd+Shift+X** (macOS) clipboard CSV include a **# Files** field aligned with the table.
+
+---
+
+## March 24, 2026
+
+### Performance
+
+- **Folder-crawl indexing:** After a recursive folder crawl finishes, the index now runs a lightweight **finalize** step (`FinalizeFolderCrawlIndexing`) that releases the temporary name cache instead of rebuilding all paths (`RecomputeAllPaths`) on **macOS and Linux**. **Windows** still performs OneDrive lazy-load sentinel updates in finalize; USN/MFT code paths are unchanged and continue to use full path recomputation where required.
+
+### Changed
+
+- **Indexing UI:** `IsIndexBuilding()` is sampled once per frame for index-build state; `SearchController` and `GuiState` stay consistent with `Application`’s notion of “index building.”
+- **Windows status bar:** Index elapsed time and final duration use the same `IsIndexBuilding()` signal as the empty/indexing UI, so timing matches what the user sees during USN and monitor phases.
+
+### Fixed
+
+- **Windows folder crawler:** Enumeration no longer treats every reparse point as a symlink. **OneDrive** and other cloud placeholders use non-symlink reparse tags; only **NTFS symlink** reparse points (`IO_REPARSE_TAG_SYMLINK`) are skipped, and **junctions** are followed again.
+
+### Code quality
+
+- **Sonar:** `FileIndex::RebuildPathToIdMapLocked` uses a C++17 structured binding (cpp:S6005).
+
+---
+
 ## March 22, 2026
 
 ### Performance

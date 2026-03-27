@@ -17,7 +17,7 @@ namespace ui {
 
 namespace {
 
-// Renders a single shortcut as an ImGui bullet: "Ctrl+Shift+F - Toggle Matched Files / Matched Size columns"
+// Renders a single shortcut as an ImGui bullet: e.g. "Cmd+S - Save current search"
 void RenderShortcutBullet(const ShortcutDef& def) {
   const std::string text = FormatLabel(def) + " - " + std::string(def.description);
   ImGui::BulletText("%s", text.c_str());
@@ -69,6 +69,7 @@ void RenderHelpWindowContent(const size_t* memory_bytes_from_state, bool* p_open
     // What's new — high-level user-facing features (from RELEASE_NOTES.md; newest first)
     // Use BulletWrapped() because BulletText() does not wrap long lines
     if (ImGui::CollapsingHeader("What's new")) {
+      BulletWrapped("2026-03-27: Results table: \"# Files\" column — recursive file count under each folder (enable via column picker; hidden by default). Shows \"…\" while computing, \"–\" for files. Export CSV and Ctrl+Shift+X / Cmd+Shift+X clipboard copy include # Files.");
       BulletWrapped("2026-03-21: Multi-file drag-and-drop: drag selected rows to Explorer, Finder, Desktop, or any shell target. Dragging an unselected row snaps selection to it (single-file drag); dragging a selected row drags all eligible selected files at once. Directories and files pending deletion are excluded. Windows & macOS.");
       BulletWrapped("2026-03-15: Status bar progress bar when the app is busy (indexing, searching, loading attributes, or computing folder sizes).");
       BulletWrapped("2026-03-15: Folder rows show last modified time and aggregate size instead of placeholder \"Folder\" values.");
@@ -85,7 +86,7 @@ void RenderHelpWindowContent(const size_t* memory_bytes_from_state, bool* p_open
       BulletWrapped("2026-02-21: Results table shortcuts: Enter (open), Ctrl+Enter (reveal), Ctrl+Shift+C (copy path), Tab (focus search); Pin to Quick Access more robust.");
       BulletWrapped("2026-02-21: Settings: Auto button for font size and UI scale from monitor DPI.");
       BulletWrapped("2026-02-20: Help window is a normal window (Alt+Tab); Export CSV moved; Ctrl+E / Ctrl+S shortcuts; settings in HOME/.FindHelper.");
-      BulletWrapped("2026-02-18: Folder statistics columns; sort by folder stats; M/T/U shortcuts (one press, Shift for global).");
+      BulletWrapped("2026-02-18: Introduced folder statistics columns and folder-stats sorting (removed in later builds).");
       BulletWrapped("2026-02-14: Export CSV; themes (Everforest, Dracula, Nord, One Dark, Gruvbox, Catppuccin Mocha); total size in status bar.");
       ImGui::Spacing();
     }
@@ -135,7 +136,6 @@ void RenderHelpWindowContent(const size_t* memory_bytes_from_state, bool* p_open
     ShortcutBullet("Ctrl+Shift+X - Copy selected / marked rows as CSV (visible columns)");
 #endif  // __APPLE__
     ShortcutBullet("Tab - Focus name search (from results table)");
-    RenderShortcutBullet(FindShortcut(ShortcutAction::ToggleFolderStats));
 #ifdef _WIN32
     ShortcutBullet("Ctrl+Shift+P - Pin selected file or folder to Quick Access");
 #endif  // _WIN32

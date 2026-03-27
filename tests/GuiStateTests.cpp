@@ -16,6 +16,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -256,15 +257,17 @@ TEST_SUITE("GuiState Input Field Operations") {
     GuiState state;
     REQUIRE(state.inputChanged == false);
 
+    // Bracket MarkInputChanged with two now() samples. Do not assert "elapsed since
+    // lastInputTime" using a third now() — on slow/heavily loaded Windows CI the gap
+    // between adjacent statements can exceed 1s (first chrono/DLL use, scheduling),
+    // which falsely fails tests that use a wall-clock threshold.
+    const auto before = std::chrono::steady_clock::now();
     state.MarkInputChanged();
+    const auto after = std::chrono::steady_clock::now();
 
     REQUIRE(state.inputChanged == true);
-    // lastInputTime should be updated (we can't test exact time, but should be recent)
-    const auto now = std::chrono::steady_clock::now();
-    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - state.lastInputTime).count();
-    constexpr int64_t kMaxElapsedMs = 1000LL;
-    REQUIRE(elapsed < kMaxElapsedMs); // Should be less than 1 second
+    REQUIRE(state.lastInputTime >= before);
+    REQUIRE(state.lastInputTime <= after);
   }
 
   TEST_CASE("Input field - IsEmpty check") {
@@ -308,21 +311,6 @@ TEST_SUITE("GuiState Input Field Operations") {
     // Verify null termination and length (no strlen - Sonar flags unsafe C string use)
     REQUIRE(state.filenameInput.Data()[4] == '\0');
     REQUIRE(state.filenameInput.AsString().length() == 4);
-  }
-
-  TEST_CASE("ClearInputs - invalidates folder stats cache") {
-    GuiState state;
-
-    // Simulate a populated folder-stats cache
-    state.folderStatsByPath["some/path"] = GuiState::FolderStats{3, 1024};
-    state.folderStatsValid = true;
-    state.folderStatsResultsBatchNumber = 5;
-
-    state.ClearInputs();
-
-    // Folder stats must be cleared so the next render does not display stale data
-    REQUIRE(state.folderStatsValid == false);
-    REQUIRE(state.folderStatsByPath.empty());
   }
 
 }

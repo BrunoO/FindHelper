@@ -102,82 +102,6 @@ bool CheckAndHandleSortDataReady(GuiState& state, SortGeneration sort_generation
   return true;
 }
 
-struct FolderStatsForSort {
-  size_t file_count = 0;
-  uint64_t total_size_bytes = 0;
-};
-
-using FolderStatsForSortMap = std::unordered_map<std::string_view, FolderStatsForSort>;
-
-void AccumulateFolderStatsForResult(FolderStatsForSortMap& stats_by_path,
-                                    const SearchResult& result) {
-  if (result.isDirectory) {
-    return;
-  }
-
-  const uint64_t file_size = result.fileSize;
-  if (file_size == kFileSizeNotLoaded || file_size == kFileSizeFailed) {
-    return;
-  }
-
-  std::string_view path = result.fullPath;
-  while (!path.empty()) {
-    const size_t last_separator = path.find_last_of("\\/");
-    if (last_separator == std::string_view::npos) {
-      break;
-    }
-    path = path.substr(0, last_separator);
-    FolderStatsForSort& stats = stats_by_path[path];
-    ++stats.file_count;
-    stats.total_size_bytes += file_size;
-  }
-}
-
-FolderStatsForSortMap BuildFolderStatsForSort(const std::vector<SearchResult>& results) {
-  FolderStatsForSortMap stats_by_path;
-  for (const auto& result : results) {
-    AccumulateFolderStatsForResult(stats_by_path, result);
-  }
-  return stats_by_path;
-}
-
-[[nodiscard]] uint64_t GetFolderSortMetric(const SearchResult& result,
-                                           int column_index,
-                                           const FolderStatsForSortMap& stats_by_path) {
-  constexpr uint64_t kZero = 0;
-
-  if (column_index == ResultColumn::FolderFileCount) {
-    if (!result.isDirectory) {
-      // For individual files, "Total Files" is displayed as 1 in the UI, so use 1 here
-      // to keep sort order consistent with the rendered values.
-      return 1;
-    }
-    const auto it = stats_by_path.find(result.fullPath);
-    if (it == stats_by_path.end()) {
-      return kZero;
-    }
-    return it->second.file_count;
-  }
-
-  if (column_index == ResultColumn::FolderTotalSize) {
-    if (result.isDirectory) {
-      const auto it = stats_by_path.find(result.fullPath);
-      if (it == stats_by_path.end()) {
-        return kZero;
-      }
-      return it->second.total_size_bytes;
-    }
-
-    const uint64_t file_size = result.fileSize;
-    if (file_size == kFileSizeNotLoaded || file_size == kFileSizeFailed) {
-      return kZero;
-    }
-    return file_size;
-  }
-
-  return kZero;
-}
-
 }  // namespace
 
 void EnsureDisplayStringsPopulated(const SearchResult& result, const FileIndex& file_index,
@@ -213,6 +137,13 @@ void EnsureDisplayStringsPopulated(const SearchResult& result, const FileIndex& 
   if (result.isDirectory && result.fileSize == kFileSizeNotLoaded &&
       result.fileSizeDisplay.empty()) {
     result.fileSizeDisplay = "...";
+  }
+
+  // For directories whose file count hasn't been computed yet, provide a placeholder
+  // so callers (e.g. CSV export) never see an empty folderFileCountDisplay.
+  if (result.isDirectory && result.folderFileCount == kFolderFileCountNotLoaded &&
+      result.folderFileCountDisplay.empty()) {
+    result.folderFileCountDisplay = "...";
   }
 
   // Invariant: "..." must only appear when the size is still unknown.
@@ -901,18 +832,6 @@ static void PrefetchAndFormatSortDataBlocking(
 void SortSearchResults(std::vector<SearchResult>& results, int column_index,
                        ImGuiSortDirection direction, FileIndex& file_index,
                        ThreadPool& thread_pool) {
-  // Validate sort parameters (debug-only)
-  // Note: Mark column (0) is not sortable in the UI, so we only allow Filename and above.
-  const bool in_valid_range =
-      (column_index >= ResultColumn::Filename &&
-       column_index <= ResultColumn::FolderTotalSize);
-  assert(in_valid_range);
-  if (!in_valid_range) {
-    LOG_WARNING_BUILD("SortSearchResults: invalid column_index=" << column_index
-                                                                 << ", clamping to Filename");
-    column_index = ResultColumn::Filename;
-  }
-
   if (results.empty()) {
     return;
   }
@@ -921,38 +840,6 @@ void SortSearchResults(std::vector<SearchResult>& results, int column_index,
   // This avoids blocking the UI thread on file I/O inside the sort lambda.
   if (column_index == ResultColumn::Size || column_index == ResultColumn::LastModified) {
     PrefetchAndFormatSortDataBlocking(results, file_index, thread_pool);
-  }
-
-  if (column_index == ResultColumn::FolderFileCount ||
-      column_index == ResultColumn::FolderTotalSize) {
-    const FolderStatsForSortMap stats_by_path = BuildFolderStatsForSort(results);
-    const size_t n = results.size();
-    std::vector<uint64_t> keys;
-    keys.reserve(n);
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - all accesses (results[i], keys[i], keys[j], results[i], results[idx]) are bounded: i/j are sort indices in [0,n); idx comes from indices which are iota [0,n)
-    for (size_t i = 0; i < n; ++i) {
-      const SearchResult& r = results[i];
-      const uint64_t metric = GetFolderSortMetric(r, column_index, stats_by_path);
-      keys.push_back(metric);
-    }
-    std::vector<size_t> indices(n);
-    std::iota(indices.begin(), indices.end(), 0);
-    const auto compare = [&keys, &results, direction](size_t i, size_t j) {
-      if (keys[i] != keys[j]) {
-        return direction == ImGuiSortDirection_Ascending ? keys[i] < keys[j]
-                                                        : keys[i] > keys[j];
-      }
-      return results[i].fullPath < results[j].fullPath;
-    };
-    std::sort(indices.begin(), indices.end(), compare);
-    std::vector<SearchResult> sorted;
-    sorted.reserve(n);
-    for (const size_t idx : indices) {
-      sorted.push_back(std::move(results[idx]));
-    }
-    // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
-    results = std::move(sorted);
-    return;
   }
 
   std::sort(results.begin(), results.end(),

@@ -238,8 +238,7 @@ struct CsvColumnVisibility {
   bool mod_time = true;
   bool full_path = true;
   bool extension = true;
-  bool matched_files = false;
-  bool matched_size = false;
+  bool folder_files = true;
 };
 
 void AppendCsvHeaderRow(std::string& csv, const CsvColumnVisibility& vis) {
@@ -270,20 +269,15 @@ void AppendCsvHeaderRow(std::string& csv, const CsvColumnVisibility& vis) {
     sep();
     csv.append(EscapeCsvField("Extension"));
   }
-  if (vis.matched_files) {
+  if (vis.folder_files) {
     sep();
-    csv.append(EscapeCsvField("Matched Files"));
-  }
-  if (vis.matched_size) {
-    sep();
-    csv.append(EscapeCsvField("Matched Size (bytes)"));
+    csv.append(EscapeCsvField("# Files"));
   }
   csv.push_back('\n');
 }
 
 void AppendCsvDataRow(std::string& csv,
                             const SearchResult& result,
-                            const GuiState& state,
                             const CsvColumnVisibility& vis) {
   bool first = true;
   auto sep = [&csv, &first]() {
@@ -322,24 +316,9 @@ void AppendCsvDataRow(std::string& csv,
     sep();
     csv.append(EscapeCsvField(result.GetExtension()));
   }
-  if (vis.matched_files || vis.matched_size) {
-    size_t folder_file_count = 0;
-    uint64_t folder_total_size_bytes = 0;
-    if (result.isDirectory) {
-      const auto it = state.folderStatsByPath.find(std::string(result.fullPath));
-      if (it != state.folderStatsByPath.end()) {
-        folder_file_count = it->second.fileCount;
-        folder_total_size_bytes = it->second.totalSizeBytes;
-      }
-    }
-    if (vis.matched_files) {
-      sep();
-      csv.append(EscapeCsvField(std::to_string(folder_file_count)));
-    }
-    if (vis.matched_size) {
-      sep();
-      csv.append(EscapeCsvField(std::to_string(folder_total_size_bytes)));
-    }
+  if (vis.folder_files) {
+    sep();
+    csv.append(EscapeCsvField(ResultsTable::GetFolderFilesDisplayText(result)));
   }
   csv.push_back('\n');
 }
@@ -357,13 +336,7 @@ void CopySelectedOrMarkedRowsAsCsv(const GuiState& state,
     return;
   }
 
-  CsvColumnVisibility vis;
-  vis.matched_files = state.showFolderStatsColumns;
-  vis.matched_size = state.showFolderStatsColumns;
-  if (!vis.name && !vis.size && !vis.mod_time && !vis.full_path &&
-      !vis.extension && !vis.matched_files && !vis.matched_size) {
-    return;
-  }
+  const CsvColumnVisibility vis;
 
   std::string csv;  // NOLINT(misc-const-correctness) - built incrementally
   AppendCsvHeaderRow(csv, vis);
@@ -375,7 +348,7 @@ void CopySelectedOrMarkedRowsAsCsv(const GuiState& state,
     }
     const SearchResult& result =
       display_results[static_cast<size_t>(row)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - guarded by row range check above
-    AppendCsvDataRow(csv, result, state, vis);
+    AppendCsvDataRow(csv, result, vis);
   }
 
   if (!csv.empty()) {

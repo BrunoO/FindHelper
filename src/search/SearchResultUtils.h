@@ -161,6 +161,19 @@ inline int CompareByColumn(const SearchResult& a,
     return a.fullPath.compare(b.fullPath);
   case ResultColumn::Extension:
     return a.GetExtension().compare(b.GetExtension());
+  case ResultColumn::FolderFiles: { // tie-break by path so equal counts order deterministically
+    // Treat sentinel (not-loaded) as smaller than any real count so uncomputed folders
+    // sort last in both ascending and descending order.
+    const uint64_t a_count = (a.folderFileCount == kFolderFileCountNotLoaded) ? 0 : a.folderFileCount;
+    const uint64_t b_count = (b.folderFileCount == kFolderFileCountNotLoaded) ? 0 : b.folderFileCount;
+    if (a_count < b_count) {
+      return -1;
+    }
+    if (a_count > b_count) {
+      return 1;
+    }
+    return a.fullPath.compare(b.fullPath);
+  }
   default:
     // Unknown column index - should not happen, but handle gracefully
     return 0;
@@ -203,11 +216,10 @@ inline auto CreateSearchResultComparator(int column_index, ImGuiSortDirection di
  * - Last Modified (3, pre-fetches modification times)
  * - Full Path (4)
  * - Extension (5)
- * - FolderFileCount (6, uses aggregated folder stats)
- * - FolderTotalSize (7, uses aggregated folder stats)
+ * - FolderFiles (6, folder file count — no pre-fetch needed, computed by FolderSizeAggregator)
  *
  * @param results Search results to sort (modified in place)
- * @param column_index Column index to sort by (Mark to FolderTotalSize)
+ * @param column_index Column index to sort by (Filename to Extension)
  * @param direction Sort direction (Ascending or Descending)
  * @param file_index File index for pre-fetching metadata (columns 2 and 3)
  * @param thread_pool Thread pool for parallel pre-fetching of metadata

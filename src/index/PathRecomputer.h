@@ -15,7 +15,7 @@
  *
  * Design:
  * - Caller (FileIndex) holds unique_lock; PathRecomputer does not take the lock
- * - Single method RecomputeAllPaths() - called by FileIndex::RecomputeAllPaths() under lock
+ * - Single method RecomputeAllPaths() — called by FileIndex::RecomputeAllPaths() under lock
  *
  * @see docs/2026-01-31_FILEINDEX_REFACTORING_PLAN.md Option A
  */

@@ -38,7 +38,14 @@ struct FolderCrawlerConfig {
  * PERFORMANCE:
  * - Uses platform-specific fast enumeration APIs
  * - Batches insertions to reduce FileIndex lock contention
- * - Skips symbolic links and junction points (documented for future changes)
+ * - Skips NTFS symbolic links only (reparse tag IO_REPARSE_TAG_SYMLINK); cloud/OneDrive
+ *   reparse points and directory junctions (IO_REPARSE_TAG_MOUNT_POINT) are still crawled
+ *   so those folders are indexed.
+ * - Windows caveat: directory junctions are followed like ordinary directories. There is no
+ *   cycle detection. A junction that points to an ancestor or participates in a junction cycle
+ *   can cause unbounded traversal (the same logical tree under longer path prefixes). NTFS
+ *   symlinks are skipped specifically to avoid that class of issue for symlinks; junction cycles
+ *   remain a rare edge case unless a future max-depth or identity-based guard is added.
  *
  * ERROR HANDLING:
  * - Continues on permission errors (skips and logs)
@@ -87,7 +94,8 @@ public:
   struct DirectoryEntry {
     std::string name;
     bool is_directory = false;
-    bool is_symlink = false;  // For skipping symlinks
+    // Windows: true only for IO_REPARSE_TAG_SYMLINK (skipped). Junctions are false; see class doc.
+    bool is_symlink = false;
   };
 
   // Enumerate entries in a directory (platform-specific, public for helper functions)

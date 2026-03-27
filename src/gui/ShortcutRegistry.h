@@ -25,7 +25,6 @@ enum class ShortcutAction : uint8_t {
   ToggleHierarchy,    // Ctrl/Cmd+Shift+H: toggle path hierarchy indentation
   SaveSearch,         // Ctrl/Cmd+S:       open Save Search dialog
   ExportCsv,          // Ctrl/Cmd+E:       export results to CSV
-  ToggleFolderStats,  // Ctrl/Cmd+Shift+F: toggle Matched Files/Matched Size columns
 };
 
 // Where the shortcut fires.
@@ -48,13 +47,13 @@ struct ShortcutDef {
   bool             shift;             // true = also requires Shift
   ShortcutScope    scope;
   ShortcutPlatform platform;
-  std::string_view key_label;    // display portion appended after modifier, e.g. "Shift+F"
+  std::string_view key_label;    // display portion appended after modifier, e.g. "Shift+H"
   std::string_view description;  // shown verbatim in HelpWindow
 };
 
 // Registry — one entry per shortcut, ordered by section then display position.
 // NOLINTNEXTLINE(readability-magic-numbers) - count equals number of ShortcutAction values
-inline constexpr std::array<ShortcutDef, 7> kShortcuts{{
+inline constexpr std::array<ShortcutDef, 6> kShortcuts{{
   // Global Shortcuts section
   {ShortcutAction::FocusSearch,       ImGuiKey_F,      true,  false, ShortcutScope::Global, ShortcutPlatform::All, "F",       "Focus name search input"},
   {ShortcutAction::RefreshSearch,     ImGuiKey_F5,     false, false, ShortcutScope::Global, ShortcutPlatform::All, "F5",      "Refresh search (re-run current query)"},
@@ -64,7 +63,6 @@ inline constexpr std::array<ShortcutDef, 7> kShortcuts{{
   {ShortcutAction::SaveSearch,        ImGuiKey_S,      true,  false, ShortcutScope::Global, ShortcutPlatform::All, "S",       "Save current search"},
   // File Operations section
   {ShortcutAction::ExportCsv,         ImGuiKey_E,      true,  false, ShortcutScope::Global, ShortcutPlatform::All, "E",       "Export current results to CSV"},
-  {ShortcutAction::ToggleFolderStats, ImGuiKey_F,      true,  true,  ShortcutScope::Global, ShortcutPlatform::All, "Shift+F", "Toggle Matched Files / Matched Size columns"},
 }};
 
 // Returns "Cmd" on macOS, "Ctrl" on Windows/Linux.
@@ -93,7 +91,7 @@ const ShortcutDef& FindShortcut(ShortcutAction action) noexcept;
 // Does NOT check scope or platform — the caller is responsible.
 // For bare-key shortcuts (primary_modifier = false), modifier state is not checked.
 // For modifier shortcuts with shift = false, also verifies Shift is NOT held to prevent
-// cross-firing (e.g. Ctrl+F must not fire when Ctrl+Shift+F is pressed).
+// cross-firing (e.g. Ctrl+S must not fire when Ctrl+Shift+S is pressed).
 inline bool IsTriggered(const ShortcutDef& def, const ImGuiIO& io) {
   if (def.primary_modifier) {
     if (!IsPrimaryShortcutModifierDown(io)) {
@@ -106,5 +104,5 @@ inline bool IsTriggered(const ShortcutDef& def, const ImGuiIO& io) {
   return ImGui::IsKeyPressed(def.key);
 }
 
-// Builds a display label for the shortcut, e.g. "Ctrl+Shift+F", "Cmd+F", "F5".
+// Builds a display label for the shortcut, e.g. "Ctrl+Shift+H", "Cmd+F", "F5".
 std::string FormatLabel(const ShortcutDef& def);

@@ -264,13 +264,21 @@ public:
 
   // Recompute all paths. Call after bulk insertion (e.g., initial index
   // population) to ensure paths are consistent when entries may have been
-  // inserted out of order. Delegates to PathRecomputer (caller holds lock).
+  // inserted out of order. Two steps: fill PathStorage, then rebuild path_to_id.
   void RecomputeAllPaths() {
     const ScopedTimer timer("FileIndex::RecomputeAllPaths");
     const std::unique_lock lock(index_mutex_);
     path_recomputer_.RecomputeAllPaths();
     RebuildPathToIdMapLocked();
   }
+
+  /**
+   * After FolderCrawler finished via InsertPaths in tree order: release the temporary
+   * name arena without clearing/rebuilding PathStorage. On Windows, also resets OneDrive
+   * lazy-load sentinels from existing paths (same effect as PathRecomputer for those rows).
+   * Do not use after USN/MFT/out-of-order population — use RecomputeAllPaths() instead.
+   */
+  void FinalizeFolderCrawlIndexing();
 
   // Parallel search
   // Returns a list of IDs that match the query
@@ -374,6 +382,9 @@ private:
 
   // Rebuild path_to_id_ from current storage and path_operations (caller holds unique_lock).
   void RebuildPathToIdMapLocked();
+
+  // Append one (id, path) to path_to_id_ chains; skips empty path. Caller holds unique_lock.
+  void AppendPathToIdMapLocked(uint64_t id, std::string_view path);
 
   // After Rename/Move succeed: sync path_to_id_ (directory → full rebuild; file → unlink old + link new).
   void RefreshPathToIdAfterRenameOrMoveLocked(uint64_t id, const std::string& old_path,

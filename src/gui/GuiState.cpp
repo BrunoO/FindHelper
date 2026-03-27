@@ -97,12 +97,12 @@ void GuiState::ClearInputs() {
   timeFilterCacheValid = false;
   sizeFilterCacheValid = false;
   InvalidateDisplayedTotalSize();
-  InvalidateFolderStats();
   filteredResults.clear();
   sizeFilteredResults.clear();
   searchActive = false;
   resultsComplete = true;
   resultsBatchNumber = 0;
+  searchSessionId = 0;
   showingPartialResults = false;
   searchError = "";
   inputChanged = false;

@@ -363,6 +363,20 @@ inline std::string FormatFileSize(uint64_t bytes) {
   return buffer;
 }
 
+// Format a file count as a locale-independent comma-separated integer (e.g., 1200000 → "1,200,000").
+inline std::string FormatFileCount(uint64_t count) {
+  const std::string digits = std::to_string(count);
+  std::string formatted;
+  formatted.reserve(digits.size() + ((digits.size() - 1U) / 3U));
+  const size_t first_group = (digits.size() % 3U == 0U) ? 3U : (digits.size() % 3U);
+  formatted.append(digits.substr(0U, first_group));
+  for (size_t i = first_group; i < digits.size(); i += 3U) {
+    formatted.push_back(',');
+    formatted.append(digits.substr(i, 3U));
+  }
+  return formatted;
+}
+
 // Helper function to format FILETIME as human-readable string
 // Format: "YYYY-MM-DD HH:MM"
 inline std::string FormatFileTime(const FILETIME &ft) {  // NOSONAR(cpp:S5350) - Function has no pointer parameters; pointer-to-const rule is not applicable here

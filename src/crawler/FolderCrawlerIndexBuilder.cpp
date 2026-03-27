@@ -52,19 +52,13 @@ public:
 
           // After crawl completes (or fails), finalize index if successful.
           if (success) {
-            // RecomputeAllPaths() is required on all platforms:
-            // - On Windows: resets OneDrive cloud-placeholder sentinels so
-            //   size/mtime are fetched via IShellItem2 rather than cached as zero.
-            //   Also fixes Windows drive-root paths ("C:" → "C:\") which are left
-            //   as placeholders by IndexOperations::Insert.
-            // - On macOS/Linux: root-level paths are now built correctly at
-            //   insertion time by IndexOperations::Insert (parent_id == 0 →
-            //   prepend "/"), so the O(N×depth) parent-chain walk is a no-op
-            //   for the vast majority of crawler-inserted entries.
-            // The finalizing flag blocks concurrent searches while PathStorage
-            // is cleared and rebuilt.
+            // FolderCrawler inserts full paths in tree order (see ProcessEntries before
+            // PushSubdirs). FinalizeFolderCrawlIndexing releases the name arena without
+            // clearing PathStorage; on Windows it also applies OneDrive sentinel resets from
+            // paths already in storage (see FileIndex::FinalizeFolderCrawlIndexing).
+            // finalizing_population blocks concurrent searches during the locked finalize.
             state->finalizing_population.store(true);
-            GetFileIndex().RecomputeAllPaths();
+            GetFileIndex().FinalizeFolderCrawlIndexing();
             state->finalizing_population.store(false);
 
             // Update final metrics

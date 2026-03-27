@@ -350,6 +350,9 @@ inline void RenderSearchOptions(GuiState& state, bool is_index_building, float u
   ImGui::Text(ICON_FA_COG " Search Options:");
   ImGui::SameLine();
   ImGui::Checkbox("Folders Only", &state.foldersOnly);
+  if (ImGui::IsItemEdited()) {
+    state.MarkInputChanged();
+  }
 
   ImGui::SameLine();
   bool case_insensitive = !state.caseSensitive;

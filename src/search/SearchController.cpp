@@ -216,7 +216,6 @@ void UpdateSearchResults(GuiState& state,
   // GetDisplayResults checks valid flags and falls back to searchResults when invalid.
   // Clear the vectors so we do not hold stale filter data.
   InvalidateFilterCaches(state);
-  state.InvalidateFolderStats();
   // Only set resultsUpdated when search is complete
   // This prevents auto re-sorting during incremental updates
   // Results are shown incrementally (unsorted) until complete, then sorted
@@ -401,12 +400,12 @@ void FinalizeStreamingSearchComplete(GuiState& state, const FileIndex& file_inde
  */
 void ClearSearchResults(GuiState& state, FolderSizeAggregator* folder_aggregator, [[maybe_unused]] std::string_view reason) {
   WaitForAllAttributeLoadingFutures(state);
+  state.searchSessionId++;
   // Clear result vectors BEFORE clearing the pool so no SearchResult.fullPath
   // (string_view into the pool) is left dangling. See path pool lifecycle in file header.
   state.searchResults.clear();
   state.partialResults.clear();
   InvalidateFilterCaches(state);
-  state.InvalidateFolderStats();
   if (folder_aggregator != nullptr) {
     folder_aggregator->CancelPending();
   }
@@ -484,7 +483,8 @@ void SearchController::Update(GuiState &state, SearchWorker &search_worker,  // 
   // Don't allow searches while index is being built or finalizing
   // This prevents race condition where search uses offsets that become invalid
   // when FinalizeInitialPopulation() clears and rebuilds path_storage_
-  if (is_index_building || (monitor != nullptr && monitor->IsPopulatingIndex())) {
+  // Caller must pass Application::IsIndexBuilding() (includes monitor population).
+  if (is_index_building) {
     PollResults(state, search_worker, folder_aggregator, file_index);
     return;
   }

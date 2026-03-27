@@ -27,6 +27,7 @@ Checks: >-
   -readability-identifier-naming,
   -readability-magic-numbers,
   -readability-math-missing-parentheses,
+  -bugprone-unchecked-optional-access,
   -readability-redundant-member-init
 
 # Rationale for each disabled check:
@@ -116,6 +117,12 @@ Checks: >-
 #   Expected-value expressions in CHECK() assertions use arithmetic that
 #   follows standard operator precedence. Adding parentheses would be pedantic
 #   and reduce readability of the assertion intent.
+#
+# bugprone-unchecked-optional-access:
+#   Test cases guard optional access with doctest REQUIRE(opt.has_value()) or
+#   REQUIRE(opt). clang-tidy cannot see that REQUIRE aborts the test on failure,
+#   so it treats the subsequent opt.value() / *opt as unchecked. The pattern is
+#   safe: REQUIRE terminates the test before the access is reached if empty.
 #
 # readability-redundant-member-init:
 #   Test fixture members use explicit `= {}` default-initialization to make

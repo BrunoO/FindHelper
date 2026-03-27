@@ -53,10 +53,6 @@ namespace {
 
 using detail::MultiStyleColorGuard;
 
-// Local alias for folder statistics cache stored in GuiState.
-using FolderStats = GuiState::FolderStats;
-using FolderStatsMap = std::unordered_map<std::string, FolderStats>;
-
 // Debounce for context menu to prevent rapid open (ms).
 constexpr int kContextMenuDebounceMs = 300;
 static_assert(kContextMenuDebounceMs > 0, "debounce must be positive");
@@ -180,7 +176,6 @@ struct RenderRowParams {
   GLFWwindow* glfw_window = nullptr;
   bool has_pending_deletions = false;
   bool show_path_hierarchy_indentation = true;
-  const FolderStatsMap* folder_stats = nullptr;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   FolderSizeAggregator* folder_aggregator = nullptr;
   bool& drag_candidate_active;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   int& drag_candidate_row;      // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -201,7 +196,6 @@ struct RenderVisibleRowsParams {
   GLFWwindow* glfw_window = nullptr;
   bool has_pending_deletions = false;
   bool show_path_hierarchy_indentation = true;
-  const FolderStatsMap* folder_stats = nullptr;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   FolderSizeAggregator* folder_aggregator = nullptr;
   bool& drag_candidate_active;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
   int& drag_candidate_row;      // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -255,7 +249,6 @@ inline void RenderVisibleTableRows(const RenderVisibleRowsParams& params) {
                                        params.glfw_window,
                                        params.has_pending_deletions,
                                        params.show_path_hierarchy_indentation,
-                                       params.folder_stats,
                                        params.folder_aggregator,
                                        params.drag_candidate_active,
                                        params.drag_candidate_row,
@@ -285,61 +278,6 @@ inline void RenderVisibleTableRows(const RenderVisibleRowsParams& params) {
     }
   }
   return count;
-}
-
-// Returns true if the existing folder statistics cache parameters still match the
-// current display context (batch number, filters, and streaming state).
-[[nodiscard]] bool FolderStatsParametersMatch(const GuiState& state) {
-  return state.folderStatsValid &&
-         state.folderStatsResultsBatchNumber == state.resultsBatchNumber &&
-         state.folderStatsTimeFilter == state.timeFilter &&
-         state.folderStatsSizeFilter == state.sizeFilter &&
-         state.folderStatsShowingPartialResults == state.showingPartialResults;
-}
-
-// Accumulates folder statistics for a single file result by walking its directory
-// ancestry and updating the per-folder counters. Directory results are ignored by
-// the caller to keep this helper focused on files only.
-void AccumulateFolderStatsForFile(GuiState& state, const SearchResult& result) {
-  const uint64_t file_size = result.fileSize;
-  const bool size_loaded = (file_size != kFileSizeNotLoaded && file_size != kFileSizeFailed);
-  const uint64_t contributing_size = size_loaded ? file_size : 0U;
-
-  std::string_view dir_path = ResultsTable::GetDirectoryPath(result);
-  while (!dir_path.empty()) {
-    FolderStats& stats = state.folderStatsByPath[std::string(dir_path)];
-    ++stats.fileCount;
-    stats.totalSizeBytes += contributing_size;
-
-    const size_t last_separator = dir_path.find_last_of("\\/");
-    if (last_separator == std::string_view::npos) {
-      break;
-    }
-    dir_path = dir_path.substr(0, last_separator);
-  }
-}
-
-// Build or refresh the folder statistics cache on GuiState when needed.
-// Uses the current display_results vector as the source, and only recomputes
-// when search results or filters have changed to avoid extra O(N) work per frame.
-void BuildFolderStatsIfNeeded(GuiState& state, const std::vector<SearchResult>& display_results) {
-  if (FolderStatsParametersMatch(state)) {
-    return;
-  }
-
-  state.folderStatsByPath.clear();
-
-  for (const auto& result : display_results) {
-    if (!result.isDirectory) {
-      AccumulateFolderStatsForFile(state, result);
-    }
-  }
-
-  state.folderStatsValid = true;
-  state.folderStatsResultsBatchNumber = state.resultsBatchNumber;
-  state.folderStatsTimeFilter = state.timeFilter;
-  state.folderStatsSizeFilter = state.sizeFilter;
-  state.folderStatsShowingPartialResults = state.showingPartialResults;
 }
 
 // Returns C string for filename column display (name + extension); uses thread-local buffer when possible.
@@ -404,12 +342,14 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   if (params.result.isDirectory && params.result.fileSize == kFileSizeNotLoaded &&
       params.folder_aggregator != nullptr) {
     params.folder_aggregator->Request(params.result.fileId, params.result.fullPath);
-    if (const auto size = params.folder_aggregator->GetResult(params.result.fileId);
-        size.has_value()) {
-      params.result.fileSize = *size;
+    if (const auto stats = params.folder_aggregator->GetResult(params.result.fileId);
+        stats.has_value()) {
+      params.result.fileSize = stats->total_size;
       // Always reformat: fileSizeDisplay may hold the "..." placeholder set by
       // EnsureDisplayStringsPopulated, and must be replaced with the real value.
       params.result.fileSizeDisplay = FormatFileSize(params.result.fileSize);
+      params.result.folderFileCount = stats->file_count;
+      params.result.folderFileCountDisplay = FormatFileCount(params.result.folderFileCount);
     }
   }
   // Post-condition: if we wrote a real size, the placeholder must be gone.
@@ -616,37 +556,12 @@ void RenderResultsTableRow(int row, const RenderRowParams& params) {  // NOSONAR
   }
   ImGui::PopID();
 
-  // Optional folder statistics columns (recursive file count and total size).
-  // Show values only for folder rows; leave cells empty for file rows.
-  size_t folder_file_count = 0;
-  uint64_t folder_total_size_bytes = 0;
-  bool show_folder_stats_cells = false;  // true only for directory rows
-
-  if (params.result.isDirectory && params.folder_stats != nullptr) {
-    show_folder_stats_cells = true;
-    const auto it = params.folder_stats->find(std::string(params.result.fullPath));
-    if (it != params.folder_stats->end()) {
-      folder_file_count = it->second.fileCount;
-      folder_total_size_bytes = it->second.totalSizeBytes;
-    }
-  }
-
-  ImGui::TableSetColumnIndex(ResultColumn::FolderFileCount);
-  ImGui::PushID(ResultColumn::FolderFileCount);
-  if (show_folder_stats_cells) {
-    ImGui::Text("%zu", folder_file_count);
-  }
-  ImGui::PopID();
-
-  ImGui::TableSetColumnIndex(ResultColumn::FolderTotalSize);
-  ImGui::PushID(ResultColumn::FolderTotalSize);
-  if (show_folder_stats_cells) {
-    if (folder_total_size_bytes > 0U) {
-      const std::string size_label = FormatFileSize(folder_total_size_bytes);
-      ImGui::TextUnformatted(size_label.c_str());
-    } else {
-      ImGui::TextUnformatted("0 B");
-    }
+  // Column 6: # Files (recursive non-directory file count; directories only)
+  ImGui::TableSetColumnIndex(ResultColumn::FolderFiles);
+  ImGui::PushID(ResultColumn::FolderFiles);
+  ImGui::SetNextItemSelectionUserData(row);
+  if (ImGui::Selectable(ResultsTable::GetFolderFilesDisplayText(params.result), is_selected, 0)) {
+    // Selection handled by ImGui multi-select.
   }
   ImGui::PopID();
 
@@ -1086,6 +1001,20 @@ const char* ResultsTable::GetSizeDisplayText(const SearchResult& result) {
   return result.fileSizeDisplay.c_str();
 }
 
+const char* ResultsTable::GetFolderFilesDisplayText(const SearchResult& result) {
+  if (!result.isDirectory) {
+    return "-";
+  }
+  if (result.folderFileCount == kFolderFileCountNotLoaded) {
+    return "...";
+  }
+  // Fallback: reformat if display is empty but count is available.
+  if (result.folderFileCountDisplay.empty()) {
+    result.folderFileCountDisplay = FormatFileCount(result.folderFileCount);
+  }
+  return result.folderFileCountDisplay.c_str();
+}
+
 const char* ResultsTable::GetModTimeDisplayText(const SearchResult& result) {
   if (IsSentinelTime(result.lastModificationTime)) {
     return "...";  // Loading indicator (not stored in cache)
@@ -1185,8 +1114,7 @@ void RenderResultsTableHeaderArea(const IncrementalSearchState& incremental_sear
 #ifdef __APPLE__
     constexpr const char* k_full_shortcuts_text =
       "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
-      "clears filters; Cmd+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched "
-      "Size columns (see Help).";
+      "clears filters; Cmd+G cancels the filter.";
     constexpr const char* k_short_shortcuts_text =
       "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
       "clears filters; Cmd+G cancels the filter.";
@@ -1195,8 +1123,7 @@ void RenderResultsTableHeaderArea(const IncrementalSearchState& incremental_sear
 #else
     constexpr const char* k_full_shortcuts_text =
       "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
-      "clears filters; Ctrl+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched "
-      "Size columns (see Help).";
+      "clears filters; Ctrl+G cancels the filter.";
     constexpr const char* k_short_shortcuts_text =
       "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
       "clears filters; Ctrl+G cancels the filter.";
@@ -1236,13 +1163,11 @@ void RenderResultsTableHeaderArea(const IncrementalSearchState& incremental_sear
 #ifdef __APPLE__
     constexpr const char* k_full_shortcuts_text_tooltip =
       "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
-      "clears filters; Cmd+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched "
-      "Size columns (see Help).";
+      "clears filters; Cmd+G cancels the filter.";
 #else
     constexpr const char* k_full_shortcuts_text_tooltip =
       "Results table active - arrows/N/P navigate; '/' starts Filter in results; Esc "
-      "clears filters; Ctrl+G cancels the filter; Ctrl+Shift+F toggles Matched Files/Matched "
-      "Size columns (see Help).";
+      "clears filters; Ctrl+G cancels the filter.";
 #endif  // __APPLE__
 
     const ImVec2 full_size_tooltip = ImGui::CalcTextSize(k_full_shortcuts_text_tooltip);
@@ -1260,11 +1185,14 @@ void RenderResultsTableHeaderArea(const IncrementalSearchState& incremental_sear
   ImGui::Spacing();
 }
 
-// Pre-sort flush: write aggregator-computed folder sizes into searchResults and trigger
-// re-sort when all directory sizes are confirmed. Keeps nesting in Render at most 3 levels.
+// Pre-sort flush: write aggregator-computed folder stats into searchResults and trigger
+// re-sort when all directory stats are confirmed. Keeps nesting in Render at most 3 levels.
+// Activated for both Size and FolderFiles columns since both depend on aggregator results.
 void FlushAggregatorSizesAndTriggerSortIfReady(GuiState& state,
                                                FolderSizeAggregator* aggregator) {
-  if (aggregator == nullptr || state.lastSortColumn != ResultColumn::Size) {
+  if (aggregator == nullptr ||
+      (state.lastSortColumn != ResultColumn::Size &&
+       state.lastSortColumn != ResultColumn::FolderFiles)) {
     return;
   }
   const auto kIsUnsizedDir = [](const SearchResult& r) {
@@ -1287,12 +1215,14 @@ void FlushAggregatorSizesAndTriggerSortIfReady(GuiState& state,
     if (!(result.isDirectory && result.fileSize == kFileSizeNotLoaded)) {
       continue;
     }
-    const auto size = aggregator->GetResult(result.fileId);
-    if (!size.has_value()) {
+    const auto stats = aggregator->GetResult(result.fileId);
+    if (!stats.has_value()) {
       continue;
     }
-    result.fileSize = *size;
+    result.fileSize = stats->total_size;
     result.fileSizeDisplay = FormatFileSize(result.fileSize);
+    result.folderFileCount = stats->file_count;
+    result.folderFileCountDisplay = FormatFileCount(result.folderFileCount);
   }
 
   const auto pending_after = std::count_if(  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
@@ -1355,7 +1285,7 @@ void ResultsTable::Render(
 
     float table_scroll_y_for_search = 0.0F;
 
-    if (constexpr int kResultColumnCount = 8;
+    if (constexpr int kResultColumnCount = 7;
         ImGui::BeginTable("SearchResults", kResultColumnCount,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |  // NOLINT(hicpp-signed-bitwise) - ImGui flags bitmask
                             ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX |
@@ -1371,10 +1301,10 @@ void ResultsTable::Render(
       ImGui::TableSetupColumn("Full Path", ImGuiTableColumnFlags_WidthFixed,
                               full_path_column_default_width);
       ImGui::TableSetupColumn("Extension");
-      ImGui::TableSetupColumn("Matched Files", ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultHide);
-      ImGui::TableSetupColumn("Matched Size", ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultHide);
-      ImGui::TableSetColumnEnabled(ResultColumn::FolderFileCount, state.showFolderStatsColumns);
-      ImGui::TableSetColumnEnabled(ResultColumn::FolderTotalSize, state.showFolderStatsColumns);
+      // Hidden by default: secondary info, enabled via right-click column header menu.
+      ImGui::TableSetupColumn("# Files",
+                              ImGuiTableColumnFlags_DefaultHide |           // NOLINT(hicpp-signed-bitwise) - ImGui flags bitmask
+                                ImGuiTableColumnFlags_PreferSortDescending);
       // Accent-tinted column headers; when streaming, header text uses Warning color for visibility
       const bool streaming =
           !state.resultsComplete && state.showingPartialResults;
@@ -1422,9 +1352,6 @@ void ResultsTable::Render(
       // Early check: if pendingDeletions is empty, skip the lookup for all rows
       const bool has_pending_deletions = !state.pendingDeletions.empty();
 
-      // Build folder statistics cache when underlying results/filters changed.
-      BuildFolderStatsIfNeeded(state, display_results);
-
       // Render all visible rows using ImGui clipper (extracted to reduce nesting depth)
       const RenderVisibleRowsParams visible_rows_params{display_results,
                                                         state,
@@ -1433,7 +1360,6 @@ void ResultsTable::Render(
                                                         glfw_window,
                                                         has_pending_deletions,
                                                         show_path_hierarchy_indentation,
-                                                        &state.folderStatsByPath,
                                                         aggregator,
                                                         drag_candidate_active,
                                                         drag_candidate_row,

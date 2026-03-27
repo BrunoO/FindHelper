@@ -84,15 +84,18 @@ TEST_CASE("ExportSearchResultsService::ExportToCsv writes header and rows") {
   CHECK(ExportSearchResultsService::ExportToCsv(results, index, out_path));
 
   const std::string contents = ReadFileContents(out_path);
-  const std::string expected_header = "Filename,Size,Last Modified,Full Path,Extension\n";
+  const std::string expected_header = "Filename,Size,Last Modified,Full Path,Extension,# Files\n";
   CHECK(contents.substr(0, expected_header.size()) == expected_header);
 
-  // First data line: file1,1 KB,2024-03-14 10:00,C:/path/file1.txt,txt
+  // First data line: file1,1 KB,2024-03-14 10:00,C:/path/file1.txt,txt,-
   const size_t after_header = expected_header.size();
   CHECK(contents.find("file1.txt", after_header) != std::string::npos);
   CHECK(contents.find("1 KB", after_header) != std::string::npos);
   CHECK(contents.find("file2.csv", after_header) != std::string::npos);
   CHECK(contents.find("2 KB", after_header) != std::string::npos);
+  // Files show "-" in the # Files column. EscapeCsv escapes leading "-" (formula-injection
+  // prevention), so the cell is written as "'-" (quoted, single-quote prefix).
+  CHECK(contents.find(",\"'-\"\n", after_header) != std::string::npos);
 
   // Remove temp file (best-effort)
   std::remove(out_path.c_str());
@@ -106,7 +109,7 @@ TEST_CASE("ExportSearchResultsService::ExportToCsv empty results writes only hea
   CHECK(ExportSearchResultsService::ExportToCsv(results, index, out_path));
 
   const std::string contents = ReadFileContents(out_path);
-  CHECK(contents == "Filename,Size,Last Modified,Full Path,Extension\n");
+  CHECK(contents == "Filename,Size,Last Modified,Full Path,Extension,# Files\n");
 
   std::remove(out_path.c_str());
 }

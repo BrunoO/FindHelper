@@ -28,17 +28,23 @@ bool ExportSearchResultsService::ExportToCsv(const std::vector<SearchResult>& re
   }
 
   // Write header
-  file << "Filename,Size,Last Modified,Full Path,Extension\n";
+  file << "Filename,Size,Last Modified,Full Path,Extension,# Files\n";
 
   for (const auto& result : results) {
     // Ensure metadata is loaded for the result
     EnsureDisplayStringsPopulated(result, file_index);
 
+    // For directories: show folderFileCountDisplay ("..." if not yet computed, count if available).
+    // For files: show "-" (not applicable).
+    const std::string_view folder_files_display =
+        result.isDirectory ? std::string_view{result.folderFileCountDisplay} : std::string_view{"-"};
+
     file << EscapeCsv(result.GetFilename()) << ",";
     file << EscapeCsv(result.fileSizeDisplay) << ",";
     file << EscapeCsv(result.lastModificationDisplay) << ",";
     file << EscapeCsv(result.fullPath) << ",";
-    file << EscapeCsv(result.GetExtension()) << "\n";
+    file << EscapeCsv(result.GetExtension()) << ",";
+    file << EscapeCsv(folder_files_display) << "\n";
   }
 
   LOG_INFO("Exported " + std::to_string(results.size()) + " results to " + std::string(output_path));

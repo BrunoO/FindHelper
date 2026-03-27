@@ -115,7 +115,7 @@ void FolderSizeAggregator::RequestBatch(
   }
 }
 
-std::optional<uint64_t> FolderSizeAggregator::GetResult(uint64_t folder_id) const {
+std::optional<FolderSizeAggregator::FolderStats> FolderSizeAggregator::GetResult(uint64_t folder_id) const {
   const std::shared_lock lock(mutex_);
   if (auto it = results_.find(folder_id); it != results_.end()) {
     return it->second;
@@ -186,7 +186,7 @@ void FolderSizeAggregator::WorkerThread() {
           assert(results_.find(job.folder_id) == results_.end() &&
                  "FolderSizeAggregator: duplicate result for folder_id");
           const auto it = sizes.find(job.folder_id);
-          results_.emplace(job.folder_id, it != sizes.end() ? it->second : uint64_t{0});
+          results_.emplace(job.folder_id, it != sizes.end() ? it->second : FolderStats{});
           pending_requests_.erase(job.folder_id);
         }
         // Stale-generation jobs: pending_requests_ was already cleared by CancelPending()/
@@ -196,7 +196,7 @@ void FolderSizeAggregator::WorkerThread() {
   }
 }
 
-hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
+hash_map_t<uint64_t, FolderSizeAggregator::FolderStats> FolderSizeAggregator::ComputeSizeBatch(
     const std::vector<Job>& jobs) const {
   // Map prefix (folder_path + "/") → folder_id for O(1) lookup per path level.
   hash_map_t<std::string, uint64_t> prefix_to_id;
@@ -243,12 +243,13 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
       },
       nullptr);
 
-  // Pass 2: sum sizes — use cached values captured in Pass 1 where available,
+  // Pass 2: sum sizes and count files — use cached values captured in Pass 1 where available,
   // stat() only for files that were not yet loaded when Pass 1 ran.
-  hash_map_t<uint64_t, uint64_t> result;
+  hash_map_t<uint64_t, FolderStats> result;
   result.reserve(jobs.size());
   for (const auto& [folder_id, file_data] : file_data_per_dir) {
     uint64_t total = 0;
+    const uint64_t count = file_data.size();  // Each entry is one non-directory file.
     for (const auto& [fid, cached_size] : file_data) {
       if (cancelled_.load()) {
         break;
@@ -260,11 +261,11 @@ hash_map_t<uint64_t, uint64_t> FolderSizeAggregator::ComputeSizeBatch(
         total += size;
       }
     }
-    result.emplace(folder_id, total);
+    result.emplace(folder_id, FolderStats{total, count});
   }
-  // Ensure all job folder_ids have an entry (directories with no files get 0).
+  // Ensure all job folder_ids have an entry (directories with no files get zeros).
   for (const auto& job : jobs) {
-    result.try_emplace(job.folder_id, uint64_t{0});
+    result.try_emplace(job.folder_id, FolderStats{});
   }
   return result;
 }

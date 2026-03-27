@@ -300,6 +300,7 @@ std::vector<SearchResult> MergeAndConvertToSearchResults(  // NOLINT(cppcoreguid
     if (datum.isDirectory) {
       result.fileSize = kFileSizeNotLoaded;
       result.lastModificationTime = kFileTimeNotLoaded;
+      result.folderFileCount = kFolderFileCountNotLoaded;
     } else {
       const FileEntry* entry = file_index.GetEntry(datum.id);
       if (entry == nullptr) {

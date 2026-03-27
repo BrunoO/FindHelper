@@ -546,6 +546,18 @@ struct FindHandleDeleter {
   }
 };
 using UniqueFindHandle = std::unique_ptr<void, FindHandleDeleter>;
+
+// WIN32_FIND_DATA::dwReserved0 holds the reparse tag when FILE_ATTRIBUTE_REPARSE_POINT is set.
+// OneDrive and Files On-Demand use cloud reparse tags; junctions use IO_REPARSE_TAG_MOUNT_POINT.
+// Only NTFS symlinks (IO_REPARSE_TAG_SYMLINK) are treated as symlinks and skipped (avoids following
+// symlink cycles). Junctions are not skipped so cloud folders and junction targets are enumerated;
+// circular junctions are not detected—see FolderCrawler class documentation.
+[[nodiscard]] inline bool IsNtfsSymlinkReparsePoint(const WIN32_FIND_DATAW& find_data) {
+  if ((find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+    return false;
+  }
+  return find_data.dwReserved0 == IO_REPARSE_TAG_SYMLINK;
+}
 }  // namespace
 
 // NOLINTNEXTLINE(readability-identifier-naming) - EnumerateDirectory is public API name
@@ -617,17 +629,10 @@ bool FolderCrawler::EnumerateDirectory(std::string_view dir_path,
     // Check if directory
     entry.is_directory = (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
-    // Check if symlink or junction point
-    // FILE_ATTRIBUTE_REPARSE_POINT indicates a symlink, junction, or mount point
-    entry.is_symlink = (find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
-
-    // NOTE: We skip symlinks and junction points to avoid infinite loops
-    // and redundant processing. If you need to follow symlinks in the future:
-    // 1. Add cycle detection (track visited inodes)
-    // 2. Add a config option to enable symlink following
-    // 3. Use GetFileInformationByHandle to get the actual target
-    // See:
-    // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfinalpathnamebyhandlew
+    // Skip only NTFS symbolic links (IO_REPARSE_TAG_SYMLINK). Do not treat all
+    // FILE_ATTRIBUTE_REPARSE_POINT entries as symlinks: OneDrive/cloud folders and
+    // junctions use other reparse tags and must be enumerated (see IsNtfsSymlinkReparsePoint).
+    entry.is_symlink = IsNtfsSymlinkReparsePoint(find_data);
 
     entries.push_back(std::move(entry));
   } while (FindNextFileW(find_handle.get(), &find_data) != 0);

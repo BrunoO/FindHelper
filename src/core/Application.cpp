@@ -602,6 +602,12 @@ void Application::ProcessFrame() {
   // Note: Event polling (glfwPollEvents/glfwWaitEvents/glfwWaitEventsTimeout)
   // is handled in Run() before calling ProcessFrame() to enable power-saving modes.
 
+  // As soon as the user requests close: stop sort attribute workers and cancel search.
+  if (glfwWindowShouldClose(window_) != 0) {
+    state_.sort_cancellation_token_.Cancel();
+    search_worker_.CancelSearch();
+  }
+
   // Trigger auto-crawl after first frame is processed (UI is shown)
   if (should_auto_crawl_ && !auto_crawl_triggered_) {
     TriggerAutoCrawl();
@@ -624,8 +630,8 @@ void Application::ProcessFrame() {
   // Application logic (handles search, maintenance, keyboard shortcuts)
   const bool is_index_building = IsIndexBuilding();
 
-  // Update index build state and search state
-  UpdateIndexBuildState();
+  // Update index build state and search state (single IsIndexBuilding() read per frame)
+  UpdateIndexBuildState(is_index_building);
   UpdateSearchState(is_index_building);
 
 #ifdef ENABLE_IMGUI_TEST_ENGINE
@@ -677,14 +683,17 @@ void Application::ProcessFrame() {
 #endif  // ENABLE_IMGUI_TEST_ENGINE
 }
 
-void Application::UpdateIndexBuildState() {
-  // Track previous state to detect completion
-  const bool was_building = state_.index_build_in_progress;
+void Application::UpdateIndexBuildState(bool index_building_now) {
+  // index_building_now must be the same IsIndexBuilding() value computed in ProcessFrame
+  // (builder active, finalizing_population, or UsnMonitor::IsPopulatingIndex()).
+  const bool was_index_building_ui = state_.index_build_in_progress;
   const auto now = std::chrono::steady_clock::now();
+
+  const bool now_index_thread_active = index_build_state_.active.load();
 
   // Update GUI-facing view of index build state so UI components can display
   // progress without knowing the underlying implementation (USN vs crawler).
-  state_.index_build_in_progress = index_build_state_.active.load();
+  state_.index_build_in_progress = index_building_now;
   state_.index_build_failed = index_build_state_.failed.load();
   state_.index_entries_processed =
     index_build_state_.entries_processed.load();
@@ -692,28 +701,31 @@ void Application::UpdateIndexBuildState() {
   state_.index_dirs_processed = index_build_state_.dirs_processed.load();
   state_.index_error_count = index_build_state_.errors.load();
 
-  // Detect start of a new index build (initial crawl, auto-crawl, or USN-based build).
-  if (state_.index_build_in_progress && !was_building) {
+  // Detect start of a new index build (initial crawl, auto-crawl, USN population, etc.).
+  if (index_building_now && !was_index_building_ui) {
     state_.index_build_start_time = now;
     state_.index_build_last_duration_ms = 0U;
     state_.index_build_has_timing = true;
   }
 
-  // Detect crawl completion for periodic recrawl tracking
-  if (was_building && !state_.index_build_in_progress && !state_.index_build_failed) {
-    // Compute and store duration of the just-completed index build.
+  // Wall-clock duration for any index-building phase (matches EmptyState elapsed).
+  if (was_index_building_ui && !index_building_now && !state_.index_build_failed) {
     const auto duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(now - state_.index_build_start_time);
     state_.index_build_last_duration_ms = static_cast<uint64_t>(duration.count());
+  }
 
-    // Crawl just completed successfully
+  // Crawl completion (FolderCrawler worker only): do not fire when USN monitor
+  // population finishes — that is not "folder crawl completed".
+  if (last_index_build_state_active_ && !now_index_thread_active &&
+      !index_build_state_.failed.load() && index_build_state_.completed.load()) {
     last_crawl_completion_time_ = now;
     crawl_just_completed_ = true;  // Flag to trigger search refresh
-    // Enable periodic recrawl if crawl folder is set
     if (settings_ != nullptr && !settings_->crawlFolder.empty()) {
       recrawl_enabled_ = true;
     }
   }
+  last_index_build_state_active_ = now_index_thread_active;
 
   // Build a concise status string for the status bar / empty state.
   state_.index_build_status_text.clear();

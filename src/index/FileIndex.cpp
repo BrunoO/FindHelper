@@ -362,20 +362,58 @@ bool FileIndex::Move(uint64_t id, uint64_t new_parent_id) {
   return true;
 }
 
+void FileIndex::AppendPathToIdMapLocked(uint64_t id, std::string_view path) {
+  if (path.empty()) {
+    return;
+  }
+  const size_t h = PathHashInline(path);
+  const auto head_it = path_to_id_index_.find(h);
+  const size_t head = (head_it != path_to_id_index_.end()) ? head_it->second : FileIndex::kPathToIdEnd;
+  path_to_id_chain_.push_back({ h, id, head });
+  path_to_id_index_[h] = path_to_id_chain_.size() - 1;
+}
+
 void FileIndex::RebuildPathToIdMapLocked() {
   path_to_id_index_.clear();
   path_to_id_chain_.clear();
   path_to_id_chain_.reserve(storage_.Size());
   for (const auto& [id, entry] : storage_) {
-    const std::string path = GetPathLocked(id);
-    if (!path.empty()) {
-      const size_t h = PathHashInline(path);
-      const auto head_it = path_to_id_index_.find(h);
-      const size_t head = (head_it != path_to_id_index_.end()) ? head_it->second : FileIndex::kPathToIdEnd;
-      path_to_id_chain_.push_back({ h, id, head });
-      path_to_id_index_[h] = path_to_id_chain_.size() - 1;
+    (void)entry;
+    // Zero-copy path view from PathStorage — avoids one std::string allocation per
+    // entry; PathHashInline only needs string_view (same as InsertPathUnderLock).
+    const std::string_view path = GetPathViewLocked(id);
+    AppendPathToIdMapLocked(id, path);
+  }
+}
+
+void FileIndex::FinalizeFolderCrawlIndexing() {
+  const ScopedTimer timer("FileIndex::FinalizeFolderCrawlIndexing");
+  const std::unique_lock lock(index_mutex_);
+#ifdef _WIN32
+  size_t onedrive_reset_count = 0;
+  for (const auto& [id, entry] : storage_) {
+    if (entry.isDirectory) {
+      continue;
+    }
+    const std::string_view path = GetPathViewLocked(id);
+    if (path.empty()) {
+      continue;
+    }
+    if (IsOneDriveFile(path)) {
+      storage_.UpdateFileSize(id, kFileSizeNotLoaded);
+      storage_.UpdateModificationTime(id, kFileTimeNotLoaded);
+      onedrive_reset_count++;
     }
   }
+  if (onedrive_reset_count > 0) {
+    LOG_INFO_BUILD("FileIndex::FinalizeFolderCrawlIndexing: Reset "
+                   << onedrive_reset_count
+                   << " OneDrive files to sentinel values for lazy loading");
+  }
+#endif  // _WIN32
+  storage_.ReleaseNameCache();
+  LOG_INFO_BUILD("FileIndex::FinalizeFolderCrawlIndexing: released name cache "
+                 "(skipped full PathStorage rebuild after folder crawl)");
 }
 
 // Note: get_or_create_directory_id has been moved to DirectoryResolver

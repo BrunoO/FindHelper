@@ -6,7 +6,6 @@
  *
  * This component handles rendering the search results table with:
  * - Base columns: Filename, Size, Last Modified, Full Path, Extension
- * - Optional folder statistics columns: Matched Files, Matched Size
  * - Column sorting with async attribute loading
  * - Row selection and interaction
  * - Double-click to open/reveal
@@ -45,10 +44,7 @@ namespace ui {
  * - Last Modified: Modification time with lazy loading (shows "..." while loading)
  * - Full Path: Truncated with ellipsis, double-click to reveal in Finder/Explorer
  * - Extension: File extension
- *
- * When folder statistics are enabled via GUI state, two additional columns appear:
- * - Matched Files: Recursive count of displayed files under a folder
- * - Matched Size: Recursive total size of displayed files under a folder
+ * - # Files: Recursive non-directory file count for directories (hidden by default; shows "..." while computing, "-" for files)
  *
  * Features:
  * - Virtual scrolling for performance (ImGuiListClipper)
@@ -92,6 +88,17 @@ class ResultsTable {
    * @return Formatted size string (e.g., "1.5 MB") or special indicator
    */
   static const char* GetSizeDisplayText(const SearchResult& result);
+
+  /**
+   * @brief Gets the folder file count display text for a search result
+   *
+   * Returns "-" for non-directory entries, "..." while the count is being computed,
+   * or the formatted count (e.g., "1,234") once available.
+   *
+   * @param result Search result
+   * @return Display string for the "# Files" column
+   */
+  static const char* GetFolderFilesDisplayText(const SearchResult& result);
 
   /**
    * @brief Gets formatted modification time display text for a search result

@@ -287,6 +287,10 @@ private:
   std::chrono::steady_clock::time_point last_interaction_time_{};  // NOLINT(readability-redundant-member-init) - set in constructor body
   bool crawl_just_completed_ = false;  // Flag to trigger search refresh when crawl completes
 
+  /// Previous-frame snapshot of IndexBuildState::active (FolderCrawler/USN builder thread only).
+  /// Used to detect crawl completion without conflating with UsnMonitor::IsPopulatingIndex().
+  bool last_index_build_state_active_ = false;
+
   // Auto-crawl on startup tracking
   bool should_auto_crawl_ = false;  // If true, automatically start crawling after UI is shown
   std::string auto_crawl_folder_{};  // NOLINT(readability-redundant-member-init) - overwritten in constructor initializer list
@@ -323,7 +327,8 @@ private:
   void UpdateIdleStateLogging(bool is_idle, bool& was_idle) const;
 
   // Helper methods for ProcessFrame() to reduce cognitive complexity
-  void UpdateIndexBuildState();
+  /// @param index_building_now Same value as IsIndexBuilding() for this frame (single read from ProcessFrame).
+  void UpdateIndexBuildState(bool index_building_now);
   void UpdateSearchState(bool is_index_building);
 
   // Auto-crawl helper method

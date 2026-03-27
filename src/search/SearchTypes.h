@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "utils/FileAttributeConstants.h"
+
 #ifdef _WIN32
 #include <windows.h>  // NOSONAR S3806 - lowercase for portability (AGENTS.md); Windows SDK may report as Windows.h
 #else
@@ -60,8 +62,7 @@ constexpr int Size = 2;          // NOLINT(readability-identifier-naming)
 constexpr int LastModified = 3;  // NOLINT(readability-identifier-naming)
 constexpr int FullPath = 4;      // NOLINT(readability-identifier-naming)
 constexpr int Extension = 5;     // NOLINT(readability-identifier-naming)
-constexpr int FolderFileCount = 6;   // NOLINT(readability-identifier-naming) - Optional folder stats column
-constexpr int FolderTotalSize = 7;   // NOLINT(readability-identifier-naming) - Optional folder stats column
+constexpr int FolderFiles = 6;   // NOLINT(readability-identifier-naming) - recursive non-directory file count; hidden by default
 }  // namespace ResultColumn
 
 /** Per-thread timing information for load balancing analysis. */
@@ -118,6 +119,10 @@ struct SearchResult {  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-me
   // Cached truncated path for UI display (avoids expensive CalcTextSize every frame)
   mutable std::string truncatedPathDisplay; // NOLINT(readability-identifier-naming,cppcoreguidelines-pro-type-member-init,hicpp-member-init) - default-constructed empty
   mutable float truncatedPathColumnWidth = -1.0F; // NOLINT(readability-identifier-naming)
+  // Recursive non-directory file count for directories (populated asynchronously by FolderSizeAggregator).
+  // kFolderFileCountNotLoaded until computed; meaningless for non-directory entries.
+  mutable uint64_t folderFileCount = kFolderFileCountNotLoaded; // NOLINT(readability-identifier-naming)
+  mutable std::string folderFileCountDisplay; // NOLINT(readability-identifier-naming,cppcoreguidelines-pro-type-member-init,hicpp-member-init) - default-constructed empty
   uint64_t fileId = 0; // NOLINT(readability-identifier-naming)
   bool isDirectory = false; // NOLINT(readability-identifier-naming)
 };

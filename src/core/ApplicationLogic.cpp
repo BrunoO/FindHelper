@@ -76,9 +76,6 @@ void DispatchGlobalShortcut(ShortcutAction action,  // NOSONAR(cpp:S107) - Centr
       settings.showPathHierarchyIndentation = !settings.showPathHierarchyIndentation;
       SaveSettings(settings);
       break;
-    case ShortcutAction::ToggleFolderStats:
-      state.showFolderStatsColumns = !state.showFolderStatsColumns;
-      break;
   }
 }
 

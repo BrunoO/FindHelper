@@ -117,27 +117,6 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   uint64_t displayedTotalSizeComputationBytes = 0;
 
-  // Folder statistics cache for current display results (recursive file counts and total sizes).
-  // This cache is rebuilt only when the underlying display results or filters change to avoid
-  // extra O(N) work on every frame.
-  struct FolderStats {  // NOLINT(readability-identifier-naming) - Nested struct uses PascalCase per project type-alias/struct conventions
-    size_t fileCount = 0;              // NOLINT(readability-identifier-naming)
-    uint64_t totalSizeBytes = 0;       // NOLINT(readability-identifier-naming)
-  };
-  // NOLINTNEXTLINE(readability-identifier-naming,readability-redundant-member-init) - POD-like struct for UI state, camelCase is intentional, {} makes intent explicit
-  std::unordered_map<std::string, FolderStats> folderStatsByPath{};
-  // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
-  bool folderStatsValid = false;
-  // Batch and filter snapshot used to know when folderStatsByPath must be rebuilt.
-  // NOLINTNEXTLINE(readability-identifier-naming)
-  uint64_t folderStatsResultsBatchNumber = 0;
-  // NOLINTNEXTLINE(readability-identifier-naming)
-  TimeFilter folderStatsTimeFilter = TimeFilter::None;
-  // NOLINTNEXTLINE(readability-identifier-naming)
-  SizeFilter folderStatsSizeFilter = SizeFilter::None;
-  // NOLINTNEXTLINE(readability-identifier-naming)
-  bool folderStatsShowingPartialResults = false;
-
   /** Resets progressive computation state (index, accumulator). */
   void ResetDisplayedTotalSizeProgress() {
     displayedTotalSizeComputationIndex = 0;
@@ -160,18 +139,15 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
     ResetDisplayedTotalSizeProgress();
   }
 
-  /** Invalidates cached folder statistics so they will be recomputed on next use. */
-  void InvalidateFolderStats() {
-    folderStatsValid = false;
-    folderStatsByPath.clear();
-  }
-
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   bool searchActive = false;
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   bool resultsComplete = true;
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   uint64_t resultsBatchNumber = 0;
+  // Increments once per new search (ClearSearchResults); stable across streaming batches for caches.
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  uint64_t searchSessionId = 0;
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   bool showingPartialResults = false;
   // NOLINTNEXTLINE(readability-identifier-naming,readability-redundant-string-init) - POD-like struct for UI state, camelCase is intentional, = "" makes intent explicit
@@ -284,9 +260,6 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
   bool showDeletePopup = false;
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   bool showBulkDeletePopup = false;
-  // When true, show "Matched Files" and "Matched Size" columns; default false (hidden). Toggle with Ctrl+Shift+F (global, when no text input).
-  // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
-  bool showFolderStatsColumns = false;
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, camelCase is intentional
   int deleteSavedSearchIndex =
     -1;  // Index of saved search to delete (set when Delete button is clicked)
@@ -333,6 +306,9 @@ class GuiState {  // NOSONAR(cpp:S1820) - GuiState aggregates all UI state (62 f
     std::chrono::steady_clock::now();  // Last time memory was updated
 
   // Index build progress (shared across all platforms)
+  // index_build_in_progress: set only from Application::UpdateIndexBuildState from the per-frame
+  // IsIndexBuilding() snapshot — not IndexBuildState::active alone (USN monitor / finalize phases
+  // are included). Keeps status bar timing and search gating consistent with UIActions::IsIndexBuilding().
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, snake_case is intentional
   bool index_build_in_progress = false;  // True while initial index is building
   // NOLINTNEXTLINE(readability-identifier-naming) - POD-like struct for UI state, snake_case is intentional

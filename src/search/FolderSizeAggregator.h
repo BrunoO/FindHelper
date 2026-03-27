@@ -18,8 +18,8 @@
 class FileIndex;
 
 /**
- * Asynchronously computes the total size of files within a directory by summing
- * all indexed descendants. Uses a single background worker thread.
+ * Asynchronously computes the total size and file count of a directory's
+ * non-directory descendants. Uses a single background worker thread.
  *
  * Directories are queued via Request() and results polled via GetResult().
  * Call CancelPending() when a new search starts (preserves the results cache so
@@ -65,6 +65,13 @@ class FileIndex;
  */
 class FolderSizeAggregator {
 public:
+  /** Aggregated stats for a single directory: total byte size and file count of all
+   *  non-directory descendants (computed in a single index pass by the worker thread). */
+  struct FolderStats {
+    uint64_t total_size = 0;   // NOLINT(readability-identifier-naming)
+    uint64_t file_count = 0;   // NOLINT(readability-identifier-naming) - non-directory descendants only
+  };
+
   explicit FolderSizeAggregator(FileIndex& index);
   ~FolderSizeAggregator();  // Signals shutdown and joins the worker thread.
 
@@ -74,7 +81,7 @@ public:
   FolderSizeAggregator(FolderSizeAggregator&&) = delete;
   FolderSizeAggregator& operator=(FolderSizeAggregator&&) = delete;
 
-  // Queue folder for background size computation. No-op if already queued or done.
+  // Queue folder for background computation. No-op if already queued or done.
   void Request(uint64_t folder_id, std::string_view folder_path);
 
   // Queue multiple folders in a single lock acquisition. More efficient than
@@ -82,7 +89,7 @@ public:
   void RequestBatch(const std::vector<std::pair<uint64_t, std::string_view>>& folders);
 
   // Non-blocking poll. Returns nullopt if not yet computed.
-  [[nodiscard]] std::optional<uint64_t> GetResult(uint64_t folder_id) const;
+  [[nodiscard]] std::optional<FolderStats> GetResult(uint64_t folder_id) const;
 
   // Cancel pending jobs without clearing the results cache. Call when a new search
   // starts. Folders that appear again in the new results reuse their cached size
@@ -106,9 +113,9 @@ private:
   };
 
   void WorkerThread();
-  // Compute sizes for all jobs in a single index scan (O(N_index × depth) instead of
-  // O(K × N_index) for K separate scans). Returns folder_id → total_size.
-  hash_map_t<uint64_t, uint64_t> ComputeSizeBatch(const std::vector<Job>& jobs) const;
+  // Compute stats for all jobs in a single index scan (O(N_index × depth) instead of
+  // O(K × N_index) for K separate scans). Returns folder_id → FolderStats.
+  hash_map_t<uint64_t, FolderStats> ComputeSizeBatch(const std::vector<Job>& jobs) const;
 
   FileIndex& index_;                                     // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
 
@@ -120,6 +127,6 @@ private:
   // Protected by mutex_:
   std::deque<Job> queue_;                                // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
   std::unordered_set<uint64_t> pending_requests_;        // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
-  hash_map_t<uint64_t, uint64_t> results_;               // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
+  hash_map_t<uint64_t, FolderStats> results_;            // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
   uint64_t generation_ = 0;                              // NOLINT(readability-identifier-naming) - project convention: snake_case_ for members
 };

@@ -35,7 +35,9 @@ public:
   // - Kicks off auto-refresh searches when the index size changes.
   // - Always calls PollResults() to pull any completed results from the worker.
   // monitor: Optional pointer used to query current index size and population state.
-  // is_index_building: True if index is building or finalizing (prevents search race condition).
+  // is_index_building: Same predicate as Application::IsIndexBuilding() for this frame
+  // (builder active, finalizing_population, or USN monitor populating). Do not pass a
+  // narrower flag (e.g. IndexBuildState::active only).
   // file_index: Used to convert SearchResultData to SearchResult with path pool.
   void Update(GuiState &state, SearchWorker &search_worker, FolderSizeAggregator* folder_aggregator, const UsnMonitor* monitor, bool is_index_building, const AppSettings& settings, const FileIndex& file_index) const;
 

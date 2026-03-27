@@ -17,7 +17,7 @@ namespace search {
     /**
      * @brief Export search results to a CSV file
      *
-     * Header: Filename,Size,Last Modified,Full Path,Extension
+     * Header: Filename,Size,Last Modified,Full Path,Extension,# Files
      *
      * @param results Search results to export
      * @param file_index File index for loading metadata
