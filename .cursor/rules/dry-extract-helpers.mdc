@@ -52,4 +52,4 @@ constexpr int kMinRecrawlMinutes = 1, kMaxRecrawlMinutes = 60;
 - Duplicated documentation: one canonical place and reference it.
 - Second type alias for the same type: use the existing alias.
 
-**Reference:** AGENTS.md § DRY; `docs/analysis/2026-02-20_DRY_CONSTANTS_ANALYSIS.md`.
+**Reference:** AGENTS.md § DRY; `docs/analysis/DRY_CONSTANTS_GUIDE.md`.

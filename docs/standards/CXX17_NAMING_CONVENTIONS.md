@@ -57,7 +57,9 @@ void ReaderThread();
 void ProcessorThread();
 
 // Free functions
-bool PopulateInitialIndex(HANDLE volumeHandle, FileIndex& fileIndex);
+bool PopulateInitialIndex(HANDLE volumeHandle, FileIndex& fileIndex,
+                          std::atomic<size_t>* indexed_file_count = nullptr,
+                          bool enable_mft_metadata_reading = true);
 std::string WideToUtf8(const std::wstring& wide);
 ```
 
@@ -315,7 +317,9 @@ private:
 };
 
 // Free functions: PascalCase
-bool PopulateInitialIndex(HANDLE volume_handle, FileIndex& file_index);
+bool PopulateInitialIndex(HANDLE volume_handle, FileIndex& file_index,
+                          std::atomic<size_t>* indexed_file_count = nullptr,
+                          bool enable_mft_metadata_reading = true);
 
 // Local variables: snake_case
 void ProcessBuffer(const std::vector<char>& buffer) {

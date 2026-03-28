@@ -373,8 +373,10 @@ bool DoDragDropWithHDrop(HGLOBAL h_drop, const std::string& label) {
   auto* const drop_source = new BasicDropSource();  // NOSONAR(cpp:S5025) NOLINT(cppcoreguidelines-owning-memory) - COM; pointee modified by DoDragDrop
 
   DWORD effect = DROPEFFECT_NONE;
-  const HRESULT hr = DoDragDrop(data_object, drop_source,
-                                DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect);
+  // COPY only: if MOVE is allowed, Explorer defaults to MOVE for same-volume drops (e.g. indexed
+  // folder and Desktop both on C:), which removes originals — contradicts DragDropUtils.h COPY spec.
+  const HRESULT hr =
+      DoDragDrop(data_object, drop_source, DROPEFFECT_COPY, &effect);
 
   data_object->Release();
   drop_source->Release();

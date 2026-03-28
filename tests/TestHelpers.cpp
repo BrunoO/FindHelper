@@ -19,6 +19,7 @@
 #include <set>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -122,6 +123,30 @@ void SafeRemoveFile(const std::filesystem::path& path) {
     LOG_DEBUG_BUILD("SafeRemoveFile: non-std exception");
   }
 }
+
+#if !defined(_WIN32)
+// Template buffer for mkstemp/mkdtemp: /tmp/<prefix>_XXXXXX (null-terminated).
+[[nodiscard]] std::vector<char> BuildUnixMkstempTemplate(std::string_view prefix) {
+  const std::string prefix_str(prefix);
+  std::vector<char> temp_template;
+  temp_template.reserve(prefix_str.length() + 20);
+
+  temp_template.push_back('/');
+  temp_template.push_back('t');
+  temp_template.push_back('m');
+  temp_template.push_back('p');
+  temp_template.push_back('/');
+  for (const char c : prefix_str) {
+    temp_template.push_back(c);
+  }
+  temp_template.push_back('_');
+  for (int i = 0; i < 6; ++i) {
+    temp_template.push_back('X');
+  }
+  temp_template.push_back('\0');
+  return temp_template;
+}
+#endif  // !_WIN32
 }  // anonymous namespace
 
 std::string CreateTempFile(std::string_view prefix) {
@@ -152,26 +177,7 @@ std::string CreateTempFile(std::string_view prefix) {
 #else
   // Unix-like: Use mkstemp for secure temporary file creation
   // Note: mkstemp modifies the template in place, so we use vector<char> for writable buffer
-  const std::string prefix_str(prefix);
-  std::vector<char> tempTemplate;
-  tempTemplate.reserve(prefix_str.length() +
-                       20);  // Reserve space for prefix + "/tmp/" + "XXXXXX" + null
-
-  // Build template: /tmp/prefix_XXXXXX
-  tempTemplate.push_back('/');
-  tempTemplate.push_back('t');
-  tempTemplate.push_back('m');
-  tempTemplate.push_back('p');
-  tempTemplate.push_back('/');
-  for (const char c : prefix_str) {
-    tempTemplate.push_back(c);
-  }
-  tempTemplate.push_back('_');
-  // Add 6 'X' characters for mkstemp/mkdtemp template
-  for (int i = 0; i < 6; ++i) {
-    tempTemplate.push_back('X');
-  }
-  tempTemplate.push_back('\0');
+  std::vector<char> tempTemplate = BuildUnixMkstempTemplate(prefix);
 
   const int fd = mkstemp(tempTemplate.data());
   if (fd == -1) {
@@ -213,26 +219,7 @@ std::string CreateTempDirectory(std::string_view prefix) {
   // Unix-like: Use mkdtemp for secure temporary directory creation
   // Security: mkdtemp creates directory atomically, preventing symlink attacks and TOCTOU
   // vulnerabilities
-  const std::string prefix_str(prefix);
-  std::vector<char> tempTemplate;
-  tempTemplate.reserve(prefix_str.length() +
-                       20);  // Reserve space for prefix + "/tmp/" + "XXXXXX" + null
-
-  // Build template: /tmp/prefix_XXXXXX
-  tempTemplate.push_back('/');
-  tempTemplate.push_back('t');
-  tempTemplate.push_back('m');
-  tempTemplate.push_back('p');
-  tempTemplate.push_back('/');
-  for (const char c : prefix_str) {
-    tempTemplate.push_back(c);
-  }
-  tempTemplate.push_back('_');
-  // Add 6 'X' characters for mkstemp/mkdtemp template
-  for (int i = 0; i < 6; ++i) {
-    tempTemplate.push_back('X');
-  }
-  tempTemplate.push_back('\0');
+  std::vector<char> tempTemplate = BuildUnixMkstempTemplate(prefix);
 
   const char* const dir_path = mkdtemp(tempTemplate.data());  // NOSONAR(cpp:S995,cpp:S5350) - mkdtemp returns char*; use as const char* for read-only path
   if (dir_path == nullptr) {

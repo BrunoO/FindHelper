@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -20,13 +21,7 @@
 #include "utils/Logger.h"
 #include "utils/StringUtils.h"
 
-// Forward declaration for MftMetadataReader (needed in both #ifdef branches)
-#ifdef ENABLE_MFT_METADATA_READING
 #include "index/mft/MftMetadataReader.h"
-#else
-// Forward declaration for when MFT reading is disabled
-class MftMetadataReader;
-#endif  // ENABLE_MFT_METADATA_READING
 
 // Constants for MFT enumeration
 namespace {
@@ -40,8 +35,7 @@ constexpr uint64_t kFileRecordNumberMask = 0x0000FFFFFFFFFFFFULL;
 
 // Groups parameters for ProcessUsnRecord and ProcessBufferRecords to satisfy cpp:S107 (max 7 params).
 // Ownership: file_index and indexed_file_count are caller-owned (must outlive PopulateInitialIndex).
-// When ENABLE_MFT_METADATA_READING, mft_reader is non-owning; it points to a stack object in
-// PopulateInitialIndex and is used only on that thread for the duration of the call.
+// When mft_reader is non-null, it points to storage in PopulateInitialIndex (same thread, call duration).
 struct PopulationContext {
   FileIndex& file_index;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members) - context struct, ref by design
   std::atomic<size_t>* indexed_file_count = nullptr;  // Caller-owned; may be nullptr
@@ -59,12 +53,10 @@ struct PopulationContext {
   std::unordered_set<uint64_t>& filtered_dir_ref_nums;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members) - context struct, ref by design
   std::chrono::steady_clock::time_point last_progress_update_time;
 
-#ifdef ENABLE_MFT_METADATA_READING
-  MftMetadataReader* mft_reader = nullptr;  // Non-owning; points to PopulateInitialIndex stack object
-  size_t& mft_success_count;
-  size_t& mft_failure_count;
-  size_t& mft_total_files;
-#endif  // ENABLE_MFT_METADATA_READING
+  MftMetadataReader* mft_reader = nullptr;  // Non-owning; null when MFT metadata reading is disabled
+  size_t* mft_success_count = nullptr;
+  size_t* mft_failure_count = nullptr;
+  size_t* mft_total_files = nullptr;
 };
 
 // Named helper function to process a single USN record and insert into index
@@ -152,30 +144,21 @@ static bool ProcessUsnRecord(PUSN_RECORD_V2 record, int& file_count,
   // return false, suppressing lazy loading and displaying the epoch in the UI.
   FILETIME mod_time = kFileTimeNotLoaded;
   uint64_t file_size = kFileSizeNotLoaded;  // NOLINT(misc-const-correctness) - Passed by non-const pointer to MftMetadataReader::TryGetMetadata as output parameter
-  bool mft_succeeded = false;  // NOLINT(misc-const-correctness) - Updated in ENABLE_MFT_METADATA_READING block when MFT succeeds
+  bool mft_succeeded = false;  // NOLINT(misc-const-correctness) - Set when MFT TryGetMetadata runs
 
-#ifdef ENABLE_MFT_METADATA_READING
-  // Optional: Try to get metadata from MFT (only for files, not directories)
-  // This eliminates lazy loading during initial population
-  // PERFORMANCE: Reuse shared MftMetadataReader instance instead of creating new one per file
+  // Optional: read metadata from MFT (files only). Skipped when ctx.mft_reader is null.
   if (!is_directory && ctx.mft_reader != nullptr) {
-    ctx.mft_total_files++; // Count all files (not directories) that we attempt to read from MFT
+    ++(*ctx.mft_total_files);
     // FSCTL_GET_NTFS_FILE_RECORD expects only the 48-bit file record number.
-    // Mask off the upper 16-bit NTFS sequence number before calling into MFT.
-      const uint64_t mft_file_ref_num = file_ref_num & kFileRecordNumberMask;
-      mft_succeeded = ctx.mft_reader->TryGetMetadata(mft_file_ref_num, &mod_time, &file_size);
-      if (mft_succeeded) {
-        ctx.mft_success_count++;
-        // If succeeded: mod_time and file_size are now populated
-      } else {
-        ctx.mft_failure_count++;
-        // If failed: mod_time remains kFileTimeNotLoaded, file_size remains 0
-        // Note: OneDrive files and other cloud files often fail MFT reading
-        // They will be handled via lazy loading (which uses IShellItem2 for cloud files)
-        // OneDrive files are also reset to sentinel values during RecomputeAllPaths()
-      }
+    const uint64_t mft_file_ref_num = file_ref_num & kFileRecordNumberMask;
+    mft_succeeded = ctx.mft_reader->TryGetMetadata(mft_file_ref_num, &mod_time, &file_size);
+    if (mft_succeeded) {
+      ++(*ctx.mft_success_count);
+    } else {
+      ++(*ctx.mft_failure_count);
+      // OneDrive / cloud files often fail; lazy loading handles them later.
+    }
   }
-#endif  // ENABLE_MFT_METADATA_READING
 
   // Insert into the index. Pass file_size so the size is applied atomically
   // under the same lock acquisition as the insert (avoids a second unique_lock
@@ -246,13 +229,62 @@ static bool ProcessBufferRecords(const std::vector<char>& buf, DWORD bytes_ret,
   return true; // Continue enumeration
 }
 
+// Runs FSCTL_ENUM_USN_DATA until EOF or ProcessBufferRecords stops. Returns false on ioctl failure.
+[[nodiscard]] static bool RunMftEnumerationLoop(HANDLE volume_handle, std::vector<char>& buffer,
+                                                int buffer_size, MFT_ENUM_DATA_V0& enum_data,
+                                                int& total_files, int& iterations,
+                                                PopulationContext& ctx) {
+  bool enumeration_complete = false;
+  while (!enumeration_complete) {
+    DWORD bytes_returned = 0;
+    if (!DeviceIoControl(volume_handle, FSCTL_ENUM_USN_DATA, &enum_data, sizeof(enum_data),
+                         buffer.data(), buffer_size, &bytes_returned, nullptr)) {
+      const DWORD err = GetLastError();
+      if (err == ERROR_HANDLE_EOF) {
+        LOG_INFO("Reached end of MFT enumeration");
+        enumeration_complete = true;
+      } else {
+        LOG_ERROR_BUILD("FSCTL_ENUM_USN_DATA failed with error: " << err);
+        return false;
+      }
+    } else if (!ProcessBufferRecords(buffer, bytes_returned, enum_data, total_files, ctx)) {
+      enumeration_complete = true;
+    } else {
+      ++iterations;
+    }
+  }
+  return true;
+}
+
+static void LogMftPopulationOutcome(bool enable_mft_metadata_reading, size_t mft_total_files,
+                                    size_t mft_success_count, size_t mft_failure_count,
+                                    const MftMetadataReader* mft_reader_ptr) {
+  if (!enable_mft_metadata_reading) {
+    return;
+  }
+  if (mft_total_files > 0) {
+    const double success_rate =
+        (static_cast<double>(mft_success_count) / static_cast<double>(mft_total_files)) * 100.0;
+    LOG_INFO_BUILD("MFT Statistics: " << mft_success_count << " succeeded, "
+                                       << mft_failure_count << " failed out of " << mft_total_files
+                                       << " files (" << std::fixed << std::setprecision(2)
+                                       << success_rate << "% success rate)");
+  } else {
+    LOG_INFO_BUILD("MFT Statistics: No files processed (all directories)");
+  }
+  if (mft_reader_ptr != nullptr) {
+    mft_reader_ptr->LogParseStatistics();
+  }
+}
+
 // Populates the FileIndex with all existing files on the volume
 // by enumerating the MFT using FSCTL_ENUM_USN_DATA.
 // Returns true on success, false on failure.
 // indexed_file_count: Optional pointer to atomic counter for progress updates
 // (can be nullptr)
-bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONAR(cpp:S3776) - Cognitive complexity: helper functions extracted
-                          std::atomic<size_t>* indexed_file_count) {  // NOLINT(readability-non-const-parameter) - function stores into *indexed_file_count
+bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index,
+                          std::atomic<size_t>* indexed_file_count,  // NOLINT(readability-non-const-parameter) - function stores into *indexed_file_count
+                          bool enable_mft_metadata_reading) {
   // CRITICAL FIX #2: Input validation
   if (volume_handle == INVALID_HANDLE_VALUE || volume_handle == nullptr) {
     LOG_ERROR("Invalid volume handle provided to PopulateInitialIndex");
@@ -261,27 +293,25 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
 
   ScopedTimer total_timer("PopulateInitialIndex - Total");
 
-#ifdef ENABLE_MFT_METADATA_READING
-  // PERFORMANCE: Create MftMetadataReader once and reuse for all files
-  // This avoids creating a new reader instance for each file, which is expensive
-  MftMetadataReader mft_reader(volume_handle);
-  MftMetadataReader* const mft_reader_ptr = &mft_reader;  // NOLINT(misc-const-correctness) - pointee used as non-const by MFT APIs
-
-  // Validate volume handle is still valid before MFT reading
-  if (volume_handle == INVALID_HANDLE_VALUE || volume_handle == nullptr) {
-    LOG_ERROR("PopulateInitialIndex: Invalid volume handle when creating MftMetadataReader");
-    return false;
-  }
-
-  // MFT statistics counters
+  std::optional<MftMetadataReader> mft_reader_storage;
   size_t mft_success_count = 0;
   size_t mft_failure_count = 0;
   size_t mft_total_files = 0;
+  MftMetadataReader* mft_reader_ptr = nullptr;
+  size_t* mft_success_ptr = nullptr;
+  size_t* mft_failure_ptr = nullptr;
+  size_t* mft_total_ptr = nullptr;
 
-  LOG_INFO_BUILD("MFT metadata reading enabled - will attempt to read file attributes from MFT");
-#else
-  MftMetadataReader* mft_reader_ptr = nullptr;  // NOLINT(misc-const-correctness) - type must match PopulationContext.mft_reader (non-const)
-#endif  // ENABLE_MFT_METADATA_READING
+  if (enable_mft_metadata_reading) {
+    mft_reader_storage.emplace(volume_handle);
+    mft_reader_ptr = &*mft_reader_storage;
+    mft_success_ptr = &mft_success_count;
+    mft_failure_ptr = &mft_failure_count;
+    mft_total_ptr = &mft_total_files;
+    LOG_INFO_BUILD("MFT metadata reading enabled - will attempt to read file attributes from MFT");
+  } else {
+    LOG_INFO_BUILD("MFT metadata reading disabled (lazy load for size/mod time)");
+  }
 
   MFT_ENUM_DATA_V0 enum_data;
   enum_data.StartFileReferenceNumber = 0;
@@ -298,7 +328,6 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
 
   const int buffer_size = kBufferSize;
   std::vector<char> buffer(buffer_size);
-  DWORD bytes_returned;
 
   int total_files = 0;  // NOLINT(misc-const-correctness) - total_files is modified in ProcessBufferRecords
   int iterations = 0;
@@ -311,60 +340,24 @@ bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index, // NOSONA
   std::unordered_set<uint64_t> filtered_dir_ref_nums;
   filtered_dir_ref_nums.reserve(64);
 
-#ifdef ENABLE_MFT_METADATA_READING
-  PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums,
-                        std::chrono::steady_clock::now(),
-                        mft_reader_ptr, mft_success_count, mft_failure_count, mft_total_files};
-#else
-  PopulationContext ctx{file_index, indexed_file_count, filtered_dir_ref_nums,
-                        std::chrono::steady_clock::now()};
-#endif  // ENABLE_MFT_METADATA_READING
-
-  // Main enumeration loop - refactored to avoid nested breaks
-  bool enumeration_complete = false;
-  while (!enumeration_complete) {
-    if (!DeviceIoControl(volume_handle, FSCTL_ENUM_USN_DATA, &enum_data,
-                         sizeof(enum_data), buffer.data(), buffer_size,
-                         &bytes_returned, nullptr)) {
-      DWORD err = GetLastError();
-      if (err == ERROR_HANDLE_EOF) {
-        // Reached the end of enumeration
-        LOG_INFO("Reached end of MFT enumeration");
-        enumeration_complete = true;
-      } else {
-        // CODE QUALITY FIX #6: Use logging system consistently instead of
-        // std::cerr
-        LOG_ERROR_BUILD("FSCTL_ENUM_USN_DATA failed with error: " << err);
-        return false;
-      }
-    } else if (!ProcessBufferRecords(buffer, bytes_returned, enum_data,
-                                     total_files, ctx)) {
-      enumeration_complete = true;
-    } else {
-      iterations++;
-    }
+  if (PopulationContext ctx{file_index,
+                            indexed_file_count,
+                            filtered_dir_ref_nums,
+                            std::chrono::steady_clock::now(),
+                            mft_reader_ptr,
+                            mft_success_ptr,
+                            mft_failure_ptr,
+                            mft_total_ptr};
+      !RunMftEnumerationLoop(volume_handle, buffer, buffer_size, enum_data, total_files, iterations,
+                             ctx)) {
+    return false;
   }
 
   LOG_INFO_BUILD("Index population completed - Total files: "
                  << total_files << ", Iterations: " << iterations);
 
-#ifdef ENABLE_MFT_METADATA_READING
-  // Log MFT statistics
-  if (mft_total_files > 0) {
-    double success_rate = (static_cast<double>(mft_success_count) / mft_total_files) * 100.0;
-    LOG_INFO_BUILD("MFT Statistics: " << mft_success_count << " succeeded, "
-                  << mft_failure_count << " failed out of " << mft_total_files
-                  << " files (" << std::fixed << std::setprecision(2) << success_rate << "% success rate)");
-  } else {
-    LOG_INFO_BUILD("MFT Statistics: No files processed (all directories or MFT disabled)");
-  }
-
-  // Additional diagnostics: log internal MFT parse statistics to understand
-  // why TryGetMetadata might be failing (read vs parse failures).
-  if (mft_reader_ptr != nullptr) {
-    mft_reader_ptr->LogParseStatistics();
-  }
-#endif  // ENABLE_MFT_METADATA_READING
+  LogMftPopulationOutcome(enable_mft_metadata_reading, mft_total_files, mft_success_count,
+                          mft_failure_count, mft_reader_ptr);
 
   // RecomputeAllPaths() is intentionally NOT called here.
   // On the Windows USN path, UsnMonitor::RunInitialPopulationAndPrivileges

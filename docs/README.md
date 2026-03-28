@@ -15,5 +15,5 @@ This folder contains **contributor-facing documentation** for FindHelper: how to
 | [standards/](standards/) | Naming conventions and coding standards |
 | [security/](security/) | Security model |
 | [platform/](platform/) | Platform-specific notes (Linux, Windows, macOS) |
-| [analysis/](analysis/) | clang-tidy guide and check classification |
+| [analysis/](analysis/) | clang-tidy guide, check classification, DRY constants guide |
 | [plans/production/](plans/production/) | Production readiness checklist |

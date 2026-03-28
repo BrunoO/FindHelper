@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #ifdef _WIN32
@@ -40,6 +41,69 @@ struct SettingsFixture {
   SettingsFixture& operator=(const SettingsFixture&) = delete;
   SettingsFixture(SettingsFixture&&) = delete;
   SettingsFixture& operator=(SettingsFixture&&) = delete;
+};
+
+// Temp dir + HOME/USERPROFILE swap for on-disk Settings path tests (Sonar duplication).
+struct ScopedTempHomeForDiskSettings {
+  std::filesystem::path tmp_dir_;
+  std::string tmp_str_;
+  std::string old_home_;
+
+  explicit ScopedTempHomeForDiskSettings(std::string_view suffix) {
+    namespace fs = std::filesystem;
+    const fs::path tmp_base = fs::temp_directory_path();
+#ifdef _WIN32
+    const int pid = _getpid();
+#else
+    const int pid = getpid();  // NOLINT(concurrency-mt-unsafe) - test only; single-threaded
+#endif
+    tmp_dir_ = tmp_base / ("FindHelper_" + std::string(suffix) + "_" +
+                           std::to_string(static_cast<std::size_t>(pid)));
+    if (!fs::exists(tmp_dir_)) {
+      fs::create_directories(tmp_dir_);
+    }
+    tmp_str_ = tmp_dir_.string();
+#ifdef _WIN32
+    {
+      char* buf = nullptr;
+      size_t len = 0;
+      if (_dupenv_s(&buf, &len, "USERPROFILE") == 0 && buf != nullptr) {
+        old_home_ = buf;
+        free(buf);
+      }
+    }
+    _putenv_s("USERPROFILE", tmp_str_.c_str());
+#else
+    if (const char* p = std::getenv("HOME"); p != nullptr) {  // NOLINT(concurrency-mt-unsafe)
+      old_home_ = p;
+    }
+    setenv("HOME", tmp_str_.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - test only
+#endif
+  }
+
+  ScopedTempHomeForDiskSettings(const ScopedTempHomeForDiskSettings&) = delete;
+  ScopedTempHomeForDiskSettings& operator=(const ScopedTempHomeForDiskSettings&) = delete;
+  ScopedTempHomeForDiskSettings(ScopedTempHomeForDiskSettings&&) = delete;
+  ScopedTempHomeForDiskSettings& operator=(ScopedTempHomeForDiskSettings&&) = delete;
+
+  ~ScopedTempHomeForDiskSettings() {
+    namespace fs = std::filesystem;
+#ifdef _WIN32
+    _putenv_s("USERPROFILE", old_home_.c_str());
+#else
+    setenv("HOME", old_home_.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - restore after test
+#endif
+    std::error_code ec;
+    (void)fs::remove_all(tmp_dir_, ec);
+  }
+
+  [[nodiscard]] std::string PrimaryDir() const {
+    return path_utils::JoinPath(tmp_str_, ".FindHelper");
+  }
+
+  [[nodiscard]] std::string PrimaryFile() const {
+    return path_utils::JoinPath(PrimaryDir(), "settings.json");
+  }
 };
 }  // namespace
 
@@ -524,56 +588,15 @@ TEST_SUITE("Settings") {
 
   TEST_SUITE("Settings path (primary vs legacy)") {
     TEST_CASE_FIXTURE(SettingsFixture, "Save creates file at primary path when HOME is set and writable") {
-
       namespace fs = std::filesystem;
-      const fs::path tmp_base = fs::temp_directory_path();
-#ifdef _WIN32
-      const int pid = _getpid();
-#else
-      const int pid = getpid();  // NOLINT(concurrency-mt-unsafe) - test only; single-threaded
-#endif
-      const fs::path tmp_dir =
-          tmp_base / ("FindHelper_st_" + std::to_string(static_cast<std::size_t>(pid)));
-      if (!fs::exists(tmp_dir)) {
-        fs::create_directories(tmp_dir);
-      }
-
-      const std::string tmp_str = tmp_dir.string();
-      std::string old_home;
-#ifdef _WIN32
-      {
-        char* buf = nullptr;
-        size_t len = 0;
-        if (_dupenv_s(&buf, &len, "USERPROFILE") == 0 && buf != nullptr) {
-          old_home = buf;
-          free(buf);
-        }
-      }
-      _putenv_s("USERPROFILE", tmp_str.c_str());
-#else
-      if (const char* p = std::getenv("HOME"); p != nullptr) {  // NOLINT(concurrency-mt-unsafe)
-        old_home = p;
-      }
-      setenv("HOME", tmp_str.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - test only
-#endif
+      const ScopedTempHomeForDiskSettings env("st");
 
       AppSettings to_save;
       to_save.fontSize = settings_defaults::kDefaultFontSize;
       const bool save_ok = SaveSettings(to_save);
 
-      const std::string primary_dir = path_utils::JoinPath(tmp_str, ".FindHelper");
-      const std::string primary_file = path_utils::JoinPath(primary_dir, "settings.json");
+      const std::string primary_file = env.PrimaryFile();
       const bool primary_exists = fs::exists(primary_file);
-
-#ifdef _WIN32
-      _putenv_s("USERPROFILE", old_home.c_str());
-#else
-      setenv("HOME", old_home.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - restore in test
-#endif
-      std::error_code ec;
-      const auto removed = fs::remove_all(tmp_dir, ec);
-      (void)removed;
-      (void)ec;
 
       CHECK(save_ok == true);
       CHECK(primary_exists == true);
@@ -582,39 +605,10 @@ TEST_SUITE("Settings") {
     TEST_CASE_FIXTURE(SettingsFixture,
                       "SaveSettings merges recentSearches from disk when in-memory list is empty") {
       namespace fs = std::filesystem;
-      const fs::path tmp_base = fs::temp_directory_path();
-#ifdef _WIN32
-      const int pid = _getpid();
-#else
-      const int pid = getpid();  // NOLINT(concurrency-mt-unsafe) - test only; single-threaded
-#endif
-      const fs::path tmp_dir =
-          tmp_base / ("FindHelper_recent_merge_" + std::to_string(static_cast<std::size_t>(pid)));
-      if (!fs::exists(tmp_dir)) {
-        fs::create_directories(tmp_dir);
-      }
+      const ScopedTempHomeForDiskSettings env("recent_merge");
 
-      const std::string tmp_str = tmp_dir.string();
-      std::string old_home;
-#ifdef _WIN32
-      {
-        char* buf = nullptr;
-        size_t len = 0;
-        if (_dupenv_s(&buf, &len, "USERPROFILE") == 0 && buf != nullptr) {
-          old_home = buf;
-          free(buf);
-        }
-      }
-      _putenv_s("USERPROFILE", tmp_str.c_str());
-#else
-      if (const char* p = std::getenv("HOME"); p != nullptr) {  // NOLINT(concurrency-mt-unsafe)
-        old_home = p;
-      }
-      setenv("HOME", tmp_str.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - test only
-#endif
-
-      const std::string primary_dir = path_utils::JoinPath(tmp_str, ".FindHelper");
-      const std::string primary_file = path_utils::JoinPath(primary_dir, "settings.json");
+      const std::string primary_dir = env.PrimaryDir();
+      const std::string primary_file = env.PrimaryFile();
       const std::string recent_file = path_utils::JoinPath(primary_dir, "recent_searches.json");
       fs::create_directories(primary_dir);
 
@@ -634,14 +628,6 @@ TEST_SUITE("Settings") {
       AppSettings loaded;
       const bool load_ok = LoadSettings(loaded);
 
-#ifdef _WIN32
-      _putenv_s("USERPROFILE", old_home.c_str());
-#else
-      setenv("HOME", old_home.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - restore after test
-#endif
-      std::error_code ec;
-      (void)fs::remove_all(tmp_dir, ec);
-
       CHECK(save_ok == true);
       CHECK(load_ok == true);
       CHECK(loaded.fontFamily == "AfterMerge");
@@ -653,39 +639,10 @@ TEST_SUITE("Settings") {
                       "LoadSettings migrates recentSearches from legacy settings.json when no "
                       "recent_searches.json exists") {
       namespace fs = std::filesystem;
-      const fs::path tmp_base = fs::temp_directory_path();
-#ifdef _WIN32
-      const int pid = _getpid();
-#else
-      const int pid = getpid();  // NOLINT(concurrency-mt-unsafe) - test only; single-threaded
-#endif
-      const fs::path tmp_dir =
-          tmp_base / ("FindHelper_recent_mig_" + std::to_string(static_cast<std::size_t>(pid)));
-      if (!fs::exists(tmp_dir)) {
-        fs::create_directories(tmp_dir);
-      }
+      const ScopedTempHomeForDiskSettings env("recent_mig");
 
-      const std::string tmp_str = tmp_dir.string();
-      std::string old_home;
-#ifdef _WIN32
-      {
-        char* buf = nullptr;
-        size_t len = 0;
-        if (_dupenv_s(&buf, &len, "USERPROFILE") == 0 && buf != nullptr) {
-          old_home = buf;
-          free(buf);
-        }
-      }
-      _putenv_s("USERPROFILE", tmp_str.c_str());
-#else
-      if (const char* p = std::getenv("HOME"); p != nullptr) {  // NOLINT(concurrency-mt-unsafe)
-        old_home = p;
-      }
-      setenv("HOME", tmp_str.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - test only
-#endif
-
-      const std::string primary_dir = path_utils::JoinPath(tmp_str, ".FindHelper");
-      const std::string primary_file = path_utils::JoinPath(primary_dir, "settings.json");
+      const std::string primary_dir = env.PrimaryDir();
+      const std::string primary_file = env.PrimaryFile();
       fs::create_directories(primary_dir);
 
       {
@@ -695,14 +652,6 @@ TEST_SUITE("Settings") {
 
       AppSettings loaded;
       const bool load_ok = LoadSettings(loaded);
-
-#ifdef _WIN32
-      _putenv_s("USERPROFILE", old_home.c_str());
-#else
-      setenv("HOME", old_home.c_str(), 1);  // NOLINT(concurrency-mt-unsafe) - restore after test
-#endif
-      std::error_code ec;
-      (void)fs::remove_all(tmp_dir, ec);
 
       CHECK(load_ok == true);
       CHECK(loaded.fontFamily == "LegacyMerge");

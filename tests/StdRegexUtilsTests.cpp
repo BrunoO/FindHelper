@@ -92,24 +92,24 @@ TEST_SUITE("StdRegexUtils") {
 
   TEST_SUITE("Simple pattern matching (SimpleRegex path)") {
 
-    TEST_CASE("Dot matches any character") {
-      const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
-        {"h.llo", "hello", true},
-        {"h.llo", "hallo", true},
-        {"h.llo", "hxllo", true},
-        {"h.llo", "hllo", false}  // Dot requires one char
-      };
-      test_helpers::RunParameterizedRegexMatchTests(test_cases);
-    }
-
-    TEST_CASE("Star matches zero or more") {
-      const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
-        {"he*llo", "hllo", true},   // e* matches zero
-        {"he*llo", "hello", true},  // e* matches one
-        {"he*llo", "heello", true}, // e* matches two
-        {"he*llo", "hllo", true}    // e* matches zero
-      };
-      test_helpers::RunParameterizedRegexMatchTests(test_cases);
+    TEST_CASE("Dot and star quantifier in SimpleRegex path") {
+      SUBCASE("Dot matches any character") {
+        const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
+          {"h.llo", "hello", true},
+          {"h.llo", "hallo", true},
+          {"h.llo", "hxllo", true},
+          {"h.llo", "hllo", false}  // Dot requires one char
+        };
+        test_helpers::RunParameterizedRegexMatchTests(test_cases);
+      }
+      SUBCASE("Star matches zero or more") {
+        const std::vector<test_helpers::RegexMatchTestCase> test_cases = {
+          {"he*llo", "hllo", true},    // e* matches zero
+          {"he*llo", "hello", true},   // e* matches one
+          {"he*llo", "heello", true},  // e* matches two
+        };
+        test_helpers::RunParameterizedRegexMatchTests(test_cases);
+      }
     }
 
     TEST_CASE("Caret matches start") {
@@ -321,8 +321,8 @@ TEST_SUITE("StdRegexUtils") {
       };
       test_helpers::RunParameterizedRegexMatchTests(test_cases);
 
-      // Test with empty string_view explicitly
-      std::string_view empty_text("", 0);
+      // Test with empty string_view explicitly (default-constructed; avoid "", 0 — bugprone-string-constructor)
+      const std::string_view empty_text{};
       CHECK(std_regex_utils::RegexMatch("pattern", empty_text) == false);
     }
   }

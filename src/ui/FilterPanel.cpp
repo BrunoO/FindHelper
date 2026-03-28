@@ -665,6 +665,21 @@ void HandleSavedSearchSelection(const SavedSearch& saved_search, GuiState& state
     }
   }
 }
+
+// Tooltip for stored natural-language request (Gemini / paste workflow); requires prior item hover.
+void ShowSavedSearchNaturalLanguageTooltipIfHovered(std::string_view description) {
+  if (description.empty() || !ImGui::IsItemHovered()) {
+    return;
+  }
+  constexpr float k_nl_tooltip_wrap_mult = 35.0F;
+  ImGui::BeginTooltip();
+  ImGui::PushTextWrapPos(ImGui::GetFontSize() * k_nl_tooltip_wrap_mult);
+  ImGui::TextUnformatted("Natural language request");
+  ImGui::Separator();
+  ImGui::TextUnformatted(description.data(), description.data() + description.size());
+  ImGui::PopTextWrapPos();
+  ImGui::EndTooltip();
+}
 }  // namespace
 
 void FilterPanel::RenderSavedSearchCombo(const std::vector<SavedSearch>& saved_list,
@@ -677,12 +692,13 @@ void FilterPanel::RenderSavedSearchCombo(const std::vector<SavedSearch>& saved_l
 
   if (ImGui::BeginCombo("##SavedSearches", current_label)) {
     for (int i = 0; i < static_cast<int>(saved_list.size()); ++i) {
+      const SavedSearch& entry = saved_list[static_cast<std::size_t>(i)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by loop < saved_list.size()
       const bool is_selected = (i == selected_saved_search);
-      if (ImGui::Selectable(saved_list[static_cast<std::size_t>(i)].name.c_str(), is_selected)) {  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access) - i bounded by loop < saved_list.size()
+      if (ImGui::Selectable(entry.name.c_str(), is_selected)) {
         selected_saved_search = i;
-        HandleSavedSearchSelection(saved_list[static_cast<std::size_t>(i)], state, actions,  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
-                                   is_index_building);
+        HandleSavedSearchSelection(entry, state, actions, is_index_building);
       }
+      ShowSavedSearchNaturalLanguageTooltipIfHovered(entry.aiSearchDescription);
       if (is_selected) {
         ImGui::SetItemDefaultFocus();
       }

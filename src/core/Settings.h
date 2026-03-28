@@ -82,6 +82,7 @@ struct AppSettings {
 
   // Recent searches (automatically tracked, up to kMaxRecentSearches, names optional).
   // Unlike savedSearches, these are automatically recorded and don't require names.
+  // aiSearchDescription is set when the search used the Gemini / natural-language field.
   // Persisted to recent_searches.json next to settings.json (not inside settings.json).
   std::vector<SavedSearch> recentSearches{};  // NOLINT(readability-identifier-naming,readability-redundant-member-init) - camelCase for JSON/settings API
 

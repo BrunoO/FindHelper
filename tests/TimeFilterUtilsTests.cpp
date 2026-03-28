@@ -25,6 +25,7 @@
 #include "gui/GuiState.h"              // GuiState (for RecordRecentSearch)
 #include "search/SearchTypes.h"        // SearchParams
 #include "utils/FileTimeTypes.h"       // FILETIME
+#include "utils/StringUtils.h"         // strcpy_safe
 
 // Helper to convert FILETIME to Unix timestamp (seconds since 1970)
 // Used for verifying cutoff times are in the expected range
@@ -522,29 +523,28 @@ TEST_SUITE("RecordRecentSearch") {
         CHECK(settings.recentSearches[0].name.empty());
     }
 
-    TEST_CASE("Newer search is inserted at the front") {
+    TEST_CASE("Recent search list ordering (front insert and dedupe)") {
         AppSettings settings;
         GuiState state;
 
-        RecordRecentSearch(MakeSearchParams("first"),  state, settings);
-        RecordRecentSearch(MakeSearchParams("second"), state, settings);
+        SUBCASE("Newer search is inserted at the front") {
+            RecordRecentSearch(MakeSearchParams("first"),  state, settings);
+            RecordRecentSearch(MakeSearchParams("second"), state, settings);
 
-        REQUIRE(settings.recentSearches.size() == 2U);
-        CHECK(settings.recentSearches[0].filename == "second");
-        CHECK(settings.recentSearches[1].filename == "first");
-    }
+            REQUIRE(settings.recentSearches.size() == 2U);
+            CHECK(settings.recentSearches[0].filename == "second");
+            CHECK(settings.recentSearches[1].filename == "first");
+        }
 
-    TEST_CASE("Identical search is moved to front (no duplicates)") {
-        AppSettings settings;
-        GuiState state;
+        SUBCASE("Identical search is moved to front (no duplicates)") {
+            RecordRecentSearch(MakeSearchParams("alpha"), state, settings);
+            RecordRecentSearch(MakeSearchParams("beta"),  state, settings);
+            RecordRecentSearch(MakeSearchParams("alpha"), state, settings);  // duplicate
 
-        RecordRecentSearch(MakeSearchParams("alpha"), state, settings);
-        RecordRecentSearch(MakeSearchParams("beta"),  state, settings);
-        RecordRecentSearch(MakeSearchParams("alpha"), state, settings);  // duplicate
-
-        REQUIRE(settings.recentSearches.size() == 2U);
-        CHECK(settings.recentSearches[0].filename == "alpha");
-        CHECK(settings.recentSearches[1].filename == "beta");
+            REQUIRE(settings.recentSearches.size() == 2U);
+            CHECK(settings.recentSearches[0].filename == "alpha");
+            CHECK(settings.recentSearches[1].filename == "beta");
+        }
     }
 
     TEST_CASE("List is capped at kMaxRecentSearches") {
@@ -593,7 +593,20 @@ TEST_SUITE("RecordRecentSearch") {
         CHECK(settings.recentSearches.size() == 2U);
     }
 
-    TEST_CASE("AI search description is always empty for recent searches") {
+    TEST_CASE("AI search description is copied from Gemini input when present") {
+        AppSettings settings;
+        GuiState state;
+        const char* const msg = "find PDFs from last week";
+        strcpy_safe(state.gemini_description_input_.data(), state.gemini_description_input_.size(), msg);
+        const SearchParams params = MakeSearchParams("report");
+
+        RecordRecentSearch(params, state, settings);
+
+        REQUIRE(!settings.recentSearches.empty());
+        CHECK(settings.recentSearches[0].aiSearchDescription == msg);
+    }
+
+    TEST_CASE("AI search description is empty when Gemini input is empty") {
         AppSettings settings;
         GuiState state;
         const SearchParams params = MakeSearchParams("report");

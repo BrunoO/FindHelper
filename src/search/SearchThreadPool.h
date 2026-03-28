@@ -99,7 +99,7 @@ private:
   std::queue<std::function<void()>> tasks_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
 
   // Synchronization: guards tasks_, shutdown_ only. No I/O or heavy work under lock
-  // (see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
+  // (see docs/design/LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
   mutable std::mutex mutex_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
   std::condition_variable cv_;  // NOLINT(readability-identifier-naming) - project convention: snake_case_
   bool shutdown_ = false;  // NOLINT(readability-identifier-naming) - project convention: snake_case_

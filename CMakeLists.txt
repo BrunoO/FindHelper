@@ -251,7 +251,6 @@ set(COMMON_APP_SOURCES
 
 # --- Options ---
 option(BUILD_APPLICATION "Build the main application" ON)
-option(ENABLE_MFT_METADATA_READING "Enable MFT metadata reading during initial population (Windows only)" OFF)
 option(ENABLE_IMGUI_TEST_ENGINE "Build with Dear ImGui Test Engine for in-process UI tests (macOS)" OFF)
 # Crash handler: compile-time only.
 option(IMGUI_TEST_ENGINE_INSTALL_CRASH_HANDLER "Install test engine default crash handler (disable for CI or custom handler)" ON)
@@ -320,11 +319,9 @@ if(WIN32)
         src/usn/WindowsIndexBuilder.cpp
         src/utils/LoggingUtils.cpp
         src/index/InitialIndexPopulator.cpp
+        src/index/mft/MftMetadataReader.cpp
         ${GEMINI_API_HTTP_SRC}
     )
-    if(ENABLE_MFT_METADATA_READING)
-        list(APPEND APP_SOURCES_PLATFORM src/index/mft/MftMetadataReader.cpp)
-    endif()
 
     set(APP_RESOURCES
         src/platform/windows/resource.rc
@@ -380,10 +377,6 @@ if(WIN32)
         shlwapi
         shcore
     )
-
-    if(ENABLE_MFT_METADATA_READING)
-        target_compile_definitions(find_helper PRIVATE ENABLE_MFT_METADATA_READING)
-    endif()
 
 elseif(APPLE)
     enable_language(OBJCXX)
@@ -1740,9 +1733,8 @@ if(BUILD_TESTS)
                 tests/CoverageAllSourcesMain.cpp
             )
 
-            # Include Windows MFT metadata reader in coverage when the feature is enabled so
-            # src/index/mft/MftMetadataReader.cpp no longer appears in coverage/missing_files.txt.
-            if(WIN32 AND ENABLE_MFT_METADATA_READING)
+            # Windows MFT metadata reader (compiled into the Windows app target).
+            if(WIN32)
                 list(APPEND COVERAGE_ALL_SOURCES
                     src/index/mft/MftMetadataReader.cpp
                 )

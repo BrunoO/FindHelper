@@ -68,6 +68,7 @@ TEST_SUITE("ParseCommandLineArgs") {
     CHECK(result.index_from_file.empty());
     CHECK(result.crawl_folder.empty());
     CHECK(result.win_volume_override.empty());
+    CHECK(result.mft_metadata_reading);
   }
 
   // -------------------------------------------------------------------------
@@ -247,6 +248,34 @@ TEST_SUITE("ParseCommandLineArgs") {
   }
 
   // -------------------------------------------------------------------------
+  // --mft-metadata-reading (true/false; Windows runtime behavior; parsed on all platforms)
+  // -------------------------------------------------------------------------
+
+  TEST_CASE("--mft-metadata-reading=true enables MFT metadata reading") {
+    Args args({"prog", "--mft-metadata-reading=true"});
+    const CommandLineArgs result = ParseCommandLineArgs(args.argc(), args.argv());
+    CHECK(result.mft_metadata_reading);
+  }
+
+  TEST_CASE("--mft-metadata-reading=false disables MFT metadata reading") {
+    Args args({"prog", "--mft-metadata-reading=false"});
+    const CommandLineArgs result = ParseCommandLineArgs(args.argc(), args.argv());
+    CHECK(!result.mft_metadata_reading);
+  }
+
+  TEST_CASE("--mft-metadata-reading TRUE is case-insensitive") {
+    Args args({"prog", "--mft-metadata-reading=TRUE"});
+    const CommandLineArgs result = ParseCommandLineArgs(args.argc(), args.argv());
+    CHECK(result.mft_metadata_reading);
+  }
+
+  TEST_CASE("--mft-metadata-reading space-separated format") {
+    Args args({"prog", "--mft-metadata-reading", "false"});
+    const CommandLineArgs result = ParseCommandLineArgs(args.argc(), args.argv());
+    CHECK(!result.mft_metadata_reading);
+  }
+
+  // -------------------------------------------------------------------------
   // Edge cases
   // -------------------------------------------------------------------------
 
@@ -264,13 +293,15 @@ TEST_SUITE("ParseCommandLineArgs") {
                "--thread-pool-size=4",
                "--window-width=1280",
                "--window-height=720",
-               "--load-balancing=hybrid"});
+               "--load-balancing=hybrid",
+               "--mft-metadata-reading=false"});
     const CommandLineArgs result = ParseCommandLineArgs(args.argc(), args.argv());
     CHECK(result.show_metrics);
     CHECK(result.thread_pool_size_override == 4);
     CHECK(result.window_width_override == 1280);
     CHECK(result.window_height_override == 720);
     CHECK(result.load_balancing_override == "hybrid");
+    CHECK(!result.mft_metadata_reading);
     CHECK(!result.exit_requested);
   }
 

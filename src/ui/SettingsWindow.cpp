@@ -105,9 +105,9 @@ void RenderAppearanceSettings(AppSettings& settings, GLFWwindow* glfw_window) {
   RenderSectionHeader("Appearance");
 
   // Theme selection (apply immediately on change)
-  static const std::array<const char*, 7> kThemeLabels = {
+  static constexpr std::array<const char*, 7> kThemeLabels = {
     "Default Dark", "Dracula", "Nord", "One Dark", "Gruvbox Dark", "Everforest", "Catppuccin Mocha"};
-  static const std::array<std::string_view, 7> kThemeIds = {
+  static constexpr std::array<std::string_view, 7> kThemeIds = {
     "default_dark", "dracula", "nord", "one_dark", "gruvbox", "everforest", "catppuccin"};
   int current_theme_index = 0;
   for (size_t i = 0; i < kThemeIds.size(); ++i) {
@@ -128,7 +128,7 @@ void RenderAppearanceSettings(AppSettings& settings, GLFWwindow* glfw_window) {
   // Font family selection
   // Note: keep this list in sync with ConfigureFontsFromSettings.
   // Embedded fonts (Roboto Medium, Cousine, Karla) are available on all platforms.
-  static const std::array<const char*, 12> kFontLabels = {
+  static constexpr std::array<const char*, 12> kFontLabels = {
     "Roboto Medium", "Cousine", "Karla",  "Consolas",      "Segoe UI",       "Arial",
     "Calibri",       "Verdana", "Tahoma", "Cascadia Mono", "Lucida Console", "Courier New"};
   int current_font_index = 0;
@@ -255,10 +255,10 @@ std::string GetStrategyStringFromIndex(int index) {
 int RenderLoadBalancingStrategy(AppSettings& settings) {
   // Strategy labels must stay in sync with GetStrategyIndexFromString/GetStrategyStringFromIndex
 #if defined(FAST_LIBS_BOOST)
-  static const std::array<const char*, 3> kStrategyLabels = {
+  static constexpr std::array<const char*, 3> kStrategyLabels = {
     "Static", "Hybrid", "Work Stealing"};
 #else
-  static const std::array<const char*, 2> kStrategyLabels = {
+  static constexpr std::array<const char*, 2> kStrategyLabels = {
     "Static", "Hybrid"};
 #endif  // FAST_LIBS_BOOST
   int current_strategy_index = GetStrategyIndexFromString(settings.loadBalancingStrategy);
@@ -765,10 +765,17 @@ void RenderTipsSection() {
 }
 
 void RenderSaveStatus(bool has_save_result, bool last_save_success,
-                      const std::string& last_save_message) {
+                      std::string_view last_save_message) {
   if (has_save_result) {
     const ImVec4 status_color = last_save_success ? Theme::Colors::Success : Theme::Colors::Error;
-    ImGui::TextColored(status_color, "%s", last_save_message.c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, status_color);
+    if (last_save_message.empty()) {
+      ImGui::TextUnformatted("");
+    } else {
+      ImGui::TextUnformatted(last_save_message.data(),
+                             last_save_message.data() + last_save_message.size());
+    }
+    ImGui::PopStyleColor();
     ImGui::Spacing();
   }
 }

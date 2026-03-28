@@ -37,6 +37,7 @@
 #include <future>
 #include <memory>
 #include <new>
+#include <shared_mutex>
 #include <stdexcept>
 #ifdef FAST_LIBS_BOOST
 #include <boost/lockfree/queue.hpp>
@@ -98,6 +99,35 @@ struct ThreadSetupAfterLock {
 
   return setup;
 }
+
+// Reserve before any index lock (matches pre-refactor worker order; avoids heap work under lock).
+[[nodiscard]] inline std::vector<SearchResultData> MakeReservedWorkerResultBuffer(
+  size_t chunk_start, size_t chunk_end) {
+  std::vector<SearchResultData> local_results;
+  constexpr size_t k_match_rate_heuristic = 20;
+  local_results.reserve((chunk_end - chunk_start) / k_match_rate_heuristic);
+  return local_results;
+}
+
+/**
+ * RAII: worker-thread timing start, result buffer, index shared_lock, and post-lock setup.
+ * Shared by ExecuteStaticStrategyTask and ExecuteHybridStrategyTask (Sonar duplication).
+ *
+ * Member order + init list order matter: local_results must be fully reserved before index_lock
+ * so we do not allocate while holding the FileIndex shared mutex.
+ */
+struct WorkerSearchChunkContext {
+  std::chrono::high_resolution_clock::time_point start_time_{std::chrono::high_resolution_clock::now()}; // NOLINT(readability-identifier-naming)
+  std::vector<SearchResultData> local_results; // NOLINT(readability-identifier-naming)
+  std::shared_lock<std::shared_mutex> index_lock; // NOLINT(readability-identifier-naming)
+  ThreadSetupAfterLock setup; // NOLINT(readability-identifier-naming)
+
+  WorkerSearchChunkContext(const ISearchableIndex& index, const SearchContext& context,
+                           size_t chunk_start, size_t chunk_end)
+      : local_results(MakeReservedWorkerResultBuffer(chunk_start, chunk_end)),
+        index_lock(index.GetMutex()),
+        setup(SetupThreadWorkAfterLock(index, context)) {}
+};
 
 /**
  * @brief Parameters for thread timing recording
@@ -347,30 +377,21 @@ struct StaticStrategyTaskParams {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) - Static function
 inline std::vector<SearchResultData> ExecuteStaticStrategyTask(
   const StaticStrategyTaskParams& params) {
-  const auto start_time = std::chrono::high_resolution_clock::now();
-  std::vector<SearchResultData> local_results;
-  constexpr size_t k_match_rate_heuristic = 20;
-  local_results.reserve((params.end_index_ - params.start_index_) / k_match_rate_heuristic);
+  WorkerSearchChunkContext worker(params.index, params.context, params.start_index_,
+                                  params.end_index_);
 
-  // CRITICAL: Acquire shared_lock in worker thread to prevent race conditions
-  const std::shared_lock lock(params.index.GetMutex());
-
-  // Get SoA view, storage size, and pattern matchers after acquiring lock
-  const auto setup = load_balancing_detail::SetupThreadWorkAfterLock(params.index, params.context);
-
-  // Process chunk with exception handling
   load_balancing_detail::ProcessChunkWithExceptionHandling(
-    {setup, params.start_index_, params.end_index_, params.thread_idx_, "StaticChunkingStrategy",
+    {worker.setup, params.start_index_, params.end_index_, params.thread_idx_, "StaticChunkingStrategy",
      "chunk"},
-    local_results, params.context);
+    worker.local_results, params.context);
 
   load_balancing_detail::RecordThreadTimingIfRequested(
-    params.thread_timings_, params.thread_idx_, start_time,
+    params.thread_timings_, params.thread_idx_, worker.start_time_,
     {params.start_index_, params.end_index_, params.end_index_ - params.start_index_, 0,
-     params.end_index_ - params.start_index_, 0, local_results.size(), &setup.soa_view_,
-     setup.storage_size_, params.start_index_, params.end_index_});
+     params.end_index_ - params.start_index_, 0, worker.local_results.size(), &worker.setup.soa_view_,
+     worker.setup.storage_size_, params.start_index_, params.end_index_});
 
-  return local_results;
+  return worker.local_results;
 }
 
 /**
@@ -399,22 +420,13 @@ struct HybridStrategyTaskParams {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) - Static function
 inline std::vector<SearchResultData> ExecuteHybridStrategyTask(
   const HybridStrategyTaskParams& params) {
-  const auto start_time = std::chrono::high_resolution_clock::now();
-  std::vector<SearchResultData> local_results;
-  constexpr size_t k_match_rate_heuristic = 20;
-  local_results.reserve((params.end_index_ - params.start_index_) / k_match_rate_heuristic);
+  WorkerSearchChunkContext worker(params.index, params.context, params.start_index_,
+                                  params.end_index_);
 
-  // CRITICAL: Acquire shared_lock in worker thread to prevent race conditions
-  const std::shared_lock lock(params.index.GetMutex());
-
-  // Get SoA view, storage size, and pattern matchers after acquiring lock
-  const auto setup = load_balancing_detail::SetupThreadWorkAfterLock(params.index, params.context);
-
-  // Process initial chunk with exception handling
   load_balancing_detail::ProcessChunkWithExceptionHandling(
-    {setup, params.start_index_, params.end_index_, params.thread_idx_, "HybridStrategy",
+    {worker.setup, params.start_index_, params.end_index_, params.thread_idx_, "HybridStrategy",
      "initial chunk"},
-    local_results, params.context);
+    worker.local_results, params.context);
 
   // Track statistics for timing information
   const size_t initial_items = params.end_index_ - params.start_index_;
@@ -424,18 +436,18 @@ inline std::vector<SearchResultData> ExecuteHybridStrategyTask(
   // Phase 2: Process remaining work using dynamic chunk allocation
   DynamicChunksLoopOutput dynamic_output{dynamic_chunks_count, dynamic_items_total};  // NOLINT(misc-const-correctness) - passed by non-const ref to ProcessDynamicChunksLoop
   load_balancing_detail::ProcessDynamicChunksLoop(
-    {setup, params.total_items_, params.initial_chunks_end_, params.next_dynamic_chunk.get(),
-     params.context, local_results, params.thread_idx_, "HybridStrategy", params.thread_count_,
+    {worker.setup, params.total_items_, params.initial_chunks_end_, params.next_dynamic_chunk.get(),
+     params.context, worker.local_results, params.thread_idx_, "HybridStrategy", params.thread_count_,
      params.min_chunk_size_},
     dynamic_output);
 
   load_balancing_detail::RecordThreadTimingIfRequested(
-    params.thread_timings_, params.thread_idx_, start_time,
+    params.thread_timings_, params.thread_idx_, worker.start_time_,
     {params.start_index_, params.end_index_, initial_items, dynamic_chunks_count,
-     initial_items + dynamic_items_total, 0, local_results.size(), &setup.soa_view_,
-     setup.storage_size_, params.start_index_, params.end_index_});
+     initial_items + dynamic_items_total, 0, worker.local_results.size(), &worker.setup.soa_view_,
+     worker.setup.storage_size_, params.start_index_, params.end_index_});
 
-  return local_results;
+  return worker.local_results;
 }
 
 }  // namespace load_balancing_detail

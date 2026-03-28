@@ -103,6 +103,16 @@ void RenderPgoTooltipIfHovered(char pgo_mode) {
   }
 }
 
+const char* GetAboutPlatformShortLabel() {
+#if defined(_WIN32)
+  return "Windows";
+#elif defined(__APPLE__)
+  return "macOS";
+#else
+  return "Linux";
+#endif  // _WIN32 / __APPLE__
+}
+
 const char* GetAboutPlatformMonitoringLabel() {
 #if defined(_WIN32)
   return "Windows (No Monitoring)";

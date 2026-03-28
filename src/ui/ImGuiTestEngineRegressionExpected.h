@@ -62,6 +62,12 @@ constexpr size_t kExtJson = 1U;  // y.json
 /** ext=cpp + folders_only=true: no directories have a .cpp extension. */
 constexpr size_t kExtCppFoldersOnly = 0U;
 
+/** Expected recursive non-directory file counts (# Files column) for fixture folders. */
+constexpr uint64_t kFolderFilesAlpha = 3U; // a.txt, b.txt, c.cpp
+constexpr uint64_t kFolderFilesBeta  = 5U; // x.h, y.json, z.md + sub(p.txt, q.cpp)
+constexpr uint64_t kFolderFilesSub   = 2U; // p.txt, q.cpp
+constexpr uint64_t kFolderFilesGamma = 2U; // r.txt + deep/deeper/leaf.h
+
 }  // namespace fixture_expected
 
 #endif  // ENABLE_IMGUI_TEST_ENGINE

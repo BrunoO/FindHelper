@@ -77,6 +77,18 @@ struct IRegressionTestHook {
   [[nodiscard]] virtual size_t GetSearchResultCount() const = 0;
 
   /**
+   * Get the recursive non-directory file count for a search result by its index.
+   * Returns kFolderFileCountNotLoaded if not yet computed, or 0/sentinel for files.
+   */
+  [[nodiscard]] virtual uint64_t GetSearchResultFolderFileCount(size_t index) const = 0;
+
+  /**
+   * Get the full path of a search result by its index.
+   * Used in tests to identify which result row we are asserting against.
+   */
+  [[nodiscard]] virtual std::string_view GetSearchResultPath(size_t index) const = 0;
+
+  /**
    * Request that the app set selection to the first row and mark it (for shortcut tests).
    * Consumed once on next ProcessFrame when display results are available.
    */
@@ -142,6 +154,8 @@ struct RegressionTestHookAdapter : IRegressionTestHook {
   void TriggerManualSearch() override { /* stub: no-op for regression test adapter */ }
   [[nodiscard]] bool IsSearchComplete() const override { return true; }
   [[nodiscard]] size_t GetSearchResultCount() const override { return 0U; }
+  [[nodiscard]] uint64_t GetSearchResultFolderFileCount(size_t /*index*/) const override { return 0U; }
+  [[nodiscard]] std::string_view GetSearchResultPath(size_t /*index*/) const override { return {}; }
   void RequestSetSelectionAndMarkFirstResult() override { /* stub: no-op for regression test adapter */ }
   void RequestCopyMarkedPathsToClipboard() override { /* stub: no-op for regression test adapter */ }
   void RequestCopyMarkedFilenamesToClipboard() override { /* stub: no-op for regression test adapter */ }

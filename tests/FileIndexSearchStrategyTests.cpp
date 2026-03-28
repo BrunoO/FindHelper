@@ -172,6 +172,24 @@ void RunOverlappingConcurrentSearchesScenario(std::string_view strategy,
   }
 }
 
+// Shared by PathPattern and Glob pattern tests (Sonar duplication: same RunTestForAllStrategies +
+// CollectSearchResults + filename-prefix loop).
+void RunPatternAcrossAllStrategiesAssertFilenamePrefix(std::string_view search_query,
+                                                       std::string_view filename_prefix) {
+  const std::string query_str(search_query);
+  const std::string prefix_str(filename_prefix);
+  test_helpers::search_strategy_test_helpers::RunTestForAllStrategiesWithSetup(
+    100, [&query_str, &prefix_str](FileIndex& idx, const std::string&) {
+      auto results = CollectSearchResults(idx, query_str, 4);
+      REQUIRE(results.size() > 0);
+      for (const auto& result : results) {
+        const std::string_view path_view(result.fullPath);
+        const std::string_view filename = path_utils::GetFilename(path_view);
+        CHECK(filename.find(std::string_view(prefix_str)) == 0);
+      }
+    });
+}
+
 }  // anonymous namespace
 
 TEST_SUITE("FileIndex Search Strategies") {
@@ -651,37 +669,14 @@ TEST_SUITE("FileIndex Search Strategies") {
     // This ensures refactoring the duplicated pattern matcher code is safe
 
     TEST_CASE("PathPattern patterns (auto-detected with ^) work across all strategies") {
-      // Test path pattern: match files starting with "file_" (auto-detected by ^ anchor)
-      test_helpers::search_strategy_test_helpers::RunTestForAllStrategiesWithSetup(
-        100, [](FileIndex& idx, const std::string&) {
-          // Path pattern with ^ anchor: ^file_* matches files starting with "file_"
-          // Auto-detected as PathPattern (no prefix needed)
-          // Note: PathPatternMatcher requires full match, so we need * at the end
-          auto results = CollectSearchResults(idx, "^file_*", 4);
-
-          REQUIRE(results.size() > 0);
-          // All results should match the pattern
-          for (const auto& result : results) {
-            const std::string_view path_view(result.fullPath);
-            const std::string_view filename = path_utils::GetFilename(path_view);
-            CHECK(filename.find("file_") == 0);
-          }
-        });
+      // Path pattern with ^ anchor: ^file_* matches files starting with "file_"
+      // (auto-detected as PathPattern; PathPatternMatcher needs * for full match)
+      RunPatternAcrossAllStrategiesAssertFilenamePrefix("^file_*", "file_");
     }
 
     TEST_CASE("Glob patterns (*, ?) work across all strategies") {
-      test_helpers::search_strategy_test_helpers::RunTestForAllStrategiesWithSetup(
-        100, [](FileIndex& idx, const std::string&) {
-          // Glob pattern: file_00* matches file_0001, file_0002, etc.
-          auto results = CollectSearchResults(idx, "file_00*", 4);
-
-          REQUIRE(results.size() > 0);
-          for (const auto& result : results) {
-            const std::string_view path_view(result.fullPath);
-            const std::string_view filename = path_utils::GetFilename(path_view);
-            CHECK(filename.find("file_00") == 0);
-          }
-        });
+      // Glob: file_00* matches file_0001, file_0002, etc.
+      RunPatternAcrossAllStrategiesAssertFilenamePrefix("file_00*", "file_00");
     }
 
     TEST_CASE("Path patterns (pp:) - precompiled - work across all strategies") {

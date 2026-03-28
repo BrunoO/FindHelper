@@ -155,6 +155,7 @@ You can pass the following options when starting the app. Run with `--help` (or 
 | `--index-from-file=<file>` | Populate index from a text file (one path per line) |
 | `--crawl-folder=<path>` | Folder to crawl and index (alternative to USN Journal on Windows; required on macOS/Linux if no index file) |
 | `--win-volume=<volume>` | Override volume to monitor (e.g. `D:`). **Windows only**; default is `C:` |
+| `--mft-metadata-reading=<value>` | **Windows only.** USN initial index: read size and mtime from the MFT per file. Value must be `true` or `false` (case-insensitive). Default is `true`; set `false` to benchmark without per-file `FSCTL_GET_NTFS_FILE_RECORD`. |
 | `--run-imgui-tests-and-exit` | Run all ImGui Test Engine tests and exit. Requires a build with `ENABLE_IMGUI_TEST_ENGINE=ON` |
 
 For **Profile-Guided Optimization (PGO)** on Windows, see [Profile-Guided Optimization (Windows Only)](#profile-guided-optimization-windows-only) for `--pgo-profile` and `--pgo-duration=<ms>`.
@@ -346,7 +347,6 @@ cmake -S . -B build -DENABLE_IMGUI_TEST_ENGINE=OFF
 | `ENABLE_IMGUI_TEST_ENGINE` | `OFF` | Build with ImGui Test Engine for in-process UI tests (macOS) |
 | `IMGUI_TEST_ENGINE_INSTALL_CRASH_HANDLER` | `ON` | When test engine is ON: install default crash handler in-app (set OFF at build time for CI or custom handler). No runtime flag. |
 | `FAST_LIBS_BOOST` | `OFF` | Use Boost (unordered_map, regex, lockfree; requires Boost 1.80+) |
-| `ENABLE_MFT_METADATA_READING` | `OFF` | Read file size/mod time from MFT during initial population (Windows only) |
 | `ENABLE_PGO` | `OFF` | Enable Profile-Guided Optimization (Windows only) |
 
 Example:

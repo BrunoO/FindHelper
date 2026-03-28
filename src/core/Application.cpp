@@ -131,6 +131,12 @@ class ApplicationRegressionTestHook : public IRegressionTestHook {
   [[nodiscard]] size_t GetSearchResultCount() const override {
     return app_->GetSearchResultCountForRegressionTest();
   }
+  [[nodiscard]] uint64_t GetSearchResultFolderFileCount(size_t index) const override {
+    return app_->GetSearchResultFolderFileCountForRegressionTest(index);
+  }
+  [[nodiscard]] std::string_view GetSearchResultPath(size_t index) const override {
+    return app_->GetSearchResultPathForRegressionTest(index);
+  }
   [[nodiscard]] std::string GetClipboardText() const override {
     return app_->GetClipboardTextForRegressionTest();
   }
@@ -974,6 +980,20 @@ bool Application::IsSearchCompleteForRegressionTest() const {
 
 size_t Application::GetSearchResultCountForRegressionTest() const {
   return state_.searchResults.size();
+}
+
+uint64_t Application::GetSearchResultFolderFileCountForRegressionTest(size_t index) const {
+  if (index >= state_.searchResults.size()) {
+    return 0;
+  }
+  return state_.searchResults[index].folderFileCount;
+}
+
+std::string_view Application::GetSearchResultPathForRegressionTest(size_t index) const {
+  if (index >= state_.searchResults.size()) {
+    return {};
+  }
+  return state_.searchResults[index].fullPath;
 }
 
 std::string Application::GetClipboardTextForRegressionTest() const {

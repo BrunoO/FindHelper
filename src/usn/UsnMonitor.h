@@ -226,6 +226,8 @@ struct MonitoringConfig {
   DWORD timeout_ms = usn_monitor_constants::kTimeoutMs;
   size_t bytes_to_wait_for = usn_monitor_constants::kBytesToWaitFor;
   size_t max_queue_size = usn_monitor_constants::kDefaultMaxQueueSize;
+  // Initial index: per-file MFT metadata (FSCTL_GET_NTFS_FILE_RECORD). Overridden from CLI on startup.
+  bool enable_mft_metadata_reading = true;
 };
 
 // Metrics structure for monitoring performance and health
@@ -356,7 +358,7 @@ public:
   // Push a buffer to the queue. Returns true if successful, false if queue is
   // full. When queue is full, the buffer is dropped and a warning is logged.
   bool Push(std::vector<char> buffer) {
-    // Critical section: queue and counters only; no I/O (see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
+    // Critical section: queue and counters only; no I/O (see docs/design/LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
     std::scoped_lock lock(mutex_);
     if (queue_.size() >= max_size_) {
       // Queue full - drop buffer to prevent unbounded growth

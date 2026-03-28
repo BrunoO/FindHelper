@@ -20,9 +20,10 @@
 #include "utils/StringUtils.h"
 
 #include "imgui.h"
+#include "imgui_internal.h"
 
+#include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -31,7 +32,21 @@ namespace ui {
 
 namespace {
 constexpr int kExportNotificationDurationSeconds = 5;
+
+// Progressive total-size summation (SearchResultUtils::UpdateDisplayedTotalSizeIfNeeded); RenderCenterGroup
+// calls the updater each frame, so the busy bar cannot stick when this is true.
+[[nodiscard]] bool IsDisplayedTotalSizeSummationPending(const GuiState& state) {
+  if (state.displayedTotalSizeValid || !state.resultsComplete || state.showingPartialResults ||
+      state.loadingAttributes) {
+    return false;
+  }
+  return !state.searchResults.empty();
 }
+
+[[nodiscard]] bool IsCloudFileAttributeLoadActive(const GuiState& state) {
+  return !state.cloudFileLoadingFutures.empty();
+}
+}  // namespace
 
 // Returns true if export notification/error should still be shown in the status bar.
 static bool IsExportNotificationActive(const GuiState& state) {
@@ -59,6 +74,15 @@ static std::string GetStatusText(const GuiState& state, const SearchWorker& sear
   if (state.computingFolderSizes) {
     return "Status: Computing folder sizes...";
   }
+  if (IsCloudFileAttributeLoadActive(state)) {
+    return "Status: Loading cloud file attributes...";
+  }
+  if (IsDisplayedTotalSizeSummationPending(state)) {
+    return "Status: Summing file sizes...";
+  }
+  if (state.gemini_api_call_in_progress_) {
+    return "Status: Gemini API...";
+  }
   if (IsExportNotificationActive(state)) {
     if (!state.exportErrorMessage.empty()) {
       return "Error: " + state.exportErrorMessage;
@@ -70,31 +94,40 @@ static std::string GetStatusText(const GuiState& state, const SearchWorker& sear
   return "Status: Idle";
 }
 
-// Returns true when the status bar should show the animated busy progress bar (indexing, searching, loading attributes, computing folder sizes).
+// Returns true when the status bar should show the animated busy progress bar (indexing, searching,
+// loading attributes, folder sizes, cloud attribute futures, progressive total-size sum, Gemini API).
 static bool IsStatusBarBusy(const GuiState& state, const SearchWorker& search_worker) {
   return state.index_build_in_progress || search_worker.IsBusy() ||
-         state.loadingAttributes || state.computingFolderSizes;
+         state.loadingAttributes || state.computingFolderSizes ||
+         IsCloudFileAttributeLoadActive(state) || IsDisplayedTotalSizeSummationPending(state) ||
+         state.gemini_api_call_in_progress_;
 }
 
-// Draws the indeterminate progress bar in the given rect (same animation as ImGui::ProgressBar with fraction < 0).
-// Does not affect layout; use to overlay an already-reserved area.
+// Draws the indeterminate progress bar in the given rect (same animation and fill geometry as ImGui::ProgressBar
+// with fraction < 0): rounded track, sliding segment via RenderRectFilledInRangeH (anti-aliased path), not a plain
+// AddRectFilled slab — avoids hard stepped rectangle edges when the bar animates.
 static void DrawIndeterminateProgressBarInRect(ImDrawList* draw_list,
                                                 const ImVec2& rect_min,
                                                 const ImVec2& rect_max) {
   constexpr float kFillWidthN = 0.2F;
   const float fraction = (-1.0F) * static_cast<float>(ImGui::GetTime());
-  float fill_n0 = (static_cast<float>(std::fmod(-fraction, 1.0)) * (1.0F + kFillWidthN)) - kFillWidthN;
-  if (fill_n0 < 0.0F) { fill_n0 = 0.0F; } else if (fill_n0 > 1.0F) { fill_n0 = 1.0F; }
-  float fill_n1 = fill_n0 + kFillWidthN;
-  if (fill_n1 < 0.0F) { fill_n1 = 0.0F; } else if (fill_n1 > 1.0F) { fill_n1 = 1.0F; }
+  float fill_n0 = (ImFmod(-fraction, 1.0F) * (1.0F + kFillWidthN)) - kFillWidthN;
+  fill_n0 = ImSaturate(fill_n0);
+  const float fill_n1 = ImSaturate(fill_n0 + kFillWidthN);
   const float bar_w = rect_max.x - rect_min.x;
   const float fill_x0 = rect_min.x + (bar_w * fill_n0);
   const float fill_x1 = rect_min.x + (bar_w * fill_n1);
+
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float bar_h = rect_max.y - rect_min.y;
+  const float track_rounding = (std::min)(style.FrameRounding, bar_h * 0.5F);
+
   const ImU32 track_col = ImGui::ColorConvertFloat4ToU32(Theme::Colors::Border);
   const ImU32 fill_col = ImGui::ColorConvertFloat4ToU32(Theme::Colors::Accent);
-  draw_list->AddRectFilled(rect_min, rect_max, track_col);
+  draw_list->AddRectFilled(rect_min, rect_max, track_col, track_rounding);
   if (fill_x0 < fill_x1) {
-    draw_list->AddRectFilled(ImVec2(fill_x0, rect_min.y), ImVec2(fill_x1, rect_max.y), fill_col);
+    const ImRect bar_bb(rect_min, rect_max);
+    ImGui::RenderRectFilledInRangeH(draw_list, bar_bb, fill_col, fill_x0, fill_x1, style.FrameRounding);
   }
 }
 
@@ -209,13 +242,10 @@ void StatusBar::Render(GuiState &state,
   RenderRightGroup(state, search_worker, status_text, memory_text);
 }
 
-// Left group: Version, build type, monitoring status
+// Left group: Platform, optional PGO, monitoring / index mode (build type is in Help → About)
 static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const FileIndex &file_index,
                            std::string_view monitored_volume) {
-  // Version, build type, and PGO (shared with Help About section via AboutSectionHelpers)
-  ImGui::TextDisabled("v-%s", GetAboutAppVersion());
-  ImGui::SameLine();
-  ImGui::TextDisabled("%s", GetAboutBuildTypeLabel());
+  ImGui::TextDisabled("%s", GetAboutPlatformShortLabel());
   if (const char pgo_mode = GetAboutPgoMode(); pgo_mode != '\0') {
     ImGui::SameLine();
     ImGui::TextDisabled("[%c]", pgo_mode);
@@ -273,8 +303,10 @@ static void RenderLeftGroup(const UsnMonitor *monitor, [[maybe_unused]] const Fi
     }
 #endif  // _WIN32
   } else {
-    // No USN monitor: show platform label (shared with Help About section)
-    ImGui::TextColored(Theme::Colors::TextDim, "%s", GetAboutPlatformMonitoringLabel());
+    // No USN monitor: crawler-backed index (OS name already shown on the left)
+    ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TextDim);
+    ImGui::TextUnformatted("File index");
+    ImGui::PopStyleColor();
     if (!monitored_volume.empty()) {
 #ifdef _WIN32
       ImGui::SameLine();
@@ -413,7 +445,9 @@ static void RenderRightGroup(const GuiState &state, const SearchWorker &search_w
   // Determine color from status type, then single render call (avoids bugprone-branch-clone).
   const ImVec4* status_color = nullptr;
   if (const bool is_loading_attributes = state.loadingAttributes;
-      state.index_build_in_progress || is_loading_attributes || state.computingFolderSizes) {
+      state.index_build_in_progress || is_loading_attributes || state.computingFolderSizes ||
+      state.gemini_api_call_in_progress_ || IsCloudFileAttributeLoadActive(state) ||
+      IsDisplayedTotalSizeSummationPending(state)) {
     status_color = &Theme::Colors::Warning;
   } else if (state.index_build_failed) {
     status_color = &Theme::Colors::Error;

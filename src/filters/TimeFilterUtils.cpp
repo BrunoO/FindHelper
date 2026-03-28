@@ -107,7 +107,8 @@ void RecordRecentSearch(const SearchParams &params, const GuiState &state, AppSe
   recent.caseSensitive = params.caseSensitive;
   recent.timeFilter = TimeFilterToString(state.timeFilter);
   recent.sizeFilter = SizeFilterToString(state.sizeFilter);
-  recent.aiSearchDescription = "";  // Recent searches don't store AI descriptions
+  // Same source as saved searches (Popups::CreateSavedSearchFromState): Gemini / paste workflow text.
+  recent.aiSearchDescription = std::string(state.gemini_description_input_.data());
 
   // Check if an identical search already exists and remove it
   auto it = std::find_if(settings.recentSearches.begin(), settings.recentSearches.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20

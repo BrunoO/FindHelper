@@ -36,6 +36,6 @@ Do not take SearchThreadPool’s or UsnMonitor’s mutex while holding FileIndex
 ## Pattern
 
 - **3-phase when I/O is needed:** read path (or minimal data) under shared/unique lock → release lock → do I/O → re-acquire lock and update (e.g. LazyAttributeLoader, UpdateSize).
-- Add a brief comment when non-obvious: “No I/O under this lock – see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md”.
+- Add a brief comment when non-obvious: “No I/O under this lock – see docs/design/LOCK_ORDERING_AND_CRITICAL_SECTIONS.md”.
 
-**Reference:** `docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md`; `docs/design/LAZY_ATTRIBUTE_LOADER_DESIGN.md` (§ Never hold lock during I/O).
+**Reference:** `docs/design/LOCK_ORDERING_AND_CRITICAL_SECTIONS.md`; `docs/design/LAZY_ATTRIBUTE_LOADER_DESIGN.md` (§ Never hold lock during I/O).

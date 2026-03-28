@@ -52,6 +52,7 @@
 #include "search/SearchController.h"
 #include "search/StreamingResultsCollector.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -83,6 +84,20 @@ static inline bool HasFileSizeChanged(uint64_t current_size, uint64_t new_size);
 static inline bool HasModificationTimeChanged(const FILETIME& current_time, const FILETIME& new_time);
 
 namespace {
+
+void AssertSearchResultsFullPathsInPathPool(const GuiState& state) {
+  if (state.searchResultPathPool.empty()) {
+    return;
+  }
+  const auto pool_size = state.searchResultPathPool.size();
+  assert(std::all_of(state.searchResults.begin(), state.searchResults.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
+                     [&state, pool_size](const SearchResult& r) {
+                       const auto* const pool_start = state.searchResultPathPool.data();
+                       const auto pool_index =
+                           static_cast<size_t>(r.fullPath.data() - pool_start);
+                       return pool_index < pool_size;
+                     }));
+}
 
 /**
  * @brief Wait for and cleanup a single attribute loading future
@@ -226,16 +241,7 @@ void UpdateSearchResults(GuiState& state,
   if (is_complete && !state.searchResults.empty()) {  // NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved) - Check is_complete and empty() before move, state.searchResults is set from moved new_results
     state.deferFilterCacheRebuild = true;
   }
-  if (!state.searchResultPathPool.empty()) {
-    const auto pool_size = state.searchResultPathPool.size();
-    assert(std::all_of(state.searchResults.begin(), state.searchResults.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
-                       [&state, pool_size](const SearchResult& r) {
-                         const auto* const pool_start = state.searchResultPathPool.data();
-                         const auto pool_index =
-                             static_cast<size_t>(r.fullPath.data() - pool_start);
-                         return pool_index < pool_size;
-                       }));
-  }
+  AssertSearchResultsFullPathsInPathPool(state);
   LOG_INFO("UI received search results: " +
            std::to_string(state.searchResults.size()) + " items" +
            (is_complete ? " (complete)" : " (partial)"));
@@ -360,16 +366,7 @@ void FinalizeStreamingSearchComplete(GuiState& state, const FileIndex& file_inde
     UpdateSearchResults(state, std::move(state.partialResults), true);
     state.partialResults.clear();
     // Debug invariant: every SearchResult.fullPath must point into the current pool.
-    if (!state.searchResultPathPool.empty()) {
-      const auto pool_size = state.searchResultPathPool.size();
-      assert(std::all_of(state.searchResults.begin(), state.searchResults.end(),  // NOLINT(llvm-use-ranges) - C++17; std::ranges requires C++20
-                         [&state, pool_size](const SearchResult& r) {
-                           const auto* const pool_start = state.searchResultPathPool.data();
-                           const auto pool_index =
-                               static_cast<size_t>(r.fullPath.data() - pool_start);
-                           return pool_index < pool_size;
-                         }));
-    }
+    AssertSearchResultsFullPathsInPathPool(state);
     LOG_INFO("Streaming search complete, total results: " +
              std::to_string(state.searchResults.size()));
   } else if (!state.resultsComplete) {

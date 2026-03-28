@@ -27,12 +27,13 @@
 
 #include "core/Version.h"
 #include "imgui.h"
-#include "imgui_te_context.h"  // ImGuiTestContext (SetRef, Yield), IM_CHECK, IM_CHECK_EQ, IM_ERRORF
+#include "imgui_te_context.h"  // ImGuiTestContext (SetRef, Yield), IM_CHECK, IM_CHECK_EQ, IM_CHECK_RETV, IM_ERRORF
 #include "imgui_te_engine.h"
 #include "path/PathUtils.h"
 #include "ui/IconsFontAwesome.h"  // ICON_FA_BOOK_OPEN - ref must match FilterPanel/SearchInputs button labels for ItemClick
 #include "ui/ImGuiTestEngineRegressionExpected.h"
 #include "ui/ImGuiTestEngineRegressionHook.h"
+#include "utils/FileAttributeConstants.h"
 #include "utils/Logger.h"
 
 // Max frames to wait for index ready or search complete (avoid infinite loop).
@@ -81,6 +82,9 @@ static void RunFixtureFoldersOnlyCase(ImGuiTestContext* ctx,
 static void RunFixtureExtFoldersAndCase(ImGuiTestContext* ctx,
                                         IRegressionTestHook* hook,
                                         const char* case_id);
+static void RunFixtureFolderFileCountCase(ImGuiTestContext* ctx,
+                                          IRegressionTestHook* hook,
+                                          const char* case_id);
 
 template <typename Predicate>
 static bool WaitUntilFramesOrFail(ImGuiTestContext* ctx,
@@ -312,7 +316,7 @@ static void RunFixtureCrawlSearchAssertions(ImGuiTestContext* ctx,
     size_t expected;
   };
   static constexpr int kFixtureCaseCount = 4;
-  static const std::array<FixtureCase, kFixtureCaseCount> kFixtureCases = {{
+  static constexpr std::array<FixtureCase, kFixtureCaseCount> kFixtureCases = {{
     {"txt",  fixture_expected::kExtTxt},
     {"cpp",  fixture_expected::kExtCpp},
     {"h",    fixture_expected::kExtH},
@@ -466,15 +470,165 @@ static void RunFixtureExtFoldersAndCase(ImGuiTestContext* ctx,
   IM_CHECK_EQ(count, fixture_expected::kExtCppFoldersOnly);
 }
 
-/** Runs the copy-marked-paths shortcut test body (W / Copy Paths path). Call after index ready. */
-// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Test orchestration; IM_CHECK/IM_ERRORF macros add nesting
-static void RunCopyMarkedPathsShortcutTest(ImGuiTestContext* ctx,
-                                           IRegressionTestHook* hook,
-                                           const char* case_id) {
+/** Robust helper for C++17 string_view::ends_with (not in standard until C++20). */
+static bool StringEndsWith(std::string_view str, std::string_view suffix) {
+  return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+/** Robust path matcher for fixture folders, handling cross-platform separators and root/nested paths. */
+static bool MatchFixturePath(std::string_view full_path, std::string_view folder_name) {
+  if (full_path == folder_name) {
+    return true;
+  }
+  const size_t name_len = folder_name.size();
+  if (full_path.size() <= name_len) {
+    return false;
+  }
+  const size_t separator_index = full_path.size() - name_len - 1U;
+  const char separator = full_path.at(separator_index);
+  return (separator == '/' || separator == '\\') && StringEndsWith(full_path, folder_name);
+}
+
+[[nodiscard]] static bool FixtureFolderCountsAllReady(const IRegressionTestHook* hook) {
+  const size_t total = hook->GetSearchResultCount();
+  bool alpha_ready = false;
+  bool beta_ready = false;
+  bool sub_ready = false;
+  bool gamma_ready = false;
+  for (size_t i = 0; i < total; ++i) {
+    const std::string_view path = hook->GetSearchResultPath(i);
+    if (const uint64_t count = hook->GetSearchResultFolderFileCount(i);
+        count == kFolderFileCountNotLoaded) {
+      continue;
+    }
+    if (MatchFixturePath(path, "alpha")) {
+      alpha_ready = true;
+    } else if (MatchFixturePath(path, "beta")) {
+      beta_ready = true;
+    } else if (MatchFixturePath(path, "sub")) {
+      sub_ready = true;
+    } else if (MatchFixturePath(path, "gamma")) {
+      gamma_ready = true;
+    }
+  }
+  return alpha_ready && beta_ready && sub_ready && gamma_ready;
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - IM_CHECK_EQ/IM_ERRORF per branch inflate metric; logic is linear over result rows
+static void AssertFixtureFolderFileCountExpectations(const IRegressionTestHook* hook, const char* case_id) {
+  const size_t total = hook->GetSearchResultCount();
+  bool found_alpha = false;
+  bool found_beta = false;
+  bool found_sub = false;
+  bool found_gamma = false;
+  bool found_file = false;
+
+  for (size_t i = 0; i < total; ++i) {
+    const std::string_view path = hook->GetSearchResultPath(i);
+    const uint64_t count = hook->GetSearchResultFolderFileCount(i);
+
+    if (MatchFixturePath(path, "alpha")) {
+      found_alpha = true;
+      if (count != fixture_expected::kFolderFilesAlpha) {
+        IM_ERRORF("Fixture folder_file_counts %s: alpha expected %llu files, got %llu",
+                  case_id, static_cast<unsigned long long>(fixture_expected::kFolderFilesAlpha), static_cast<unsigned long long>(count));
+      }
+      IM_CHECK_EQ(count, fixture_expected::kFolderFilesAlpha); // NOLINT(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+    } else if (MatchFixturePath(path, "beta")) {
+      found_beta = true;
+      if (count != fixture_expected::kFolderFilesBeta) {
+        IM_ERRORF("Fixture folder_file_counts %s: beta expected %llu files, got %llu",
+                  case_id, static_cast<unsigned long long>(fixture_expected::kFolderFilesBeta), static_cast<unsigned long long>(count));
+      }
+      IM_CHECK_EQ(count, fixture_expected::kFolderFilesBeta); // NOLINT(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+    } else if (MatchFixturePath(path, "sub")) {
+      found_sub = true;
+      if (count != fixture_expected::kFolderFilesSub) {
+        IM_ERRORF("Fixture folder_file_counts %s: sub expected %llu files, got %llu",
+                  case_id, static_cast<unsigned long long>(fixture_expected::kFolderFilesSub), static_cast<unsigned long long>(count));
+      }
+      IM_CHECK_EQ(count, fixture_expected::kFolderFilesSub); // NOLINT(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+    } else if (MatchFixturePath(path, "gamma")) {
+      found_gamma = true;
+      if (count != fixture_expected::kFolderFilesGamma) {
+        IM_ERRORF("Fixture folder_file_counts %s: gamma expected %llu files, got %llu",
+                  case_id, static_cast<unsigned long long>(fixture_expected::kFolderFilesGamma), static_cast<unsigned long long>(count));
+      }
+      IM_CHECK_EQ(count, fixture_expected::kFolderFilesGamma); // NOLINT(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+    } else if (StringEndsWith(path, "a.txt")) {
+      found_file = true;
+      if (count != kFolderFileCountNotLoaded) {
+        IM_ERRORF("Fixture folder_file_counts %s: file a.txt expected sentinel, got %llu",
+                  case_id, static_cast<unsigned long long>(count));
+      }
+      IM_CHECK_EQ(count, kFolderFileCountNotLoaded); // NOLINT(misc-const-correctness) - IM_CHECK_EQ macro declares non-const bool internally
+    }
+  }
+
+  IM_CHECK(found_alpha); // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  IM_CHECK(found_beta);  // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  IM_CHECK(found_sub);   // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  IM_CHECK(found_gamma); // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  IM_CHECK(found_file);  // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+}
+
+/**
+ * Verifies the "# Files" column for fixture results: recursive non-directory counts
+ * for directories, and the sentinel value for file entries.
+ */
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Preconditions use many IM_CHECK branches; kept in one void function (IM_CHECK bare return)
+static void RunFixtureFolderFileCountCase(ImGuiTestContext* ctx,
+                                          IRegressionTestHook* hook,
+                                          const char* case_id) {
+  // IM_CHECK expands to bare `return` — keep preconditions in this void function (not in a bool helper).
+  hook->SetStreamPartialResults(false);
+  if (const std::optional<bool> stream_opt = hook->GetStreamPartialResults();
+      !stream_opt.has_value() || *stream_opt) {
+    IM_ERRORF("Fixture folder_file_counts %s: failed to disable streaming (check settings_ availability).", case_id);
+    IM_CHECK(stream_opt.has_value() && !*stream_opt);  // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  }
+
   hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{}, false);
+  if (!hook->GetSearchParamFilename().empty() || !hook->GetSearchParamPath().empty() ||
+      !hook->GetSearchParamExtensions().empty() || hook->GetSearchParamFoldersOnly()) {
+    IM_ERRORF("Fixture folder_file_counts %s: search params were not correctly reset.", case_id);
+    IM_CHECK(hook->GetSearchParamFilename().empty());  // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+    IM_CHECK(hook->GetSearchParamPath().empty());  // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+    IM_CHECK(hook->GetSearchParamExtensions().empty());  // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+    IM_CHECK(!hook->GetSearchParamFoldersOnly());  // NOLINT(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
+  }
+
   hook->TriggerManualSearch();
   if (!WaitForSearchComplete(ctx, hook, case_id)) {
     return;
+  }
+
+  if (const bool folder_counts_loaded =
+          WaitUntilFramesOrFail(ctx, case_id,
+                                [hook] { return FixtureFolderCountsAllReady(hook); },
+                                "Regression test %s: folder counts for alpha/beta/sub/gamma not loaded after %d frames");
+      !folder_counts_loaded) {
+    return;
+  }
+
+  ctx->Yield();
+  ctx->Yield();
+
+  AssertFixtureFolderFileCountExpectations(hook, case_id);
+}
+
+/**
+ * After SetSearchParams: trigger search, wait, yield×2, require non-empty results, snapshot clipboard,
+ * select first result. Returns false if search did not complete (caller should return).
+ */
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Test orchestration; IM_CHECK/IM_ERRORF macros add nesting
+[[nodiscard]] static bool RunShortcutSearchPreambleForClipboardTest(ImGuiTestContext* ctx,
+                                                                    IRegressionTestHook* hook,
+                                                                    const char* case_id,
+                                                                    std::string& out_original_clipboard) {
+  hook->TriggerManualSearch();
+  if (!WaitForSearchComplete(ctx, hook, case_id)) {
+    return false;
   }
   ctx->Yield();
   ctx->Yield();
@@ -482,16 +636,28 @@ static void RunCopyMarkedPathsShortcutTest(ImGuiTestContext* ctx,
   if (const size_t result_count = hook->GetSearchResultCount();
       result_count == 0U) {
     IM_ERRORF("Shortcut test %s: search returned 0 results; expected non-empty result list.", case_id);
-    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
-    IM_CHECK(result_count > 0U);
-    return;
+    // IM_CHECK uses bare `return`; use IM_CHECK_RETV so this bool function always returns a value (Sonar S836).
+    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK_RETV macro declares non-const bool internally
+    IM_CHECK_RETV(result_count > 0U, false);
   }
 
   const char* original_cstr = ImGui::GetClipboardText();
-  const std::string original_clipboard =
+  out_original_clipboard =
     (original_cstr != nullptr) ? std::string(original_cstr) : std::string{};
-
   hook->RequestSetSelectionAndMarkFirstResult();
+  return true;
+}
+
+/** Runs the copy-marked-paths shortcut test body (W / Copy Paths path). Call after index ready. */
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Test orchestration; IM_CHECK/IM_ERRORF macros add nesting
+static void RunCopyMarkedPathsShortcutTest(ImGuiTestContext* ctx,
+                                           IRegressionTestHook* hook,
+                                           const char* case_id) {
+  hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{}, false);
+  std::string original_clipboard;
+  if (!RunShortcutSearchPreambleForClipboardTest(ctx, hook, case_id, original_clipboard)) {
+    return;
+  }
   hook->RequestCopyMarkedPathsToClipboard();
   ctx->Yield();
   ctx->Yield();
@@ -515,26 +681,10 @@ static void RunCopyMarkedFilenamesShortcutTest(ImGuiTestContext* ctx,
   // Narrow search to a deterministic, small subset: files with ".log" extension.
   // This makes the clipboard assertion less random while still exercising the shortcut path.
   hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{"log"}, false);
-  hook->TriggerManualSearch();
-  if (!WaitForSearchComplete(ctx, hook, case_id)) {
+  std::string original_clipboard;
+  if (!RunShortcutSearchPreambleForClipboardTest(ctx, hook, case_id, original_clipboard)) {
     return;
   }
-  ctx->Yield();
-  ctx->Yield();
-
-  if (const size_t result_count = hook->GetSearchResultCount();
-      result_count == 0U) {
-    IM_ERRORF("Shortcut test %s: search returned 0 results; expected non-empty result list.", case_id);
-    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
-    IM_CHECK(result_count > 0U);
-    return;
-  }
-
-  const char* original_cstr = ImGui::GetClipboardText();
-  const std::string original_clipboard =
-    (original_cstr != nullptr) ? std::string(original_cstr) : std::string{};
-
-  hook->RequestSetSelectionAndMarkFirstResult();
   hook->RequestCopyMarkedFilenamesToClipboard();
   ctx->Yield();
   ctx->Yield();
@@ -580,26 +730,10 @@ static void RunCopySelectedPathShortcutTest(ImGuiTestContext* ctx,
                                             IRegressionTestHook* hook,
                                             const char* case_id) {
   hook->SetSearchParams(std::string_view{}, std::string_view{}, std::string_view{}, false);
-  hook->TriggerManualSearch();
-  if (!WaitForSearchComplete(ctx, hook, case_id)) {
+  std::string original_clipboard;
+  if (!RunShortcutSearchPreambleForClipboardTest(ctx, hook, case_id, original_clipboard)) {
     return;
   }
-  ctx->Yield();
-  ctx->Yield();
-
-  if (const size_t result_count = hook->GetSearchResultCount();
-      result_count == 0U) {
-    IM_ERRORF("Shortcut test %s: search returned 0 results; expected non-empty result list.", case_id);
-    // NOLINTNEXTLINE(misc-const-correctness) - IM_CHECK macro expands to non-const bool internally
-    IM_CHECK(result_count > 0U);
-    return;
-  }
-
-  const char* original_cstr = ImGui::GetClipboardText();
-  const std::string original_clipboard =
-    (original_cstr != nullptr) ? std::string(original_cstr) : std::string{};
-
-  hook->RequestSetSelectionAndMarkFirstResult();
   hook->RequestCopySelectedPathToClipboard();
   ctx->Yield();
   ctx->Yield();
@@ -760,10 +894,10 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
   // UI window tests: open floating windows via toolbar to improve coverage (HelpWindow, etc.). See docs/analysis/2026-02-22_IMGUI_TEST_ENGINE_COVERAGE_OPPORTUNITIES.md
   // Try exact title first; fall back to //$FOCUSED when lookup by name fails (e.g. cross-viewport). Always validate win->Name so we never accept the wrong window.
   // Precondition: main window must exist and be visible; enforced at start of smoke and UI tests. See docs/analysis/2026-02-23_IMGUI_TEST_ENGINE_PRECONDITIONS.md
-  static const char* kHelpWindowTitle = HELP_WINDOW_TITLE_STR;  // HelpWindow.cpp  // NOLINT(readability-identifier-naming)
+  static constexpr const char* kHelpWindowTitle = HELP_WINDOW_TITLE_STR;  // HelpWindow.cpp  // NOLINT(readability-identifier-naming)
   // kSettingsWindowTitle, kSettingsButtonRef, kSettingsButtonPreconditionMsg, kSettingsWindowOpenErrorMsg are at file scope (used by RunSelectFolderAndIndexTest)
-  static const char* kSearchSyntaxGuideTitle = "Search Syntax Guide";  // SearchHelpWindow.cpp  // NOLINT(readability-identifier-naming)
-  static const char* kMetricsWindowTitle = METRICS_WINDOW_TITLE_STR;  // MetricsWindow.cpp (only when app run with --show-metrics)  // NOLINT(readability-identifier-naming)
+  static constexpr const char* kSearchSyntaxGuideTitle = "Search Syntax Guide";  // SearchHelpWindow.cpp  // NOLINT(readability-identifier-naming)
+  static constexpr const char* kMetricsWindowTitle = METRICS_WINDOW_TITLE_STR;  // MetricsWindow.cpp (only when app run with --show-metrics)  // NOLINT(readability-identifier-naming)
 
   static const char* kHelpButtonRef = ICON_FA_BOOK_OPEN " Help##toolbar_help";  // Full label so ItemClick finds widget  // NOLINT(readability-identifier-naming)
   static const char* kHelpButtonPreconditionMsg =  // NOLINT(readability-identifier-naming)
@@ -1096,6 +1230,15 @@ void RegisterFindHelperTests(ImGuiTestEngine* engine, IRegressionTestHook* hook)
     IRegressionTestHook* hook = g_regression_hook;
     if (hook != nullptr) {
       RunFixtureExtFoldersAndCase(ctx, hook, "ext_cpp_folders_only_zero");
+    }
+  };
+
+  // Folder file count: check that "# Files" column contains expected recursive non-directory counts.
+  ImGuiTest* fx_ffc = IM_REGISTER_TEST(engine, "fixture", "folder_file_counts");
+  fx_ffc->TestFunc = [](ImGuiTestContext* ctx) {
+    IRegressionTestHook* hook = g_regression_hook;
+    if (hook != nullptr) {
+      RunFixtureFolderFileCountCase(ctx, hook, "folder_file_counts");
     }
   };
 }

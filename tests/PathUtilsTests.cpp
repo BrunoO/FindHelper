@@ -1,6 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <array>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "TestHelpers.h"
@@ -388,28 +390,21 @@ TEST_SUITE("TrimTrailingSeparators") {
         CHECK(path_utils::TrimTrailingSeparators("C:\\Windows") == "C:\\Windows");
     }
 
-    TEST_CASE("single trailing slash is removed") {
-        CHECK(path_utils::TrimTrailingSeparators("/a/b/") == "/a/b");
-    }
-
-    TEST_CASE("single trailing backslash is removed") {
-        CHECK(path_utils::TrimTrailingSeparators("C:\\Windows\\") == "C:\\Windows");
-    }
-
-    TEST_CASE("multiple trailing separators are all removed") {
-        CHECK(path_utils::TrimTrailingSeparators("/a/b///") == "/a/b");
-        CHECK(path_utils::TrimTrailingSeparators("dir\\\\\\") == "dir");
-    }
-
-    TEST_CASE("mixed trailing separators are all removed") {
-        CHECK(path_utils::TrimTrailingSeparators("/a/b\\/") == "/a/b");
-        CHECK(path_utils::TrimTrailingSeparators("/a/b/\\") == "/a/b");
-    }
-
-    TEST_CASE("path consisting entirely of separators becomes empty") {
-        CHECK(path_utils::TrimTrailingSeparators("///") == "");
-        CHECK(path_utils::TrimTrailingSeparators("\\\\") == "");
-        CHECK(path_utils::TrimTrailingSeparators("/") == "");
+    TEST_CASE("trailing separator removal and all-separator collapse") {
+        const std::array<std::pair<const char*, const char*>, 9> cases{{
+            {"/a/b/", "/a/b"},
+            {"C:\\Windows\\", "C:\\Windows"},
+            {"/a/b///", "/a/b"},
+            {R"(dir\\\)", "dir"},
+            {"/a/b\\/", "/a/b"},
+            {"/a/b/\\", "/a/b"},
+            {"///", ""},
+            {R"(\\)", ""},
+            {"/", ""},
+        }};
+        for (const auto& [input, expected] : cases) {
+            CHECK(path_utils::TrimTrailingSeparators(input) == expected);
+        }
     }
 
     TEST_CASE("leading separators are preserved") {

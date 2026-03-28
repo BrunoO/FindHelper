@@ -13,7 +13,7 @@ You are a senior software architect specializing in structured specification dev
 
 **Project context (USN_WINDOWS / FindHelper):**
 - Cross-platform file search app: **macOS** (main dev), **Windows** (primary target), **Linux** (secondary). ImGui GUI; C++17 only (no older, no newer).
-- Quality: clang-tidy + SonarQube; invariants and assertions in code; DRY constants (see docs/analysis/2026-02-20_DRY_CONSTANTS_ANALYSIS.md). No backward compatibility required.
+- Quality: clang-tidy + SonarQube; invariants and assertions in code; DRY constants (see docs/analysis/DRY_CONSTANTS_GUIDE.md). No backward compatibility required.
 - Build/verify: On macOS use `scripts/build_tests_macos.sh` only; do not run cmake/make/clang++ directly unless the task explicitly requires it. Windows: CMake + optional PGO; see AGENTS.md "Modifying CMakeLists.txt Safely".
 - Standards: `AGENTS.md` (always applied), `docs/standards/CXX17_NAMING_CONVENTIONS.md`, `internal-docs/prompts/AGENT_STRICT_CONSTRAINTS.md`. Production checklist: `docs/plans/production/PRODUCTION_READINESS_CHECKLIST.md`.
 
@@ -73,7 +73,7 @@ For each story (or group), list **measurable** criteria:
 - **Code invariants:** Pre/postconditions or assertions you will add (e.g. loop invariants, state checks). Explicitly **enumerate additional invariants** discovered during the spec (e.g. data structure relationships, state-machine rules, threading constraints) and specify **where** they will be enforced (types vs runtime checks, API boundaries, promotion/swap points).
 - **Quality gates:** No new SonarQube or clang-tidy violations; preferred style applied so one fix satisfies both (in-class init, const ref, no `} if (` on one line — see AGENTS.md "Clang-Tidy and SonarQube Alignment"). If suppression is unavoidable, `// NOSONAR` on the **same line** as the issue only.
 - **Tests:** Unit tests (doctest) where appropriate; coverage expectations if set (e.g. >90% for new code).
-- **Duplication:** No new duplication; reuse existing constants/helpers (DRY). See `docs/analysis/2026-02-20_DRY_CONSTANTS_ANALYSIS.md` for where to add shared constants.
+- **Duplication:** No new duplication; reuse existing constants/helpers (DRY). See `docs/analysis/DRY_CONSTANTS_GUIDE.md` for where to add shared constants.
 
 Present in a **table** (story ID, criterion, measurable check). **Pause for my confirmation.**
 
@@ -235,7 +235,7 @@ Follow these instructions:
 | Project rules (always applied) | `AGENTS.md` |
 | Strict constraints for task prompts | `internal-docs/prompts/AGENT_STRICT_CONSTRAINTS.md` |
 | Naming | `docs/standards/CXX17_NAMING_CONVENTIONS.md` |
-| DRY constants | `docs/analysis/2026-02-20_DRY_CONSTANTS_ANALYSIS.md` |
+| DRY constants | `docs/analysis/DRY_CONSTANTS_GUIDE.md` |
 | Clang-tidy vs Sonar (avoid double work) | `internal-docs/analysis/2026-02-01_CLANG_TIDY_VS_SONAR_AVOID_DOUBLE_WORK.md` |
 | Production checklist | `docs/plans/production/PRODUCTION_READINESS_CHECKLIST.md` |
 | Task prompt structure | `internal-docs/prompts/TaskmasterPrompt.md` |

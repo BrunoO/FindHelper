@@ -34,6 +34,9 @@ namespace ui {
 /** Renders the PGO tooltip when the previously rendered ImGui item is hovered. */
 void RenderPgoTooltipIfHovered(char pgo_mode);
 
+/** Short OS name for compact UI (e.g. status bar): "Windows", "macOS", "Linux". */
+[[nodiscard]] const char* GetAboutPlatformShortLabel();
+
 /** Platform/monitoring label: "Windows (No Monitoring)", "macOS (No Monitoring)", "Linux (No Monitoring)". */
 [[nodiscard]] const char* GetAboutPlatformMonitoringLabel();
 

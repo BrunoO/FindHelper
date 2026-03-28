@@ -29,6 +29,8 @@
 
 #include "core/CommandLineArgs.h"
 
+#include <algorithm> // For std::equal
+#include <cctype>    // For std::tolower
 #include <cstdlib>   // For std::atoi
 #include <cstring>   // For strcmp, strncmp
 #include <fstream>   // For std::ofstream
@@ -54,6 +56,55 @@ constexpr int kDumpIndexToArgLen = 16;
 constexpr int kIndexFromFileArgLen = 18;
 constexpr int kCrawlFolderArgLen = 15;
 constexpr int kWinVolumeArgLen = 13;
+
+constexpr std::string_view kMftMetadataReadingPrefix = "--mft-metadata-reading=";
+
+[[nodiscard]] inline bool EqualsIgnoreCaseAscii(std::string_view a, std::string_view b) {
+  return a.size() == b.size() &&
+         std::equal(a.begin(), a.end(), b.begin(),
+                    [](char ca, char cb) {
+                      return std::tolower(static_cast<unsigned char>(ca)) ==
+                             std::tolower(static_cast<unsigned char>(cb));
+                    });
+}
+
+// Parses --mft-metadata-reading=true|false (inline or space-separated). Returns true if arg was this option.
+inline bool ParseMftMetadataReadingArg(const char* arg, int& i, int argc, char** argv,
+                                       bool* target) {
+  const std::string_view arg_sv(arg);
+  if (arg_sv.size() >= kMftMetadataReadingPrefix.size() &&
+      arg_sv.substr(0, kMftMetadataReadingPrefix.size()) == kMftMetadataReadingPrefix) {
+    if (arg_sv.size() == kMftMetadataReadingPrefix.size()) {
+      LOG_WARNING_BUILD("--mft-metadata-reading requires value true or false (e.g. --mft-metadata-reading=false)");
+      return true;
+    }
+    if (const std::string_view value_sv = arg_sv.substr(kMftMetadataReadingPrefix.size());
+        EqualsIgnoreCaseAscii(value_sv, "true")) {
+      *target = true;
+    } else if (EqualsIgnoreCaseAscii(value_sv, "false")) {
+      *target = false;
+    } else {
+      LOG_WARNING_BUILD("Invalid --mft-metadata-reading value (use true or false): " << value_sv);
+    }
+    return true;
+  }
+
+  if (arg_sv == "--mft-metadata-reading" && i + 1 < argc) {
+    if (const std::string_view value_sv(argv[i + 1]); EqualsIgnoreCaseAscii(value_sv, "true")) {
+      *target = true;
+      ++i;
+    } else if (EqualsIgnoreCaseAscii(value_sv, "false")) {
+      *target = false;
+      ++i;
+    } else {
+      LOG_WARNING_BUILD("Invalid --mft-metadata-reading value (use true or false): " << value_sv);
+      ++i;
+    }
+    return true;
+  }
+
+  return false;
+}
 
 // Configuration for integer argument parsing (pointer avoids ref data member)
 struct IntArgConfig {
@@ -190,6 +241,9 @@ bool ProcessOptionArgs(const char* arg, int& i, int argc, char** argv, CommandLi
   if (ParseStringArg(arg, i, argc, argv, "--win-volume=", kWinVolumeArgLen, args.win_volume_override)) {
     return true;
   }
+  if (ParseMftMetadataReadingArg(arg, i, argc, argv, &args.mft_metadata_reading)) {
+    return true;
+  }
   return false;
 }
 
@@ -243,6 +297,7 @@ void ShowHelp(const char* program_name) {
   std::cout << "                                Platform: macOS/Linux: required if no index file.\n";
   std::cout << "                                Platform: Windows: used when no admin rights and no index file.\n";
   std::cout << "  --win-volume=<volume>         Override volume to monitor (e.g., D:). Platform: Windows only; default C:.\n";
+  std::cout << "  --mft-metadata-reading=<t>    Windows USN initial index: read size/mtime from MFT per file (true|false). Default true.\n";
   std::cout << "  --run-imgui-tests-and-exit    Run all ImGui Test Engine tests; the window closes automatically when tests finish.\n";
   std::cout << "                                Requires a build with ENABLE_IMGUI_TEST_ENGINE; the flag is ignored otherwise.\n";
   std::cout << "\n";

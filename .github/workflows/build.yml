@@ -116,11 +116,11 @@ jobs:
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST == 'true'
         run: |
           $env:BOOST_ROOT = "${{ github.workspace }}/boost_1_90_0"
-          cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_MFT_METADATA_READING=ON -DFAST_LIBS_BOOST=ON -DBOOST_ROOT="${{ github.workspace }}/boost_1_90_0"
+          cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DFAST_LIBS_BOOST=ON -DBOOST_ROOT="${{ github.workspace }}/boost_1_90_0"
 
       - name: Configure (Windows, without Boost)
         if: matrix.os == 'windows-latest' && env.BUILD_WITH_BOOST != 'true'
-        run: cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_MFT_METADATA_READING=ON
+        run: cmake -B build -S . -A x64 -DBUILD_TESTS=ON
 
       - name: Configure (macOS)
         if: matrix.os == 'macos-latest'

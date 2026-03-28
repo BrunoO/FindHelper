@@ -209,6 +209,10 @@ public:
   [[nodiscard]] bool IsSearchCompleteForRegressionTest() const;
   /** @brief For regression test hook: result count from last search. */
   [[nodiscard]] size_t GetSearchResultCountForRegressionTest() const;
+  /** @brief For regression test hook: folder file count for a specific result row. */
+  [[nodiscard]] uint64_t GetSearchResultFolderFileCountForRegressionTest(size_t index) const;
+  /** @brief For regression test hook: full path for a specific result row. */
+  [[nodiscard]] std::string_view GetSearchResultPathForRegressionTest(size_t index) const;
   /** @brief For regression test hook: clipboard text from app's GLFW window (same as copy path uses). */
   [[nodiscard]] std::string GetClipboardTextForRegressionTest() const;
 #endif  // ENABLE_IMGUI_TEST_ENGINE

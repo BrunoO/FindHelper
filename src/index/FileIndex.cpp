@@ -320,7 +320,7 @@ void FileIndex::Remove(uint64_t id) {
 }
 
 void FileIndex::RefreshPathToIdAfterRenameOrMoveLocked(uint64_t id,
-                                                       const std::string& old_path,
+                                                       std::string_view old_path,
                                                        const FileEntry* entry) {
   // Directory Rename/Move calls UpdatePrefix and rewrites all descendant paths.
   // Rebuild path_to_id_ so it stays consistent; single-id update for files.

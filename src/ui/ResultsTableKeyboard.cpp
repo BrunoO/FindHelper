@@ -162,7 +162,7 @@ struct KeyHoldState {
 // 1. One physical press = one action: never trigger on raw IsKeyDown(key) alone.
 // 2. One-shot shortcuts: use KeyPressedOnce(key) [= ImGui::IsKeyPressed(key, false)] only.
 // 3. M/T/U: use HandleDebouncedMarkKey only (trigger on IsKeyPressed(key, false) + 50ms cooldown after release).
-// See docs/design/2026-02-18_RESULTS_TABLE_KEYBOARD_SHORTCUTS.md.
+// See docs/design/RESULTS_TABLE_KEYBOARD_SHORTCUTS.md.
 
 // Escape a single CSV field using standard rules: wrap in double quotes if it contains
 // a comma, quote, or newline, and double any embedded quotes.

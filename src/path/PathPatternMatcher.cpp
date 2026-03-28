@@ -1152,10 +1152,14 @@ std::string_view ExtractAnchors(std::string_view pattern, bool& anchor_start, bo
  * @param pattern Pattern to normalize (modified)
  */
 void NormalizePattern(std::string& pattern) {
-  auto pos = pattern.find("**/");
+  size_t pos = 0;
   while (pos != std::string::npos) {
-    pattern.erase(pos + 2, 1);
-    pos = pattern.find("**/", pos + 2);
+    if (auto found_pos = pattern.find("**/", pos); found_pos != std::string::npos) {
+      pattern.erase(found_pos + 2, 1);
+      pos = found_pos + 2;
+    } else {
+      break;
+    }
   }
 }
 

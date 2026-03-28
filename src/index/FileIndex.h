@@ -387,7 +387,7 @@ private:
   void AppendPathToIdMapLocked(uint64_t id, std::string_view path);
 
   // After Rename/Move succeed: sync path_to_id_ (directory → full rebuild; file → unlink old + link new).
-  void RefreshPathToIdAfterRenameOrMoveLocked(uint64_t id, const std::string& old_path,
+  void RefreshPathToIdAfterRenameOrMoveLocked(uint64_t id, std::string_view old_path,
                                               const FileEntry* entry);
 
   // Unlink (h, id) from path_to_id_ chain; caller holds lock.
@@ -412,7 +412,7 @@ private:
       size_t idx) const; // By array index (for search loops)
 
   // Protects path_storage_, storage_, path_to_id_*, operations_; shared_lock for reads,
-  // unique_lock for writes. No I/O or heavy work under this lock (see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
+  // unique_lock for writes. No I/O or heavy work under this lock (see docs/design/LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
   mutable std::shared_mutex index_mutex_;  // NOLINT(readability-identifier-naming) - snake_case_ per project convention; clang-tidy flags multi-word with suffix
 
   // Core data storage (ID -> metadata, string pool, directory cache)

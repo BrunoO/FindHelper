@@ -117,6 +117,12 @@ static std::string FormatExtensionsForDisplay(std::string_view extensions) {
 static std::string BuildRecentSearchTooltip(const SavedSearch& recent) {
   std::string tooltip;
 
+  if (!recent.aiSearchDescription.empty()) {
+    tooltip += "Natural language:\n";
+    tooltip += recent.aiSearchDescription;
+    tooltip += "\n";
+  }
+
   if (!recent.extensions.empty()) {
     // Format extensions nicely: *.cpp, *.h, *.hpp
     std::vector<std::string> ext_list = ParseExtensions(recent.extensions, ',');

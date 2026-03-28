@@ -79,5 +79,7 @@ class FileIndex;
 // indexed_file_count: Optional, caller-owned pointer to atomic counter for progress updates.
 //   Must outlive the call; may be nullptr. Caller (e.g. UsnMonitor) owns the atomic.
 // CODE QUALITY FIX #5: Implementation moved to .cpp file to reduce compile time
+// enable_mft_metadata_reading: Windows only; when false, size/mtime stay not-loaded until lazy load.
 bool PopulateInitialIndex(HANDLE volume_handle, FileIndex &file_index,
-                          std::atomic<size_t>* indexed_file_count = nullptr);
+                          std::atomic<size_t>* indexed_file_count = nullptr,
+                          bool enable_mft_metadata_reading = true);

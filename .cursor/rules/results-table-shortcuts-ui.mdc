@@ -31,4 +31,4 @@ if (KeyPressedOnce(ImGuiKey_M)) { MarkRow(); }
 
 Keep the in-file comment block “Shortcut implementation rules (regression prevention)” in sync when changing behavior.
 
-**Reference:** `docs/design/2026-02-18_RESULTS_TABLE_KEYBOARD_SHORTCUTS.md` (§ Regression prevention).
+**Reference:** `docs/design/RESULTS_TABLE_KEYBOARD_SHORTCUTS.md` (§ Regression prevention).

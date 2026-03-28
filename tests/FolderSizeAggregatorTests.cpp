@@ -21,10 +21,9 @@ std::optional<FolderSizeAggregator::FolderStats> WaitForResult(const FolderSizeA
   return std::nullopt;
 }
 
-}  // namespace
-
-TEST_CASE("FolderSizeAggregator - sums files under prefix") {
-  FileIndex index;
+// Shared tree for "sums under root" and "file_count under root" tests: root with a.txt, b.txt,
+// sub/c.txt, plus /other/d.txt outside root (Sonar: duplicate 20-line setup blocks).
+void InsertStandardBranchingTree(FileIndex& index) {
   index.Insert(1, 0, "root", true);
   index.Insert(2, 1, "a.txt", false, {0, 0}, 100);
   index.Insert(3, 1, "b.txt", false, {0, 0}, 200);
@@ -33,15 +32,23 @@ TEST_CASE("FolderSizeAggregator - sums files under prefix") {
   index.Insert(6, 0, "other", true);
   index.Insert(7, 6, "d.txt", false, {0, 0}, 1000);
   index.RecomputeAllPaths();
+}
 
+[[nodiscard]] std::optional<FolderSizeAggregator::FolderStats> AggregateStandardBranchingTreeAtRoot() {
+  FileIndex index;
+  InsertStandardBranchingTree(index);
   FolderSizeAggregator aggregator(index);
   const std::string root_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "root");
   aggregator.Request(1, root_path);
+  return WaitForResult(aggregator, 1);
+}
 
-  const auto result = WaitForResult(aggregator, 1);
+}  // namespace
+
+TEST_CASE("FolderSizeAggregator - sums files under prefix") {
+  const auto result = AggregateStandardBranchingTreeAtRoot();
   REQUIRE(result.has_value());
-  const auto& stats = result.value();
-  CHECK(stats.total_size == 350U);  // 100 + 200 + 50; /other/d.txt excluded
+  CHECK(result.value().total_size == 350U);  // 100 + 200 + 50; /other/d.txt excluded
 }
 
 TEST_CASE("FolderSizeAggregator - excludes sibling directories") {
@@ -162,25 +169,10 @@ TEST_CASE("FolderSizeAggregator - Reset discards in-flight result") {
 }
 
 TEST_CASE("FolderSizeAggregator - file_count counts only non-directory descendants") {
-  FileIndex index;
-  index.Insert(1, 0, "root", true);
-  index.Insert(2, 1, "a.txt", false, {0, 0}, 100);
-  index.Insert(3, 1, "b.txt", false, {0, 0}, 200);
-  index.Insert(4, 1, "sub", true);         // directory — must NOT be counted
-  index.Insert(5, 4, "c.txt", false, {0, 0}, 50);
-  index.Insert(6, 0, "other", true);
-  index.Insert(7, 6, "d.txt", false, {0, 0}, 1000);
-  index.RecomputeAllPaths();
-
-  FolderSizeAggregator aggregator(index);
-  const std::string root_path = path_utils::JoinPath(path_utils::GetDefaultVolumeRootPath(), "root");
-  aggregator.Request(1, root_path);
-
-  const auto result = WaitForResult(aggregator, 1);
+  const auto result = AggregateStandardBranchingTreeAtRoot();
   REQUIRE(result.has_value());
-  const auto& stats = result.value();
-  // a.txt, b.txt, sub/c.txt → 3 files; /other/d.txt is outside /root
-  CHECK(stats.file_count == 3U);
+  // a.txt, b.txt, sub/c.txt → 3 files; /other/d.txt is outside /root; "sub" dir not counted
+  CHECK(result.value().file_count == 3U);
 }
 
 TEST_CASE("FolderSizeAggregator - file_count is 0 for empty folder") {

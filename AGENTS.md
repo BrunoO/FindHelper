@@ -284,7 +284,7 @@ void ProcessData(const int* data, size_t size) {  // ✅ Added const, better typ
   - **File-system / attribute helpers:** `file_system_utils_constants` in `utils/FileSystemUtils.h` where appropriate.
 - **Same file:** If the same value is used in more than one place in a single file, define one named constant at file or namespace scope and use it everywhere in that file (e.g. do not repeat `300` for the same debounce in two functions).
 
-See **`docs/analysis/2026-02-20_DRY_CONSTANTS_ANALYSIS.md`** for examples of consolidations and remaining opportunities.
+See **`docs/analysis/DRY_CONSTANTS_GUIDE.md`** for examples of consolidations and remaining opportunities.
 
 #### Other Types of Duplication to Avoid
 

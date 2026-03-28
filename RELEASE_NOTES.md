@@ -1,5 +1,29 @@
 # Release Notes
 
+## March 28, 2026
+
+### Added
+
+- **Natural-language / Gemini:** Recent searches persist the NL field and show it in empty-state **Recent searches** tooltips; **Saved searches** combo shows the same text in tooltips when present.
+- **ImGui Test Engine:** Regression coverage for the **# Files** results column (fixture counts, data-driven polling).
+
+### Changed
+
+- **Status bar:** Version removed from the left cluster (still in **Help → About**); indeterminate **busy** bar renders more smoothly and covers **Gemini** calls, cloud attribute loading, and progressive total-size work.
+- **Windows indexing:** MFT metadata reading is toggled with **`--mft-metadata-reading=true|false`** (default true) instead of a CMake option.
+- **Documentation:** Stable paths and **DRY** guide under `docs/` for published snapshots; outdated internal task markdown removed.
+
+### Fixed
+
+- **Windows:** Results-table shell drag-and-drop advertises **copy** only so Explorer does not default to **move** on same-volume drops.
+- **Path patterns:** Normalisation when collapsing `**/` sequences.
+
+### Code quality
+
+- Sonar-driven cleanups (CLI, MFT/index logging, Help, StatusBar, search-strategy tests); deduplicated helpers in load balancing, Help rendering, ImGui shortcut/clipboard tests, and folder-size tests; `constexpr` for eligible static UI/test tables.
+
+---
+
 ## March 27, 2026
 
 ### Added
@@ -63,7 +87,7 @@
 - **Status bar progress bar:** When the app is busy (indexing, searching, loading attributes, or computing folder sizes), a themed indeterminate progress bar appears in the status bar. Track and fill use theme colors (Border, Accent). Footer layout reserves space so the status bar stays visible.
 - **Folder attributes:** Folder rows in the results table now display last modified time and aggregate size instead of placeholder \"Folder\" values. **NEEDS MORE TESTING**
 - **Linux:** Status bar now shows process memory (VmRSS from `/proc/self/status`), matching Windows and macOS. Thread count uses a cgroup-aware fallback when `std::thread::hardware_concurrency()` returns 0 (e.g. in containers).
-- **Documentation:** Lock ordering and critical-sections design note (`docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md`) — rules for no I/O under locks and per-component mutex usage.
+- **Documentation:** Lock ordering and critical-sections design note (`docs/design/LOCK_ORDERING_AND_CRITICAL_SECTIONS.md`) — rules for no I/O under locks and per-component mutex usage.
 - **Results shortcuts:** New Ctrl/Cmd+Shift+X shortcut copies selected or marked rows from the results table to the clipboard as CSV (header row plus one line per row, visible columns only).
 
 

@@ -30,6 +30,10 @@ struct CommandLineArgs {
   // Windows-specific: volume to monitor (e.g., "C:", "D:")
   std::string win_volume_override;  // Empty means no override
 
+  // Windows USN initial population: read file size / mtime via FSCTL_GET_NTFS_FILE_RECORD.
+  // Ignored on non-Windows builds. Default true; use --mft-metadata-reading=false to compare without it.
+  bool mft_metadata_reading = true;
+
   // Run ImGui Test Engine tests then exit (for coverage; requires ENABLE_IMGUI_TEST_ENGINE build)
   bool run_imgui_tests_and_exit = false;
 };

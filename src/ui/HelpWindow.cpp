@@ -41,7 +41,7 @@ void SectionHeader(const char* title) {
 }
 
 void RenderHelpWindowContent(const size_t* memory_bytes_from_state, bool* p_open) {
-    // About — version, build info, and host system characteristics (same kind of info as status bar left group + system)
+    // About — app version, build type, PGO, platform label, and host system details
     if (ImGui::CollapsingHeader("About", ImGuiTreeNodeFlags_DefaultOpen)) {
       ImGui::Text("%s", GetAboutAppDisplayName());
       ImGui::Text("Version: v-%s", GetAboutAppVersion());
@@ -69,7 +69,8 @@ void RenderHelpWindowContent(const size_t* memory_bytes_from_state, bool* p_open
     // What's new — high-level user-facing features (from RELEASE_NOTES.md; newest first)
     // Use BulletWrapped() because BulletText() does not wrap long lines
     if (ImGui::CollapsingHeader("What's new")) {
-      BulletWrapped("2026-03-27: Results table: \"# Files\" column — recursive file count under each folder (enable via column picker; hidden by default). Shows \"…\" while computing, \"–\" for files. Export CSV and Ctrl+Shift+X / Cmd+Shift+X clipboard copy include # Files.");
+      BulletWrapped(
+          R"fhelp(2026-03-27: Results table: "# Files" column — recursive file count under each folder (enable via column picker; hidden by default). Shows "…" while computing, "–" for files. Export CSV and Ctrl+Shift+X / Cmd+Shift+X clipboard copy include # Files.)fhelp");
       BulletWrapped("2026-03-21: Multi-file drag-and-drop: drag selected rows to Explorer, Finder, Desktop, or any shell target. Dragging an unselected row snaps selection to it (single-file drag); dragging a selected row drags all eligible selected files at once. Directories and files pending deletion are excluded. Windows & macOS.");
       BulletWrapped("2026-03-15: Status bar progress bar when the app is busy (indexing, searching, loading attributes, or computing folder sizes).");
       BulletWrapped("2026-03-15: Folder rows show last modified time and aggregate size instead of placeholder \"Folder\" values.");

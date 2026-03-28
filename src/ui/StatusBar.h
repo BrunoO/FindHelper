@@ -5,10 +5,10 @@
  * @brief Status bar rendering component
  *
  * This component handles rendering the status bar at the bottom of the main window,
- * displaying application version, monitoring status, search metrics, and system information.
+ * displaying build type, monitoring status, search metrics, and system information.
  *
  * The status bar is organized into three logical groups:
- * - Left: Version, build type, monitoring status (colored dot icon), volume (Windows)
+ * - Left: Platform name (macOS / Windows / Linux), monitoring status (colored dot icon), volume (Windows)
  * - Center: Total indexed items, displayed results count, queue size (during building), search time (when completed)
  * - Right: Search status, memory usage
  *
@@ -32,7 +32,7 @@ namespace ui {
  * @brief Static utility class for status bar rendering
  *
  * Renders the status bar with:
- * - Version and build type (left group)
+ * - Platform name (left group); build type and version are in Help → About
  * - Monitoring status with colored dot icon (left group, Windows only)
  * - Total indexed items count (center group)
  * - Displayed results count (center group, with filtered count if applicable)
@@ -52,7 +52,7 @@ public:
    * Displays application information organized into three groups:
    *
    * Left Group:
-   * - Version and build type: "v-X.X.X (Release/Debug, Boost/FS)"
+   * - Platform: "macOS", "Windows", or "Linux" (build type and version are in Help → About)
  * - Monitoring status: Colored dot icon "[*]" with tooltip (Windows only)
  *   - Green: Active and healthy
  *   - Red: Inactive or errors (buffers dropped)
@@ -83,7 +83,7 @@ public:
 
   /**
    * @brief Draws the themed indeterminate progress bar in the given rect when the app is busy.
-   * Does not consume layout space; call from a position after reserving the rect (e.g. overlap a Dummy).
+   * Busy covers indexing, search, attribute/folder work, cloud file futures, progressive total-size sum, and Gemini (API key). Does not consume layout space; call after reserving the rect (e.g. overlap a Dummy).
    * @param state GUI state
    * @param search_worker Search worker for busy state
    * @param rect_min Top-left of the bar (screen space)

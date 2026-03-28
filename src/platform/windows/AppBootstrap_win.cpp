@@ -301,6 +301,7 @@ void StartUsnMonitor(const CommandLineArgs& cmd_args, const AppSettings& app_set
   }
 
   MonitoringConfig monitor_config{ToWindowsVolumePath(app_settings.monitoredVolume)};
+  monitor_config.enable_mft_metadata_reading = cmd_args.mft_metadata_reading;
   result.monitor = std::make_unique<UsnMonitor>(file_index, monitor_config);
   if (!result.monitor->Start()) {
     // SECURITY: Check if this was a privilege dropping failure (critical security issue)

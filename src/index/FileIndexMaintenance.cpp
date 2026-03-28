@@ -81,7 +81,7 @@ FileIndexMaintenance::MaintenanceStats FileIndexMaintenance::GetMaintenanceStats
 }
 
 void FileIndexMaintenance::RebuildPathBuffer() {
-  // In-memory rebuild only; no I/O under lock (see docs/design/2026-03-15_LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
+  // In-memory rebuild only; no I/O under lock (see docs/design/LOCK_ORDERING_AND_CRITICAL_SECTIONS.md).
   const auto start = std::chrono::high_resolution_clock::now();
   const std::unique_lock lock(index_mutex_ref_);
 

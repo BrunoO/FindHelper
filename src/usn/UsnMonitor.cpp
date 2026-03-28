@@ -492,7 +492,8 @@ bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
   LOG_INFO("Starting initial index population");
   is_populating_index_.store(true);
   ScopedTimer timer("Initial index population");
-  if (!PopulateInitialIndex(handle, file_index_, &indexed_file_count_)) {
+  if (!PopulateInitialIndex(handle, file_index_, &indexed_file_count_,
+                            config_.enable_mft_metadata_reading)) {
     LOG_ERROR("Failed to populate initial index - stopping monitoring. Volume: " +
               config_.volume_path);
     is_populating_index_.store(false);
@@ -521,8 +522,8 @@ bool UsnMonitor::RunInitialPopulationAndPrivileges(HANDLE handle) {
 #ifdef _WIN32
   // SECURITY: Drop unnecessary privileges AFTER initial index population completes
   // CRITICAL: Must happen AFTER PopulateInitialIndex() because MFT reading
-  // (FSCTL_GET_NTFS_FILE_RECORD) requires SE_BACKUP_PRIVILEGE which is needed
-  // during initial population when MFT metadata reading is enabled.
+  // (FSCTL_GET_NTFS_FILE_RECORD) requires SE_BACKUP_PRIVILEGE when
+  // enable_mft_metadata_reading is true during initial population.
   //
   // See docs/security/PRIVILEGE_DROPPING_STATUS.md for detailed comparison.
   if (privilege_utils::DropUnnecessaryPrivileges()) {
