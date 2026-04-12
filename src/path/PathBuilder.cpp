@@ -1,0 +1,136 @@
+#include "path/PathBuilder.h"
+#include "utils/Logger.h"
+#include <array>
+#include <cassert>
+#include <cctype>
+#include <sstream>
+
+// Collect path components in reverse order (leaf to root).
+// Names are read from name_cache as string_view into the arena (stable for arena lifetime).
+int PathBuilder::CollectPathComponents(uint64_t parent_id,
+                                       std::string_view name,
+                                       const FileIndexStorage& storage,
+                                       const NameArena& name_cache,
+                                       std::array<std::string_view, kMaxPathDepth>& components) {
+  int component_count = 0;
+
+  // Leaf name is already a string_view into the arena — stable for the arena's lifetime.
+  components.at(static_cast<size_t>(component_count)) = name;
+  ++component_count;
+  uint64_t current_id = parent_id;
+
+  // Walk up the parent chain, reading each parent's name from the arena.
+  while (component_count < kMaxPathDepth) {
+    const FileEntry* entry = storage.GetEntry(current_id);
+    if (entry == nullptr) {
+      break;
+    }
+    const std::string_view parent_name = name_cache.Find(current_id);
+    if (parent_name.empty()) {
+      // Name not in cache (entry inserted after ReleaseNameCache — shouldn't happen).
+      // Empty names are never valid, so empty == not found.
+      // Return early instead of using a second break to satisfy Sonar's limit on
+      // nested break statements (S924) while preserving existing behaviour.
+      assert(component_count >= 1 && "Path must have at least the leaf name component");
+      return component_count;
+    }
+    components.at(static_cast<size_t>(component_count)) = parent_name;
+    ++component_count;
+
+    // Check for root directory (parent_id == current_id)
+    if (current_id == entry->parentID) {
+      // Postcondition: the leaf name was stored before entering the loop.
+      assert(component_count >= 1 && "Path must have at least the leaf name component");
+      return component_count;  // Root directory reached
+    }
+    current_id = entry->parentID;
+  }
+
+  // Postcondition: the leaf name was always stored at the top of this function.
+  assert(component_count >= 1 && "Path must have at least the leaf name component");
+  return component_count;
+}
+
+// Build path string from collected components
+std::string PathBuilder::BuildPathFromComponents(
+    const std::array<std::string_view, kMaxPathDepth>& components,
+    int component_count) {
+#ifdef _WIN32
+  // Calculate total size for single allocation
+  std::string drive_root_buffer;
+  std::string_view volume_root = path_utils::GetDefaultVolumeRootPathView();
+  int effective_component_count = component_count;
+
+  // On Windows, treat a top-level "X:" component as the drive root instead of
+  // prefixing with the default volume root. This prevents paths like "C:\\F:\\..."
+  // when crawling subst or secondary drives and when directory roots are named "X:".
+  if (component_count > 0) {
+    const std::string_view top_name = components.at(static_cast<size_t>(component_count - 1));
+    if (top_name.size() == 2 && top_name[1] == ':' &&
+        std::isalpha(static_cast<unsigned char>(top_name[0])) != 0) {
+      drive_root_buffer.clear();
+      drive_root_buffer.push_back(top_name[0]);
+      drive_root_buffer.push_back(':');
+      drive_root_buffer.push_back(path_utils::kPathSeparator);
+      volume_root = drive_root_buffer;
+      --effective_component_count;
+    }
+  }
+#else   // _WIN32
+  // Non-Windows: volume root is always the default; component count is unchanged.
+  const std::string_view volume_root = path_utils::GetDefaultVolumeRootPathView();
+  const int effective_component_count = component_count;
+#endif  // _WIN32
+
+  size_t total_len = volume_root.length();
+  if (effective_component_count > 0) {
+    for (int i = 0; i < effective_component_count; ++i) {
+      total_len += components.at(static_cast<size_t>(i)).length() + 1;  // component + separator
+    }
+    total_len -= 1; // No trailing separator at the end
+  }
+
+  std::string full_path;
+  full_path.reserve(total_len);
+
+  // Append volume root
+  full_path.append(volume_root);
+
+  // Append components in correct order (root to leaf)
+  for (int i = effective_component_count; i > 0; --i) {
+    if (i < effective_component_count) {
+      full_path.push_back(path_utils::kPathSeparator);
+    }
+    full_path.append(components.at(static_cast<size_t>(i - 1)));
+  }
+
+  return full_path;
+}
+
+// Build full path with depth limit checking and logging.
+// Called exclusively by PathRecomputer::RecomputeAllPaths.
+std::string PathBuilder::BuildFullPathWithLogging(uint64_t file_id,
+                                                  uint64_t parent_id,
+                                                  std::string_view name,
+                                                  const FileIndexStorage& storage,
+                                                  const NameArena& name_cache) {
+  std::array<std::string_view, kMaxPathDepth> components{};  // NOLINT(cppcoreguidelines-pro-type-member-init) - value-initialized
+
+  const int component_count = CollectPathComponents(
+      parent_id, name, storage, name_cache, components);
+
+  if (component_count >= kMaxPathDepth) {
+    std::ostringstream oss;
+    oss << "Path depth limit (" << kMaxPathDepth << ") reached for file ID: 0x"
+        << std::hex << file_id << std::dec << ", name: " << name
+        << " (path may be incomplete)";
+    LOG_WARNING(oss.str());
+  }
+
+  std::string result = BuildPathFromComponents(components, component_count);
+  // Postcondition: the volume root alone is already non-empty, so the result
+  // must never be empty regardless of component_count.
+  assert(!result.empty() && "Built path must not be empty");
+  return result;
+}
+

@@ -1,0 +1,31 @@
+---
+description: Enforce UI-state write confinement and staged async apply
+globs: "**/*.cpp,**/*.h,**/*.hpp,**/*.cc,**/*.cxx"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+  - "**/*.cc"
+  - "**/*.cxx"
+---
+
+# UI State Write Confinement
+
+- `GuiState` display/result containers are UI-thread owned; worker threads must not mutate them directly.
+- Background tasks may only write to dedicated staging buffers/queues with explicit synchronization.
+- Apply staged updates on the UI thread in one commit phase.
+- Cancellation/reset paths must clear staged state to prevent stale-generation apply.
+
+## Pattern
+
+```cpp
+// ✅ Worker: write staged values only
+{
+  std::scoped_lock lock(state.pending_mutex_);
+  state.pending_[i] = value;
+}
+
+// ✅ UI thread: apply once after completion
+ApplyPendingToResults(state, results);
+```
