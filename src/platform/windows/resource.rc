@@ -1,0 +1,50 @@
+#include "resource.h"
+#include <windows.h>
+#include "core/Version.h"
+
+// Application icon
+// Note: Icon with lowest ID value (ID 1) is used as the application icon by Windows
+// Placing it first ensures it's recognized as the main application icon.
+// The .ico file was moved during project reorganization to resources/icons/.
+// Path is relative to this .rc file:
+//   src/platform/windows/resource.rc -> ../../../resources/icons/app_icon.ico
+IDI_APP_ICON ICON "../../../resources/icons/app_icon.ico"
+
+// Application manifest for DPI awareness
+// Note: RT_MANIFEST is a different resource type, so ID 1 doesn't conflict with the icon
+// The manifest file was moved during project reorganization to resources/windows/.
+// Path is relative to this .rc file:
+//   src/platform/windows/resource.rc -> ../../../resources/windows/app.manifest
+1 RT_MANIFEST "../../../resources/windows/app.manifest"
+
+// Version information resource
+// This helps Windows Defender and other security tools recognize the application
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+FILEFLAGS      0x0L
+FILEOS         VOS__WINDOWS32
+FILETYPE       VFT_APP
+FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"  // English (US), Unicode
+        BEGIN
+            VALUE "CompanyName",      APP_DISPLAY_NAME_STR
+            VALUE "FileDescription",  APP_DISPLAY_NAME_STR " - Fast Cross-Platform File Search Application"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "FindHelper"
+            VALUE "LegalCopyright",   "Copyright (C) 2025"
+            VALUE "OriginalFilename", "FindHelper.exe"
+            VALUE "ProductName",      APP_DISPLAY_NAME_STR
+            VALUE "ProductVersion",   "1.0.0.0"
+            VALUE "Comments",         "Fast cross-platform file search application with AI assistance"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04B0  // English (US), Unicode
+    END
+END
