@@ -1,0 +1,15 @@
+[submodule "external/imgui"]
+	path = external/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "external/doctest"]
+	path = external/doctest
+	url = https://github.com/doctest/doctest.git
+[submodule "external/nlohmann_json"]
+	path = external/nlohmann_json
+	url = https://github.com/nlohmann/json.git
+[submodule "external/freetype"]
+	path = external/freetype
+	url = https://github.com/freetype/freetype.git
+[submodule "external/imgui_test_engine"]
+	path = external/imgui_test_engine
+	url = https://github.com/ocornut/imgui_test_engine.git

@@ -1,0 +1,246 @@
+# Build FindHelper on Windows, macOS, Linux.
+# Triggers:
+#   - workflow_dispatch: manual run via Actions → Build → Run workflow
+#     Automatically publishes a release on completion (rolling "latest" pre-release,
+#     or versioned release if optional version_tag is specified).
+# No push, pull_request, schedule, or tag triggers (avoids automatic CI on branches/PRs).
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Optional version tag (e.g. v1.2.0). If omitted, updates rolling "latest" pre-release.'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            # windows-2022 uses Visual Studio 2022 / MSVC v143; keeps Windows artifact runnable on Windows 7+
+            # (windows-2025 / VS 2026 drops Windows 7 support and imports CreateFile2 from KERNEL32.DLL)
+            config: Release
+            artifact_name: FindHelper-Windows-x64
+            artifact_path: build/Release/FindHelper.exe
+            package_name: FindHelper-Windows-x64.zip
+            build_with_boost: true
+          - os: macos-latest
+            config: Release
+            artifact_name: FindHelper-macOS
+            artifact_path: build/FindHelper.app
+            package_name: FindHelper-macOS.zip
+            build_with_boost: true
+          - os: ubuntu-22.04
+            # 22.04 → glibc 2.35; keeps Linux artifact runnable on older distros (24.04 would require glibc 2.39)
+            config: Release
+            artifact_name: FindHelper-Linux-x64
+            artifact_path: build/FindHelper
+            package_name: FindHelper-Linux-x64.tar.gz
+            build_with_boost: true
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      BUILD_WITH_BOOST: ${{ matrix.build_with_boost }}
+      BOOST_VERSION: "1.90.0"
+      BOOST_VERSION_TAG: "1_90_0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Boost (Windows): use downloaded source; CMake finds it via BOOST_ROOT (Option A).
+      # Two-layer cache: extracted dir (fast path) and zip (fallback so we only re-extract, not re-download).
+      - name: Cache Boost source (Windows)
+        id: cache-boost-win
+        uses: actions/cache@v4
+        with:
+          path: boost_${{ env.BOOST_VERSION_TAG }}
+          key: boost-src-${{ env.BOOST_VERSION }}-win
+        if: startsWith(matrix.os, 'windows') && env.BUILD_WITH_BOOST == 'true'
+
+      - name: Cache Boost zip (Windows)
+        id: cache-boost-zip-win
+        uses: actions/cache@v4
+        with:
+          path: boost_zip_win
+          key: boost-zip-${{ env.BOOST_VERSION }}-win
+        if: startsWith(matrix.os, 'windows') && env.BUILD_WITH_BOOST == 'true' && steps.cache-boost-win.outputs.cache-hit != 'true'
+
+      - name: Download Boost source (Windows)
+        if: startsWith(matrix.os, 'windows') && env.BUILD_WITH_BOOST == 'true' && steps.cache-boost-win.outputs.cache-hit != 'true'
+        run: |
+          if (Test-Path "boost_zip_win/boost_${{ env.BOOST_VERSION_TAG }}.zip") {
+            Expand-Archive -Path "boost_zip_win/boost_${{ env.BOOST_VERSION_TAG }}.zip" -DestinationPath .
+          } else {
+            New-Item -ItemType Directory -Force -Path boost_zip_win | Out-Null
+            curl --proto '=https' --proto-redir '=https' -sSL -o boost_zip_win/boost_${{ env.BOOST_VERSION_TAG }}.zip "https://archives.boost.io/release/${{ env.BOOST_VERSION }}/source/boost_${{ env.BOOST_VERSION_TAG }}.zip"
+            Expand-Archive -Path "boost_zip_win/boost_${{ env.BOOST_VERSION_TAG }}.zip" -DestinationPath .
+          }
+
+      # Boost (macOS): install via Homebrew (Option B).
+      - name: Install Boost (macOS)
+        if: matrix.os == 'macos-latest' && env.BUILD_WITH_BOOST == 'true'
+        run: brew install boost
+
+      # Boost (Linux): use vcpkg (previous working approach). Entire vcpkg dir (incl. downloaded Boost) is cached.
+      - name: Cache vcpkg (Linux, Boost)
+        id: vcpkg-cache-linux
+        uses: actions/cache@v4
+        with:
+          path: vcpkg
+          key: vcpkg-linux-boost-minimal-2
+        if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true'
+
+      - name: Install vcpkg and Boost (Linux, minimal)
+        if: matrix.os == 'ubuntu-22.04' && env.BUILD_WITH_BOOST == 'true' && steps.vcpkg-cache-linux.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git vcpkg
+          ./vcpkg/bootstrap-vcpkg.sh
+          ./vcpkg/vcpkg install boost-headers boost-unordered boost-regex boost-lockfree
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          PACKAGES="build-essential cmake pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev libcurl4-openssl-dev libfontconfig1-dev libx11-dev libxss-dev wayland-protocols libwayland-dev libxkbcommon-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libwayland-bin"
+          sudo apt-get update
+          sudo apt-get install -y $PACKAGES
+
+      - name: Configure (Windows, with Boost)
+        if: startsWith(matrix.os, 'windows') && env.BUILD_WITH_BOOST == 'true'
+        run: |
+          $env:BOOST_ROOT = "${{ github.workspace }}/boost_${{ env.BOOST_VERSION_TAG }}"
+          cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DFAST_LIBS_BOOST=ON -DENABLE_CTRACK_PROFILING=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT="${{ github.workspace }}/boost_${{ env.BOOST_VERSION_TAG }}"
+
+      - name: Configure (Windows, without Boost)
+        if: startsWith(matrix.os, 'windows') && env.BUILD_WITH_BOOST != 'true'
+        run: cmake -B build -S . -A x64 -DBUILD_TESTS=ON -DENABLE_CTRACK_PROFILING=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Configure (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          EXTRA=""
+          [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DENABLE_CTRACK_PROFILING=OFF $EXTRA
+
+      - name: Configure (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          EXTRA=""
+          [ "${{ env.BUILD_WITH_BOOST }}" = "true" ] && EXTRA="-DFAST_LIBS_BOOST=ON -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DENABLE_CTRACK_PROFILING=OFF $EXTRA
+
+      - name: Build (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: cmake --build build --config ${{ matrix.config }}
+
+      # NOTE: no Windows guardrail step — the pre-commit hook runs
+      # check_cpp_guardrails.py locally on staged files, which is sufficient
+      # and avoids runner console/toolchain drift (cp1252, missing DB).
+
+      - name: Build (macOS)
+        if: matrix.os == 'macos-latest'
+        run: cmake --build build --config ${{ matrix.config }}
+
+      - name: Build (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: cmake --build build
+
+      # build_tests ensures every test executable is linked before ctest runs (required on MSVC).
+      - name: Run tests
+        run: |
+          cmake --build build --config ${{ matrix.config }} --target build_tests
+          ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+
+      - name: Package (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        run: Compress-Archive -Path ${{ matrix.artifact_path }} -DestinationPath ${{ matrix.package_name }}
+
+      - name: Package (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Remove quarantine/extended attributes so the .app inside the zip is clean.
+          # Users may still see "damaged" when opening (Gatekeeper on the downloaded zip);
+          # they can run: xattr -cr FindHelper.app — see README.
+          xattr -cr ${{ matrix.artifact_path }}
+          zip -r ${{ matrix.package_name }} ${{ matrix.artifact_path }}
+
+      - name: Package (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: tar -czf ${{ matrix.package_name }} -C build FindHelper
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.package_name }}
+
+  # ── Release ──────────────────────────────────────────────────────────────────
+  # Runs once after all three build jobs complete successfully.
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: release-assets/
+
+      - name: List release assets
+        run: ls -la release-assets/
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_INPUT: ${{ inputs.version_tag }}
+        run: |
+          if [ -n "$TAG_INPUT" ]; then
+            TAG="$TAG_INPUT"
+          elif [[ "${{ github.ref }}" =~ ^refs/tags/v[0-9] ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG=""
+          fi
+
+          if [ -n "$TAG" ]; then
+            echo "Publishing versioned release: $TAG"
+            gh release create "$TAG" \
+              --title "FindHelper $TAG" \
+              --generate-notes \
+              release-assets/*
+          else
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            SUBJECT=$(git log -1 --pretty=format:'%s')
+            NOTES="Automated build from \`${GITHUB_REF_NAME}\` at ${SHORT_SHA}.
+
+          Not a stable release — download a versioned release for production use.
+
+          **Commit:** ${SHORT_SHA} — ${SUBJECT}"
+
+            echo "Publishing rolling 'latest' pre-release for commit ${SHORT_SHA}"
+            gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+            git push origin :refs/tags/latest 2>/dev/null || true
+
+            gh release create latest \
+              --prerelease \
+              --title "Latest build (${SHORT_SHA})" \
+              --notes "${NOTES}" \
+              release-assets/*
+          fi
+

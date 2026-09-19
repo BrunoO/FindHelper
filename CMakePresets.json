@@ -1,0 +1,168 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 19,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "BUILD_TESTS": "ON",
+        "ENABLE_IMGUI_TEST_ENGINE": "OFF"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "Windows Release (x64)",
+      "description": "Visual Studio 2022, Release, tests enabled, Boost fast libs",
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "cacheVariables": {
+        "FAST_LIBS_BOOST": "ON"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows Debug (x64)",
+      "description": "Visual Studio 2022, Debug, tests enabled, Boost fast libs. Build with --config Debug → build/Debug/",
+      "inherits": "windows-release"
+    },
+    {
+      "name": "windows-release-std",
+      "displayName": "Windows Release (x64, std libs)",
+      "description": "Visual Studio 2022, Release, tests enabled, no Boost",
+      "inherits": "windows-release",
+      "cacheVariables": {
+        "FAST_LIBS_BOOST": "OFF"
+      }
+    },
+    {
+      "name": "windows-debug-std",
+      "displayName": "Windows Debug (x64, std libs)",
+      "description": "Visual Studio 2022, Debug, tests enabled, no Boost",
+      "inherits": "windows-release-std"
+    },
+    {
+      "name": "macos-debug",
+      "displayName": "macOS Debug (Ninja)",
+      "description": "Ninja, Debug, tests enabled",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "macos-release",
+      "displayName": "macOS Release (Ninja)",
+      "description": "Ninja, Release, tests enabled",
+      "inherits": "macos-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux Release (Ninja)",
+      "description": "Ninja, Release, tests enabled",
+      "inherits": "macos-release"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-release-std",
+      "configurePreset": "windows-release-std",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-debug-std",
+      "configurePreset": "windows-debug-std",
+      "configuration": "Debug"
+    },
+    {
+      "name": "macos-debug",
+      "configurePreset": "macos-debug"
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release"
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-release-std",
+      "configurePreset": "windows-release-std",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-debug-std",
+      "configurePreset": "windows-debug-std",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-debug",
+      "configurePreset": "macos-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

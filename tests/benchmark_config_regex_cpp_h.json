@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "search_config": {
+    "path": "rs:.*[/\\\\]imgui[/\\\\].*",
+    "filename": "rs:.*\\.(cpp|h)$",
+    "extensions": [],
+    "folders_only": false,
+    "case_sensitive": false
+  }
+}

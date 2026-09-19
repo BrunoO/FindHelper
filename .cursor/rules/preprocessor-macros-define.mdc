@@ -1,0 +1,72 @@
+---
+description: #define usage and commenting — prefer constexpr over macros; when macros are needed, comment them properly
+globs: "**/*.cpp,**/*.h,**/*.hpp"
+alwaysApply: false
+paths:
+  - "**/*.cpp"
+  - "**/*.h"
+  - "**/*.hpp"
+---
+
+# #define and preprocessor macro usage
+
+Prefer C++17 alternatives to macros. When macros are required, name and comment them consistently.
+
+## Prefer constexpr / inline over #define
+
+Use `constexpr`, `inline`, or `const` instead of `#define` for constants and simple functions. Sonar cpp:S5028 and clang-tidy `cppcoreguidelines-macro-usage` flag macros.
+
+```cpp
+// ❌ Prefer constexpr
+#define MAX_RETRY_ATTEMPTS 3
+
+// ✅
+constexpr int kMaxRetryAttempts = 3;
+```
+
+## When #define is acceptable
+
+Use `#define` only when necessary, for example:
+
+- **Build/system:** Macros set by CMake or the build (e.g. `APP_VERSION`, `ENABLE_IMGUI_TEST_ENGINE`).
+- **Third-party/API:** A library or OS expects a macro (e.g. `GLFW_INCLUDE_NONE`, `NOMINMAX`, `IMGUI_ENABLE_FREETYPE`).
+- **Resource/RC:** Windows `.rc` files require macros (e.g. `IDI_APP_ICON`, `RESOURCE_H`).
+- **#ifdef feature toggles:** Feature detection or conditional compilation (e.g. `LOGGING_ENABLED`).
+- **String literal concatenation:** When C++ requires macro expansion for concatenation (e.g. `APP_DISPLAY_NAME_STR " – Help"`).
+
+When you must keep a macro, add a **same-line comment** explaining why it is required (and add NOSONAR/NOLINT if the tool flags it).
+
+## Naming
+
+Use **UPPER_SNAKE_CASE** for macro names (e.g. `NOMINMAX`, `APP_VERSION`, `ICON_FA_SEARCH`). See `docs/standards/CXX17_NAMING_CONVENTIONS.md` § Macros.
+
+## Commenting #define
+
+1. **Purpose:** Document what the macro does or why it exists. Use either a line above or a same-line comment.
+2. **When suppressing Sonar/clang-tidy:** Put the justification on the **same line** as the macro (e.g. `// NOSONAR(cpp:S5028) - Must remain macro for Windows .rc`). Do not put NOSONAR/NOLINT on a separate line.
+
+```cpp
+// ✅ Purpose on same line
+#define NOMINMAX  // Prevent min/max macro conflicts with Windows.h
+
+// ✅ Required macro with suppression and reason on same line
+#define APP_VERSION "dev"  // NOSONAR(cpp:S5028) - Must remain macro, set by CMake
+```
+
+## Commenting #endif
+
+For **every** `#endif`, add a matching comment (the condition that opened the block). Use **two spaces** before `//`. Same style for `#if`, `#ifdef`, `#ifndef`.
+
+```cpp
+#ifndef NOMINMAX
+#define NOMINMAX  // ...
+#endif            // NOMINMAX
+
+#ifdef _WIN32
+#include <windows.h>
+#endif  // _WIN32
+```
+
+**See also:** `.cursor/rules/platform-preprocessor-cpp.mdc` (platform blocks and “don’t change code inside #ifdef for cross-platform”).
+
+**Reference:** AGENTS.md § Platform-Specific Code Blocks (Comment #endif); `docs/standards/CXX17_NAMING_CONVENTIONS.md` § Macros.
