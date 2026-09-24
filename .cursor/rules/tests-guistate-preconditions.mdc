@@ -1,0 +1,55 @@
+---
+description: Test preconditions for tests touching GuiState or async workers (MarkCurrentThreadAsUI, quiesce before scope exit)
+globs: "tests/**/*.cpp"
+alwaysApply: false
+paths:
+  - "tests/**/*.cpp"
+---
+
+# GuiState / async-worker test preconditions (regression prevention)
+
+Two failure classes found in practice (`SearchControllerTests` stack-use-after-scope
+and UIThreadOwned assert aborts). When writing or modifying tests:
+
+## 1. Mark the test thread as the UI thread
+
+Tests that touch `GuiState` (even indirectly, through `SearchController::Update`, the
+results table helpers, etc.) must run on a thread registered with `MarkCurrentThreadAsUI()`.
+`UIThreadOwned<T>` mutable accessors assert `IsUIThread()` in debug builds and will abort
+otherwise. Use the custom-`main` pattern (`tests/GuiStateTests.cpp:31-36`):
+
+```cpp
+#define DOCTEST_CONFIG_IMPLEMENT  // NOT IMPLEMENT_WITH_MAIN when you define main()
+#include "doctest/doctest.h"
+
+int main(int argc, char** argv) {
+  MarkCurrentThreadAsUI();
+  doctest::Context context(argc, argv);
+  return context.run();
+}
+```
+
+## 2. Quiesce async workers before scope teardown
+
+Never end a test body while `SearchWorker::IsBusy()` is true — the worker captures
+stack references (`AppSettings const*`, `FileIndex&`) in its search params and will
+produce an ASan stack-use-after-scope when the test scope unwinds. Before the test
+function returns, disarm the trigger and drain:
+
+```cpp
+state.autoRefresh = false;  // or whatever trigger was armed
+while (search_worker->IsBusy()) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(2));
+}
+```
+
+## 3. Prefer tests that register invariants over deep polling loops
+
+When adding a regression test for a crash, keep it minimal and anchored to the
+specific invariant (see `.cursor/rules/imgui-test-engine-preconditions.mdc` for
+Test Engine–driven tests).
+
+**References:** `tests/GuiStateTests.cpp` (main pattern),
+`tests/SearchControllerTests.cpp` (`RepeatedAutoRefresh...` quiesce block),
+`.cursor/rules/ui-state-write-confinement-cpp.mdc` (ownership),
+`.cursor/rules/production-async-future-cpp.mdc` (future cleanup in tests too).

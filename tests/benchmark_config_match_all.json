@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "search_config": {
+    "path": "pp:**",
+    "filename": "",
+    "extensions": ["cpp", "h"],
+    "folders_only": false,
+    "case_sensitive": false
+  }
+}
