@@ -1,0 +1,72 @@
+# Differential Gate Fixture Corpus
+# Mapped to hazards in specs/2026-10-10_DIFFERENTIAL_GATE_GUARD_TEST_SPEC.md §4.1
+# Witness rows: matching only via gate-invisible component or exact shape
+# Decoy rows: matching via filename too (proves gate can find the literal)
+# Near-miss rows: similar text that must not match
+
+# Battery 1 & 2: path:"/dev" ci vs cs
+/mnt/DEV/shm/x.txt
+/a/Dev/y.txt
+/dev/null
+/dev/tty0
+/mnt/dev/log.txt
+
+# Battery 3 & 15: pp:**/dev** (dir component literal vs filename)
+/a/dev.deep/report.txt
+/dev/device.cpp
+/a/devil/report.txt
+/var/log/development/build.log
+
+# Battery 4: pp:**/include/**
+/x/include/a.h
+/include/include.h
+/x/inc/a.h
+
+# Battery 5: src/*.cpp (separator glob)
+/w/src/x.cpp.d/report.txt
+/src/main.cpp
+/src/main.h
+/w/src/other/test.cpp
+
+# Battery 6: *.cpp (suffix glob)
+/any/depth/deep/file.cpp
+/any/depth/deep/file.h
+
+# Battery 7: pp:/x/log+
+/x/log+
+/x/log+file.txt
+/x/loggg
+/x/other.txt
+
+# Battery 8: rs:\x41ndroid
+/usr/Android.txt
+/usr/x41ndroid.txt
+/usr/google.txt
+
+# Battery 9: path:"/etc" ext:"conf"
+/etc/svc/ntp.conf
+/etc/CONF/x.conf
+/etc/resolv.conf
+/var/svc/ntp.conf
+/etc/hosts
+
+# Battery 10: ext:"cpp"
+/a/b.cpp
+/a/b.cpp.d/c.cpp
+/a/b.txt
+
+# Battery 11: filename:"tty" path:"/dev"
+/dev/ttyS0
+/dev/pts/tty1
+/var/ttyS0
+
+# Battery 12: path:"/dev" folders_only:true
+/dev/nulls/dir_marker.txt
+
+# Battery 13: filename:"pp:*dev**"
+/x/y/devmon.exe
+/x/y/nodev.txt
+
+# Battery 14: path:"pp:C:\ab**"
+C:\ab\test.txt
+C:\cd\test.txt

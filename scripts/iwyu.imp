@@ -1,0 +1,40 @@
+[
+  # Darwin / macOS C internal headers -> C++ standard headers
+  { include: ["<_ctype.h>", "private", "<cctype>", "public"] },
+  { include: ["<_stdio.h>", "private", "<cstdio>", "public"] },
+  { include: ["<_stdlib.h>", "private", "<cstdlib>", "public"] },
+  { include: ["<_string.h>", "private", "<cstring>", "public"] },
+  { include: ["<_time.h>", "private", "<ctime>", "public"] },
+  { include: ["<_wctype.h>", "private", "<cwctype>", "public"] },
+  { include: ["<sys/_types/_size_t.h>", "private", "<cstddef>", "public"] },
+  { include: ["<sys/_types/_time_t.h>", "private", "<ctime>", "public"] },
+  { include: ["<sys/_types/_null.h>", "private", "<cstddef>", "public"] },
+  { include: ["<sys/errno.h>", "private", "<cerrno>", "public"] },
+
+  # libc++ internal forward declarations & detail headers -> public C++ headers
+  { include: ["<__fwd/string.h>", "private", "<string>", "public"] },
+  { include: ["<__fwd/string_view.h>", "private", "<string_view>", "public"] },
+  { include: ["<__fwd/memory.h>", "private", "<memory>", "public"] },
+  { include: ["<__fwd/vector.h>", "private", "<vector>", "public"] },
+  { include: ["<__fwd/pair.h>", "private", "<utility>", "public"] },
+  { include: ["<__fwd/tuple.h>", "private", "<tuple>", "public"] },
+  { include: ["<__fwd/ostream.h>", "private", "<ostream>", "public"] },
+  { include: ["<__fwd/istream.h>", "private", "<istream>", "public"] },
+  { include: ["<__fwd/sstream.h>", "private", "<sstream>", "public"] },
+  { include: ["<__fwd/span.h>", "private", "<span>", "public"] },
+  { include: ["<__fwd/subrange.h>", "private", "<ranges>", "public"] },
+  { include: ["@<__memory/.*>", "private", "<memory>", "public"] },
+  { include: ["@<__utility/.*>", "private", "<utility>", "public"] },
+  { include: ["@<__type_traits/.*>", "private", "<type_traits>", "public"] },
+  { include: ["@<__chrono/.*>", "private", "<chrono>", "public"] },
+  { include: ["@<__functional/.*>", "private", "<functional>", "public"] },
+  { include: ["@<__iterator/.*>", "private", "<iterator>", "public"] },
+  { include: ["@<__algorithm/.*>", "private", "<algorithm>", "public"] },
+  { include: ["@<__string/.*>", "private", "<string>", "public"] },
+
+  # Windows types stub on non-Windows platforms
+  { include: ["\"tests/WindowsTypesStub.h\"", "private", "\"utils/FileTimeTypes.h\"", "public"] },
+
+  # CTrack wrapper mediation (solves macro collision with CRoaring)
+  { include: ["\"ctrack.hpp\"", "private", "\"utils/CTrackWrapper.h\"", "public"] }
+]
