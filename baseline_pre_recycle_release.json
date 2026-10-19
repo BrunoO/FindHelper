@@ -1,0 +1,3 @@
+{"type":"build","index_size":706120,"build":"Release","hw_threads":8,"recompute_s":0.4,"trigram_mb":18.10,"extension_mb":0.49}
+{"type":"config","config":"tests/benchmark_config_sample.json","hits":186,"min_ms":1.70,"avg_ms":1.71,"max_ms":1.73,"p50_ms":1.71,"p95_ms":1.73,"stddev_ms":0.01,"cv_percent":0.68,"iterations_ms":[1.73,1.71,1.70,1.70,1.71]}
+{"type":"summary","peak_rss_mb":515.81}

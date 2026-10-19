@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "search_config": {
+    "path": "rs:.*\\.cpp$",
+    "filename": "",
+    "extensions": [],
+    "folders_only": false,
+    "case_sensitive": false
+  }
+}

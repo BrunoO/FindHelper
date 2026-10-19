@@ -1,0 +1,32 @@
+[
+  {
+    "directory": "C:/Users/dev/USN_WINDOWS/build",
+    "command": "\"C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.38/bin/Hostx64/x64/cl.exe\" /c /DWIN32 /D_WINDOWS /EHsc /std:c++17 /Zi /Ob2 /W3 /Yc\"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx\" /Fp\"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx.pch\" /Fo\"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx.obj\" /I\"C:/Users/dev/USN_WINDOWS/src\" /external:I\"C:/VS/include\" /external:W0 \"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx\"",
+    "file": "C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx",
+    "output": "C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx.obj"
+  },
+  {
+    "directory": "C:/Users/dev/USN_WINDOWS/build",
+    "command": "\"C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.38/bin/Hostx64/x64/cl.exe\" /c /DWIN32 /D_WINDOWS /EHsc /std:c++17 /Zi /Ob2 /W3 /Yu\"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx\" /Fp\"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx.pch\" /FI\"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx\" /I\"C:/Users/dev/USN_WINDOWS/src\" /external:I\"C:/VS/include\" /external:W0 \"C:/Users/dev/USN_WINDOWS/src/utils/Logger.cpp\"",
+    "file": "C:/Users/dev/USN_WINDOWS/src/utils/Logger.cpp",
+    "output": "C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/Logger.cpp.obj"
+  },
+  {
+    "directory": "C:/Users/dev/USN_WINDOWS/build",
+    "command": "\"C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.38/bin/Hostx64/x64/cl.exe\" /c /DWIN32 /D_WINDOWS /EHsc /std:c++17 /Zi /Ob2 /W3 /yu \"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx\" /fp \"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx.pch\" /fi \"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx\" /I\"C:/Users/dev/USN_WINDOWS/src\" /external:I\"C:/VS/include\" /external:W0 \"C:/Users/dev/USN_WINDOWS/src/search/FilenameTrigramIndex.cpp\"",
+    "file": "C:/Users/dev/USN_WINDOWS/src/search/FilenameTrigramIndex.cpp",
+    "output": "C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/FilenameTrigramIndex.cpp.obj"
+  },
+  {
+    "directory": "C:/Users/dev/USN_WINDOWS/build",
+    "command": "\"C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.38/bin/Hostx64/x64/cl.exe\" /c /DWIN32 /D_WINDOWS /EHsc /std:c++17 /Zi /Ob2 /W3 /FI\"C:/Users/dev/USN_WINDOWS/src/gui/Config.h\" /Yu\"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx\" /FI\"C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/cmake_pch.hxx\" /I\"C:/Users/dev/USN_WINDOWS/src\" /external:I\"C:/VS/include\" /external:W0 \"C:/Users/dev/USN_WINDOWS/src/gui/GuiState.cpp\"",
+    "file": "C:/Users/dev/USN_WINDOWS/src/gui/GuiState.cpp",
+    "output": "C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/GuiState.cpp.obj"
+  },
+  {
+    "directory": "C:/Users/dev/USN_WINDOWS/build",
+    "command": "\"C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.38/bin/Hostx64/x64/cl.exe\" /c /DWIN32 /D_WINDOWS /EHsc /std:c++17 /Zi /Ob2 /W3  /I\"C:/Users/dev/USN_WINDOWS/src\" /external:I\"C:/VS/include\" /external:W0 \"C:/Users/dev/USN_WINDOWS/src/main.cpp\"",
+    "file": "C:/Users/dev/USN_WINDOWS/src/main.cpp",
+    "output": "C:/Users/dev/USN_WINDOWS/build/CMakeFiles/app.dir/main.cpp.obj"
+  }
+]

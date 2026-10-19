@@ -1,0 +1,8 @@
+{"type":"build","index_size":706120,"build":"Release","hw_threads":8,"recompute_s":0.8,"trigram_mb":22.64,"extension_mb":0.55}
+{"type":"config","config":"tests/benchmark_config_regex_alternation_suffix.json","hits":29242,"min_ms":0.91,"avg_ms":0.95,"max_ms":1.09,"p50_ms":0.92,"p95_ms":1.09,"stddev_ms":0.06,"cv_percent":6.34,"iterations_ms":[0.91,0.98,1.09,0.95,0.91,0.92,0.92,0.92,0.92]}
+{"type":"config","config":"tests/benchmark_config_regexfn_selective_path.json","hits":182,"min_ms":1.76,"avg_ms":1.80,"max_ms":1.88,"p50_ms":1.79,"p95_ms":1.88,"stddev_ms":0.03,"cv_percent":1.92,"iterations_ms":[1.79,1.80,1.80,1.79,1.88,1.81,1.77,1.76,1.77]}
+{"type":"config","config":"tests/benchmark_config_substrfn_backtrack_path.json","hits":70,"min_ms":0.38,"avg_ms":0.38,"max_ms":0.40,"p50_ms":0.38,"p95_ms":0.40,"stddev_ms":0.01,"cv_percent":1.78,"iterations_ms":[0.39,0.38,0.38,0.39,0.38,0.38,0.40,0.39,0.38]}
+{"type":"config","config":"tests/benchmark_config_charclassfn_selective_path.json","hits":1396,"min_ms":15.25,"avg_ms":16.78,"max_ms":17.48,"p50_ms":17.29,"p95_ms":17.48,"stddev_ms":0.79,"cv_percent":4.73,"iterations_ms":[17.38,17.48,16.89,15.25,16.10,17.30,17.29,16.03,17.30]}
+{"type":"config","config":"tests/benchmark_config_regex_path_ext.json","hits":1486,"min_ms":0.04,"avg_ms":0.05,"max_ms":0.05,"p50_ms":0.04,"p95_ms":0.05,"stddev_ms":0.00,"cv_percent":2.25,"iterations_ms":[0.05,0.05,0.04,0.04,0.05,0.05,0.04,0.04,0.04]}
+{"type":"config","config":"tests/benchmark_config_regex_prefix_alternation.json","hits":662,"min_ms":1.75,"avg_ms":1.88,"max_ms":2.21,"p50_ms":1.83,"p95_ms":2.21,"stddev_ms":0.15,"cv_percent":8.17,"iterations_ms":[1.75,1.83,1.76,1.78,2.06,2.21,1.87,1.83,1.83]}
+{"type":"summary","peak_rss_mb":438.77}
