@@ -1,0 +1,48 @@
+#pragma once
+
+/**
+ * @file ui/SettingsWindow.h
+ * @brief Settings window rendering component
+ *
+ * This component handles rendering the settings window, displaying:
+ * - Appearance settings (font family, font size, UI scale)
+ * - Performance settings (thread pool size, dynamic chunk size, hybrid initial work percentage)
+ * - Save and Close buttons
+ */
+
+// Forward declarations
+struct AppSettings;
+class FileIndex;
+struct GLFWwindow;
+
+namespace ui {
+  class UIActions;
+}
+
+namespace ui::settings_window {
+
+/**
+ * @brief Renders the settings window
+ *
+ * Displays a floating, resizable window with application settings organized
+ * in sections:
+ * - Appearance: Font family selection, font size slider, UI scale slider
+ * - Performance: Thread pool size, dynamic chunk size, hybrid initial work percentage
+ * - Index Configuration: Folder selection for crawling (Windows: only when no admin or USN Journal inactive)
+ *
+ * Settings are saved to a JSON file when the Save button is clicked. UI scale
+ * (including "Auto", which resets user scale to 1.0) applies via FontScaleMain
+ * immediately; font family/size take effect after restart. Monitor DPI is
+ * applied automatically by ImGui (ConfigDpiScaleFonts).
+ *
+ * @param p_open Pointer to window visibility flag (modified when window is closed)
+ * @param settings Application settings (modified in-place, saved on Save button click)
+ * @param file_index FileIndex instance (needed to reset thread pool when size changes)
+ * @param actions UI actions interface (for runtime index building, may be nullptr)
+ * @param glfw_window GLFW window handle (for clipboard operations, may be nullptr)
+ */
+void Render(bool *p_open, AppSettings &settings, FileIndex &file_index, UIActions* actions = nullptr, GLFWwindow* glfw_window = nullptr);
+
+}  // namespace ui::settings_window
+
+
