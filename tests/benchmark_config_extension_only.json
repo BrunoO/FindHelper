@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "search_config": {
+    "filename": "",
+    "path": "",
+    "extensions": ["cpp"],
+    "folders_only": false,
+    "case_sensitive": false
+  }
+}
