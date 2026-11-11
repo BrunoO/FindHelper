@@ -1,0 +1,13 @@
+# Per-directory clang-tidy overrides for macOS platform code.
+# Inherits all rules from the root .clang-tidy, then disables checks that
+# produce unavoidable false positives in Objective-C++ platform glue.
+InheritParentConfig: true
+Checks: >-
+  -misc-const-correctness,
+  -readability-implicit-bool-conversion
+# Rationale:
+# - misc-const-correctness: Objective-C object pointers and ImGui handles are
+#   frequently ARC-qualified or mutated through non-const APIs; clang-tidy
+#   cannot see those mutations.
+# - readability-implicit-bool-conversion: ImGui/OpenGL/Metal flag and pointer
+#   checks follow the APIs' int/pointer conventions.
