@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tutorial: Structured Regex (rx:) in FindHelper</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --heading: #f0f6fc;
+      --accent: #58a6ff;
+      --cyan: #4ec9b0;
+      --amber: #ce9178;
+      --red: #f44747;
+      --purple: #bc89bd;
+      --code-bg: #090d13;
+      --code-text: #e6edf3;
+      --tag-bg: #1f242c;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2.5rem 1rem;
+    }
+
+    .container {
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+    }
+
+    h1 {
+      color: var(--heading);
+      font-size: 2.4rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      background: rgba(78, 201, 176, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(78, 201, 176, 0.35);
+      vertical-align: middle;
+    }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: #8b949e;
+    }
+
+    section {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+    }
+
+    h2 {
+      color: var(--heading);
+      font-size: 1.45rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
+
+    h3 {
+      color: var(--cyan);
+      font-size: 1.15rem;
+      margin: 1.25rem 0 0.5rem;
+    }
+
+    p {
+      margin-bottom: 0.85rem;
+    }
+
+    ul, ol {
+      margin-left: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    li {
+      margin-bottom: 0.4rem;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 0.2rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.9em;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 1rem 1.25rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92rem;
+      margin: 0.85rem 0 1.2rem;
+      line-height: 1.5;
+    }
+
+    .comment { color: #8b949e; font-style: italic; }
+    .keyword { color: var(--purple); font-weight: bold; }
+    .operator { color: var(--accent); }
+    .string { color: var(--amber); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--heading);
+      font-weight: 600;
+    }
+
+    .ui-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 600;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-cyan { background-color: var(--cyan); box-shadow: 0 0 8px rgba(78, 201, 176, 0.6); }
+    .dot-amber { background-color: var(--amber); box-shadow: 0 0 8px rgba(206, 145, 120, 0.6); }
+    .dot-red { background-color: var(--red); box-shadow: 0 0 8px rgba(244, 71, 71, 0.6); }
+
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: rgba(88, 166, 255, 0.08);
+      padding: 1rem 1.25rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1.25rem 0;
+    }
+
+    .callout-title {
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+    }
+
+    .example-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+      margin-top: 1rem;
+    }
+
+    @media (min-width: 768px) {
+      .example-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .example-card {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+    }
+
+    .example-card h4 {
+      color: var(--heading);
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 3rem;
+      font-size: 0.85rem;
+      color: #8b949e;
+      border-top: 1px solid var(--border);
+      padding-top: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Tutorial: Structured Regex (rx:) <span class="badge">FindHelper</span></h1>
+      <p class="subtitle">A human-readable, S-expression based regular expression alternative inspired by Emacs Lisp rx.</p>
+    </header>
+
+    <section id="introduction">
+      <h2>1. Why rx: ?</h2>
+      <p>Traditional regular expressions in search boxes suffer from dense punctuation, escaping hassles, and lookahead fragility:</p>
+      <pre><code><span class="comment"># Raw ECMAScript Regex: cryptic and escaping-heavy</span>
+re:^(?!.*[\\/](?:build|node_modules)[\\/]).*[\\/]src[\\/].*test_[a-zA-Z0-9]+\.(?:cpp|h)$</code></pre>
+      <p>With <code>rx:</code>, the same logic is written using self-documenting S-expressions where bare words require no quotes and directory slashes work seamlessly across Windows and POSIX:</p>
+      <pre><code><span class="comment"># Structured rx: clean, readable, self-documenting</span>
+rx:(path
+     (exclude-dir build node_modules)
+     (dir src)
+     (name (seq test_ (+ alnum)))
+     (ext cpp h))</code></pre>
+
+      <div class="callout">
+        <div class="callout-title">Core Principles of rx:</div>
+        <ul>
+          <li><strong>No mandatory quotes</strong>: Words like <code>cpp</code>, <code>src</code>, <code>test_</code> are written plainly. Use double quotes <code>"..."</code> only when tokens contain spaces (e.g., <code>(dir "Program Files")</code>).</li>
+          <li><strong>Auto-escaping</strong>: Dots, brackets, pluses, and stars are treated literally in names. <code>(seq CMakeLists.txt)</code> matches literal dots.</li>
+          <li><strong>Unanchored by default</strong>: Matches anywhere in target strings, unless anchored with <code>bos</code> (beginning of string) or <code>eos</code> (end of string).</li>
+          <li><strong>Zero hot-path overhead</strong>: Lowered to optimized ECMAScript regex with SIMD Boyer-Moore literal prefilters before parallel search workers start.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="ui-feedback">
+      <h2>2. Interactive Immediate-Mode UI Guidance</h2>
+      <p>As you type into FindHelper's <strong>Path</strong> or <strong>Name</strong> input fields, real-time styling guides your syntax:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Border Indicator</th>
+            <th>State</th>
+            <th>Behavior & Diagnostics</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="ui-indicator"><span class="dot dot-cyan"></span> Cyan Border</span></td>
+            <td><strong>Valid <code>rx:</code></strong></td>
+            <td>Query compiles cleanly. Hovering displays the emitted regex and harvested SIMD literal prefilter.</td>
+          </tr>
+          <tr>
+            <td><span class="ui-indicator"><span class="dot dot-amber"></span> Amber Border</span></td>
+            <td><strong>Incomplete</strong></td>
+            <td>Unclosed parentheses while actively typing: <code>[rx: incomplete] missing ')': unclosed '('</code>.</td>
+          </tr>
+          <tr>
+            <td><span class="ui-indicator"><span class="dot dot-red"></span> Red Border</span></td>
+            <td><strong>Syntax Error</strong></td>
+            <td>Detailed error message with "did you mean" suggestion (e.g. <code>unknown operator 'dire' (did you mean 'dir'?)</code>).</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="grammar-operators">
+      <h2>3. Language Reference</h2>
+
+      <h3>A. Sequences & Alternatives</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Operator</th>
+            <th>Example</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>seq</code>, <code>:</code>, <code>and</code></td>
+            <td><code>(seq hello world)</code></td>
+            <td>Concatenates expressions in order (emits <code>helloworld</code>).</td>
+          </tr>
+          <tr>
+            <td><code>or</code>, <code>|</code></td>
+            <td><code>(or cpp h hpp)</code></td>
+            <td>Matches any one alternative (emits <code>(?:cpp|h|hpp)</code>).</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>B. Quantifiers & Repetitions</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Operator</th>
+            <th>Example</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>*</code>, <code>zero-or-more</code></td>
+            <td><code>(* digit)</code></td>
+            <td>Zero or more repetitions (greedy).</td>
+          </tr>
+          <tr>
+            <td><code>+</code>, <code>one-or-more</code></td>
+            <td><code>(+ alpha)</code></td>
+            <td>One or more repetitions (greedy).</td>
+          </tr>
+          <tr>
+            <td><code>?</code>, <code>opt</code></td>
+            <td><code>(? "_backup")</code></td>
+            <td>Optional: zero or one occurrence.</td>
+          </tr>
+          <tr>
+            <td><code>repeat</code></td>
+            <td><code>(repeat 4 digit)</code><br><code>(repeat 2 4 hex)</code></td>
+            <td>Exact count <code>{N}</code> or bounded range <code>{MIN,MAX}</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>C. Character Classes & Sets</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Construct</th>
+            <th>Example</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>any</code></td>
+            <td><code>(any "a-z" "0-9" "_")</code></td>
+            <td>Custom character class (emits <code>[a-z0-9_]</code>).</td>
+          </tr>
+          <tr>
+            <td><code>not</code></td>
+            <td><code>(not digit)</code><br><code>(not (any "aeiou"))</code></td>
+            <td>Character negation (emits <code>[^0-9]</code>).</td>
+          </tr>
+          <tr>
+            <td>Named Classes &amp; Wildcards</td>
+            <td><code>digit</code>, <code>alpha</code>, <code>alnum</code>, <code>space</code>, <code>blank</code>, <code>word</code>, <code>xdigit</code>, <code>any-char</code> (or <code>any</code>, <code>anything</code>)</td>
+            <td>Standard ASCII character classes and wildcards.</td>
+          </tr>
+          <tr>
+            <td>Anchors</td>
+            <td><code>bos</code>, <code>eos</code>, <code>bow</code>, <code>eow</code>, <code>word-boundary</code></td>
+            <td>Start/end of string (<code>^</code>, <code>$</code>) and word boundaries (<code>\b</code>).</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>D. Path Extensions (V1)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Operator</th>
+            <th>Example</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>path</code></td>
+            <td><code>(path ...)</code></td>
+            <td>Root wrapper assembling path-level constraints.</td>
+          </tr>
+          <tr>
+            <td><code>dir</code></td>
+            <td><code>(dir src)</code><br><code>(dir src include)</code></td>
+            <td>Matches a folder segment anywhere in path ancestors. Multiple args act as alternatives.</td>
+          </tr>
+          <tr>
+            <td><code>exclude-dir</code>, <code>not-dir</code></td>
+            <td><code>(exclude-dir build .git)</code></td>
+            <td>Anchored negative lookahead preventing results from specified folder names.</td>
+          </tr>
+          <tr>
+            <td><code>name</code></td>
+            <td><code>(name (seq test_ (* alnum)))</code></td>
+            <td>Constrains the filename stem.</td>
+          </tr>
+          <tr>
+            <td><code>ext</code></td>
+            <td><code>(ext cpp h)</code></td>
+            <td>Matches file extensions at end of path (leading dots automatically stripped).</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="examples">
+      <h2>4. Hands-on Practice Recipes</h2>
+      <div class="example-grid">
+        <div class="example-card">
+          <h4>Recipe 1: C++ Headers in Include</h4>
+          <p class="comment">Find all .h/.hpp files located under an include directory:</p>
+          <pre><code>rx:(path (dir include) (ext h hpp))</code></pre>
+        </div>
+
+        <div class="example-card">
+          <h4>Recipe 2: Ignore Build Artifacts</h4>
+          <p class="comment">Search config files while pruning build noise:</p>
+          <pre><code>rx:(path
+     (exclude-dir build target node_modules)
+     (name (seq config (* any-char))))</code></pre>
+        </div>
+
+        <div class="example-card">
+          <h4>Recipe 3: Numbered Server Logs</h4>
+          <p class="comment">Find server logs ending with a 4-digit year:</p>
+          <pre><code>rx:(seq "server_" (repeat 4 digit) ".log")</code></pre>
+        </div>
+
+        <div class="example-card">
+          <h4>Recipe 4: Typo-Tolerance in Action</h4>
+          <p class="comment">Type an unknown operator to verify immediate-mode suggestion:</p>
+          <pre><code>rx:(dire src)
+<span class="comment"># Output: unknown operator 'dire' (did you mean 'dir'?)</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p>FindHelper &mdash; Cross-Platform High-Performance File Search &bull; C++17 &amp; Dear ImGui</p>
+    </footer>
+  </div>
+</body>
+</html>
